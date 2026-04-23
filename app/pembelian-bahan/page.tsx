@@ -136,7 +136,6 @@ export default function PembelianBahanPage() {
           bahan_baku_id: bahanId,
           qty,
           harga_beli: harga,
-          subtotal: qty * harga,
         }]);
         if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
 

@@ -43,15 +43,21 @@ export default function PembelianBahanPage() {
   const fetchData = useCallback(async () => {
     try {
       const [resBahan, resRiwayat, resHutang] = await Promise.all([
-        supabase.from("bahan_baku").select("*").eq("aktif", true).order("kategori").order("nama"),
+        // FIX BUG 1: Pakai .or() agar bahan dengan aktif=null tetap muncul
+        supabase.from("bahan_baku").select("*").or("aktif.eq.true,aktif.is.null").order("kategori").order("nama"),
         supabase.from("pembelian_bahan").select("*").order("created_at", { ascending: false }).limit(20),
         supabase.from("hutang_supplier_bahan").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
       ]);
+
+      if (resBahan.error) throw new Error("Gagal load bahan: " + resBahan.error.message);
+      if (resRiwayat.error) throw new Error("Gagal load riwayat: " + resRiwayat.error.message);
+      if (resHutang.error) throw new Error("Gagal load hutang: " + resHutang.error.message);
+
       setBahan(resBahan.data || []);
       setRiwayat(resRiwayat.data || []);
       setHutang(resHutang.data || []);
-    } catch {
-      showToast("Gagal memuat data", "error");
+    } catch (err: any) {
+      showToast(err.message || "Gagal memuat data", "error");
     } finally {
       setLoading(false);
     }
@@ -75,7 +81,7 @@ export default function PembelianBahanPage() {
         bahan_id: value,
         nama: b?.nama || "",
         satuan: b?.satuan || "",
-        harga_beli: b?.harga_beli_avg ? String(b.harga_beli_avg) : "",
+        harga_beli: b?.harga_beli_avg ? String(Math.round(b.harga_beli_avg)) : "",
       };
     } else {
       newItems[idx] = { ...newItems[idx], [field]: value };
@@ -94,17 +100,16 @@ export default function PembelianBahanPage() {
 
     setSubmitting(true);
     try {
-      // 1. Ambil saldo zakat terakhir
-      const { data: zakatData } = await supabase
+      // FIX BUG 2: Ganti .single() dengan .limit(1) agar tidak crash saat tabel zakat kosong
+      const { data: zakatRows } = await supabase
         .from("data_zakat")
         .select("saldo_zakat")
         .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-      const saldoZakatLalu = zakatData?.saldo_zakat || 0;
+        .limit(1);
+      const saldoZakatLalu = zakatRows?.[0]?.saldo_zakat || 0;
       const zakatBaru = Math.floor(totalBayar * 0.025);
 
-      // 2. Simpan header pembelian
+      // Simpan header pembelian
       const { data: pembelianData, error: errPembelian } = await supabase
         .from("pembelian_bahan")
         .insert([{
@@ -120,28 +125,45 @@ export default function PembelianBahanPage() {
 
       if (errPembelian) throw new Error("Gagal simpan: " + errPembelian.message);
 
-      // 3. Simpan detail + update stok & HPP per bahan
+      // Simpan detail + update stok & HPP per bahan
       for (const item of validItems) {
         const qty = parseFloat(item.qty);
         const harga = parseInt(item.harga_beli);
         const bahanId = parseInt(item.bahan_id);
 
-        await supabase.from("detail_pembelian_bahan").insert([{
+        const { error: errDetail } = await supabase.from("detail_pembelian_bahan").insert([{
           pembelian_bahan_id: pembelianData.id,
           bahan_baku_id: bahanId,
           qty,
           harga_beli: harga,
+          subtotal: qty * harga,
         }]);
+        if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
 
-        // Update HPP rata-rata
-        await supabase.rpc("update_hpp_bahan", {
+        // FIX BUG 3: Tambah fallback manual kalau RPC update_hpp_bahan belum ada
+        const { error: errRpc } = await supabase.rpc("update_hpp_bahan", {
           p_bahan_id: bahanId,
           p_qty: qty,
           p_harga_beli: harga,
         });
+        if (errRpc) {
+          // Fallback: update stok saja langsung
+          const bahanData = bahan.find(b => b.id === bahanId);
+          if (bahanData) {
+            const stokBaru = (bahanData.stok || 0) + qty;
+            const nilaiLama = (bahanData.stok || 0) * (bahanData.harga_beli_avg || 0);
+            const nilaiMasuk = qty * harga;
+            const hppBaru = stokBaru > 0 ? Math.round((nilaiLama + nilaiMasuk) / stokBaru) : harga;
+            await supabase.from("bahan_baku").update({
+              stok: stokBaru,
+              harga_beli_avg: hppBaru,
+              total_nilai_stok: stokBaru * hppBaru,
+            }).eq("id", bahanId);
+          }
+        }
       }
 
-      // 4. Catat kas keluar (kalau bukan hutang)
+      // Catat kas keluar (kalau bukan hutang)
       if (metodeBayar !== "Hutang") {
         await supabase.from("kas").insert([{
           tipe: "Keluar",
@@ -151,7 +173,7 @@ export default function PembelianBahanPage() {
         }]);
       }
 
-      // 5. Catat hutang (kalau hutang)
+      // Catat hutang (kalau hutang)
       if (metodeBayar === "Hutang") {
         await supabase.from("hutang_supplier_bahan").insert([{
           pembelian_bahan_id: pembelianData.id,
@@ -161,7 +183,7 @@ export default function PembelianBahanPage() {
         }]);
       }
 
-      // 6. Catat zakat otomatis
+      // Catat zakat otomatis
       await supabase.from("data_zakat").insert([{
         nominal_belanja: totalBayar,
         zakat_keluar: 0,
@@ -205,6 +227,10 @@ export default function PembelianBahanPage() {
       nama: namaBaru.trim(),
       satuan: satuanBaru,
       kategori: kategoriBaru,
+      aktif: true,
+      stok: 0,
+      harga_beli_avg: 0,
+      total_nilai_stok: 0,
     }]);
     if (error) return showToast("Gagal tambah bahan: " + error.message, "error");
     showToast(`${namaBaru} berhasil ditambahkan!`);
@@ -213,6 +239,9 @@ export default function PembelianBahanPage() {
   };
 
   const totalHutang = hutang.reduce((a, b) => a + b.nominal, 0);
+
+  // Ambil kategori unik dari data (tidak hardcode)
+  const kategoriList = Array.from(new Set(bahan.map(b => b.kategori).filter(Boolean)));
   const bahanFiltered = filterKategori === "Semua" ? bahan : bahan.filter(b => b.kategori === filterKategori);
 
   const inputStyle: React.CSSProperties = {
@@ -326,7 +355,14 @@ export default function PembelianBahanPage() {
             {/* Items */}
             <div style={{ marginBottom: "16px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>BAHAN YANG DIBELI</label>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
+                  BAHAN YANG DIBELI
+                  {bahan.length === 0 && (
+                    <span style={{ color: "#ef4444", marginLeft: "8px", fontWeight: 400 }}>
+                      ⚠ Belum ada bahan — tambah dulu di tab Master Bahan
+                    </span>
+                  )}
+                </label>
                 <button onClick={addItem} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d", padding: "5px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>+ Tambah Bahan</button>
               </div>
 
@@ -342,15 +378,29 @@ export default function PembelianBahanPage() {
               {items.map((item, idx) => (
                 <div key={idx} style={{ marginBottom: "8px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 80px 140px 30px", gap: "8px", alignItems: "center" }}>
+                    {/* FIX BUG 1: Render optgroup hanya kalau ada bahan di kategori itu */}
                     <select value={item.bahan_id} onChange={e => updateItem(idx, "bahan_id", e.target.value)} style={inputStyle}>
-                      <option value="">Pilih Bahan</option>
-                      {["Bahan Baku", "Bahan Penolong", "Packaging"].map(kat => (
-                        <optgroup key={kat} label={kat}>
-                          {bahan.filter(b => b.kategori === kat).map(b => (
-                            <option key={b.id} value={b.id}>{b.nama} (stok: {b.stok} {b.satuan})</option>
-                          ))}
-                        </optgroup>
-                      ))}
+                      <option value="">— Pilih Bahan —</option>
+                      {kategoriList.length > 0
+                        ? kategoriList.map(kat => {
+                            const bahanDalamKat = bahan.filter(b => b.kategori === kat);
+                            if (bahanDalamKat.length === 0) return null;
+                            return (
+                              <optgroup key={kat} label={kat}>
+                                {bahanDalamKat.map(b => (
+                                  <option key={b.id} value={b.id}>
+                                    {b.nama} (stok: {b.stok} {b.satuan})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            );
+                          })
+                        : bahan.map(b => (
+                            <option key={b.id} value={b.id}>
+                              {b.nama} (stok: {b.stok} {b.satuan})
+                            </option>
+                          ))
+                      }
                     </select>
                     <input type="number" value={item.qty} onChange={e => updateItem(idx, "qty", e.target.value)} placeholder="0" style={inputStyle} min="0" step="0.1" />
                     <div style={{ padding: "9px 12px", background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: "8px", fontSize: "13px", color: "#64748b", textAlign: "center" }}>
@@ -448,7 +498,9 @@ export default function PembelianBahanPage() {
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: "10px", alignItems: "end" }}>
                 <div>
                   <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", display: "block", marginBottom: "6px" }}>NAMA BAHAN</label>
-                  <input type="text" value={namaBaru} onChange={e => setNamaBaru(e.target.value)} placeholder="Nama bahan baru" style={inputStyle} />
+                  <input type="text" value={namaBaru} onChange={e => setNamaBaru(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && tambahBahan()}
+                    placeholder="Nama bahan baru" style={inputStyle} />
                 </div>
                 <div>
                   <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", display: "block", marginBottom: "6px" }}>SATUAN</label>
@@ -481,8 +533,8 @@ export default function PembelianBahanPage() {
             <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h3 style={{ margin: 0, fontFamily: "'Instrument Serif', serif", fontSize: "16px" }}>Daftar Bahan ({bahan.length})</h3>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  {["Semua", "Bahan Baku", "Bahan Penolong", "Packaging"].map(k => (
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {["Semua", ...kategoriList].map(k => (
                     <button key={k} onClick={() => setFilterKategori(k)} style={{
                       padding: "5px 10px", borderRadius: "6px", border: "none", cursor: "pointer",
                       background: filterKategori === k ? "#1e293b" : "#f1f5f9",
@@ -492,10 +544,15 @@ export default function PembelianBahanPage() {
                   ))}
                 </div>
               </div>
+              {bahanFiltered.length === 0 && (
+                <div style={{ textAlign: "center", color: "#94a3b8", padding: "32px", fontSize: "14px" }}>
+                  Belum ada bahan. Tambahkan di atas!
+                </div>
+              )}
               {bahanFiltered.map(b => (
                 <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ background: kategoriColor[b.kategori] + "20", color: kategoriColor[b.kategori], padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700 }}>
+                    <span style={{ background: (kategoriColor[b.kategori] || "#64748b") + "20", color: kategoriColor[b.kategori] || "#64748b", padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700 }}>
                       {b.kategori}
                     </span>
                     <div>

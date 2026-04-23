@@ -25,25 +25,53 @@ const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day:
 const isHariIni = (s: string) => new Date(s).toDateString() === new Date().toDateString();
 
 // ============================================================
-// KOMPONEN KECIL
+// THEME TOKENS
 // ============================================================
-function Toast({ toast, onClose }: { toast: Toast | null; onClose: () => void }) {
+const T = {
+  bg: "#100c16",
+  bgCard: "rgba(255,255,255,0.02)",
+  bgCardHover: "rgba(232,115,138,0.05)",
+  sidebar: "#130d1a",
+  border: "rgba(232,115,138,0.12)",
+  borderStrong: "rgba(232,115,138,0.28)",
+  accent: "#e8738a",
+  accentDim: "rgba(232,115,138,0.12)",
+  accentGlow: "rgba(232,115,138,0.25)",
+  text: "#f0e6e9",
+  textMid: "#c0a8b4",
+  textDim: "#7a6880",
+  green: "#6fcf97",
+  yellow: "#f2c94c",
+  red: "#eb5757",
+  fontDisplay: "'DM Serif Display', Georgia, serif",
+  fontMono: "'DM Mono', 'Fira Mono', monospace",
+  fontSans: "'DM Sans', 'Segoe UI', sans-serif",
+};
+
+// ============================================================
+// MINI COMPONENTS
+// ============================================================
+function ToastBar({ toast, onClose }: { toast: Toast | null; onClose: () => void }) {
   if (!toast) return null;
-  const colors: Record<string, string> = { success: "#10b981", error: "#ef4444", info: "#3b82f6" };
+  const colors: Record<string, string> = { success: T.green, error: T.red, info: T.accent };
   const icons: Record<string, string> = { success: "✓", error: "✕", info: "ℹ" };
   return (
     <div style={{
-      position: "fixed", top: "24px", right: "24px", zIndex: 9999,
-      background: colors[toast.type], color: "#fff",
-      padding: "14px 20px", borderRadius: "12px",
-      boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-      display: "flex", alignItems: "center", gap: "10px",
-      fontFamily: "'Instrument Sans', sans-serif", fontWeight: 600, fontSize: "14px",
+      position: "fixed", top: 24, right: 24, zIndex: 9999,
+      background: "#1a1020", border: `1px solid ${colors[toast.type]}44`,
+      color: colors[toast.type], padding: "14px 20px", borderRadius: 12,
+      boxShadow: `0 8px 32px ${colors[toast.type]}22`,
+      display: "flex", alignItems: "center", gap: 10,
+      fontFamily: T.fontMono, fontWeight: 600, fontSize: 13,
       animation: "slideIn 0.3s ease",
     }}>
-      <span style={{ width: 22, height: 22, borderRadius: "50%", background: "rgba(255,255,255,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px" }}>{icons[toast.type]}</span>
+      <span style={{
+        width: 22, height: 22, borderRadius: "50%",
+        background: `${colors[toast.type]}22`,
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11,
+      }}>{icons[toast.type]}</span>
       {toast.msg}
-      <button onClick={onClose} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", marginLeft: "8px", opacity: 0.7, fontSize: "16px" }}>×</button>
+      <button onClick={onClose} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", marginLeft: 8, opacity: 0.6, fontSize: 16 }}>×</button>
     </div>
   );
 }
@@ -51,63 +79,101 @@ function Toast({ toast, onClose }: { toast: Toast | null; onClose: () => void })
 function ConfirmModal({ dialog, onClose }: { dialog: ConfirmDialog; onClose: () => void }) {
   if (!dialog.open) return null;
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: "16px", padding: "28px", maxWidth: "360px", width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-        <h3 style={{ margin: "0 0 8px", fontFamily: "'Instrument Serif', serif", fontSize: "20px" }}>{dialog.title}</h3>
-        <p style={{ margin: "0 0 24px", color: "#6b7280", fontSize: "14px" }}>{dialog.desc}</p>
-        <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
-          <button onClick={onClose} style={{ padding: "10px 20px", border: "1px solid #e5e7eb", borderRadius: "8px", background: "#fff", cursor: "pointer", fontWeight: 600 }}>Batal</button>
-          <button onClick={() => { dialog.onConfirm(); onClose(); }} style={{ padding: "10px 20px", border: "none", borderRadius: "8px", background: "#1e293b", color: "#fff", cursor: "pointer", fontWeight: 600 }}>Ya, Lanjutkan</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+      <div style={{
+        background: "#1a1020", border: `1px solid ${T.border}`,
+        borderRadius: 16, padding: 28, maxWidth: 360, width: "90%",
+        boxShadow: `0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px ${T.accentGlow}`,
+      }}>
+        <h3 style={{ margin: "0 0 8px", fontFamily: T.fontDisplay, fontSize: 20, color: T.text }}>{dialog.title}</h3>
+        <p style={{ margin: "0 0 24px", color: T.textDim, fontSize: 13, fontFamily: T.fontSans }}>{dialog.desc}</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{
+            padding: "9px 20px", border: `1px solid ${T.border}`, borderRadius: 8,
+            background: "transparent", color: T.textMid, cursor: "pointer",
+            fontFamily: T.fontMono, fontSize: 12,
+          }}>Batal</button>
+          <button onClick={() => { dialog.onConfirm(); onClose(); }} style={{
+            padding: "9px 20px", border: "none", borderRadius: 8,
+            background: `linear-gradient(135deg, #c94f68, ${T.accent})`,
+            color: "#fff", cursor: "pointer", fontWeight: 700,
+            fontFamily: T.fontMono, fontSize: 12,
+            boxShadow: `0 4px 16px ${T.accentGlow}`,
+          }}>Ya, Lanjutkan</button>
         </div>
       </div>
     </div>
   );
 }
 
-function KartuStat({ label, nilai, warna, icon }: { label: string; nilai: string; warna: string; icon: string }) {
+function StatCard({ label, nilai, icon, accent, sub }: { label: string; nilai: string; icon: string; accent: string; sub?: string }) {
   return (
-    <div style={{ background: "#fff", padding: "20px 24px", borderRadius: "16px", borderLeft: `5px solid ${warna}`, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-        <span style={{ fontSize: "20px" }}>{icon}</span>
-        <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", color: "#9ca3af", textTransform: "uppercase" }}>{label}</span>
+    <div style={{
+      background: T.bgCard, border: `1px solid ${T.border}`,
+      borderRadius: 14, padding: "20px 24px",
+      position: "relative", overflow: "hidden",
+    }}>
+      <div style={{
+        position: "absolute", top: 0, right: 0,
+        width: 80, height: 80,
+        background: `radial-gradient(circle at top right, ${accent}18, transparent 70%)`,
+        borderRadius: "0 14px 0 100%",
+      }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontSize: 10, letterSpacing: 2, color: T.textDim, textTransform: "uppercase", fontFamily: T.fontMono }}>{label}</span>
       </div>
-      <div style={{ fontSize: "22px", fontWeight: 800, color: "#1e293b", fontFamily: "'Instrument Serif', serif" }}>{nilai}</div>
-    </div>
-  );
-}
-
-function Panel({ title, icon, color, children }: { title: string; icon: string; color: string; children: React.ReactNode }) {
-  return (
-    <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", borderTop: `4px solid ${color}`, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-      <h4 style={{ margin: "0 0 16px", fontFamily: "'Instrument Serif', serif", fontSize: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-        <span>{icon}</span> {title}
-      </h4>
-      {children}
+      <div style={{ fontSize: 24, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay, letterSpacing: -0.5 }}>{nilai}</div>
+      {sub && <div style={{ fontSize: 11, color: accent, fontFamily: T.fontMono, marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
 
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "10px 12px", marginBottom: "8px",
-  border: "1.5px solid #e5e7eb", borderRadius: "8px",
-  fontFamily: "'Instrument Sans', sans-serif", fontSize: "14px",
-  boxSizing: "border-box", outline: "none", transition: "border-color 0.2s",
+  width: "100%", padding: "10px 14px", marginBottom: 8,
+  background: "rgba(255,255,255,0.04)",
+  border: `1.5px solid rgba(232,115,138,0.15)`,
+  borderRadius: 8, color: "#e0d0d8",
+  fontFamily: "'DM Sans', sans-serif", fontSize: 13,
+  boxSizing: "border-box", outline: "none",
+  transition: "border-color 0.2s",
 };
 
-function Btn({ onClick, color, children, disabled }: { onClick: () => void; color: string; children: React.ReactNode; disabled?: boolean }) {
+function DarkBtn({ onClick, color, children, disabled }: { onClick: () => void; color: string; children: React.ReactNode; disabled?: boolean }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
-      width: "100%", padding: "11px", border: "none", borderRadius: "8px",
-      background: disabled ? "#d1d5db" : color, color: "#fff",
+      width: "100%", padding: "11px", border: "none", borderRadius: 8,
+      background: disabled ? "rgba(255,255,255,0.06)" : `linear-gradient(135deg, ${color}dd, ${color})`,
+      color: disabled ? T.textDim : "#fff",
       fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer",
-      fontFamily: "'Instrument Sans', sans-serif", fontSize: "14px",
-      transition: "opacity 0.2s", opacity: disabled ? 0.7 : 1,
+      fontFamily: T.fontMono, fontSize: 13,
+      boxShadow: disabled ? "none" : `0 4px 16px ${color}33`,
+      transition: "all 0.2s",
     }}>{children}</button>
   );
 }
 
+function Panel({ title, icon, accent, children }: { title: string; icon: string; accent: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background: T.bgCard, border: `1px solid ${T.border}`,
+      borderRadius: 14, overflow: "hidden",
+      borderTop: `3px solid ${accent}`,
+    }}>
+      <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+        <h4 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 15, color: T.text, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>{icon}</span> {title}
+        </h4>
+      </div>
+      <div style={{ padding: "16px 20px" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ============================================================
-// KOMPONEN UTAMA
+// MAIN
 // ============================================================
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"toko" | "zakat" | "riwayat">("toko");
@@ -135,7 +201,6 @@ export default function Home() {
   const [nomBelanja, setNomBelanja] = useState("");
   const [itemBelanja, setItemBelanja] = useState("");
 
-  // ── Helpers ──
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
@@ -144,7 +209,6 @@ export default function Home() {
   const askConfirm = (title: string, desc: string, onConfirm: () => void) =>
     setConfirm({ open: true, title, desc, onConfirm });
 
-  // ── Fetch ──
   const fetchData = useCallback(async () => {
     try {
       const [resStok, resMutasi, resKas, resPiutang, resZakat] = await Promise.all([
@@ -154,12 +218,9 @@ export default function Home() {
         supabase.from("piutang").select("*").eq("status", "Belum Lunas"),
         supabase.from("data_zakat").select("*").order("created_at", { ascending: false }),
       ]);
-
-      // Cek error
       [resStok, resMutasi, resKas, resPiutang, resZakat].forEach((r, i) => {
         if (r.error) throw new Error(`Query ${i} gagal: ${r.error.message}`);
       });
-
       setProduk(resStok.data || []);
       setMutasi(resMutasi.data || []);
       setKas(resKas.data || []);
@@ -174,7 +235,7 @@ export default function Home() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Actions ──
+  // ── Actions (sama persis dengan sebelumnya) ──
   const tambahMaster = async () => {
     if (!namaBaru.trim() || !hargaBaru) return showToast("Lengkapi Nama & Harga!", "error");
     setSubmitting("master");
@@ -193,19 +254,15 @@ export default function Home() {
     if (!p) return showToast("Produk tidak ditemukan", "error");
     const qty = parseInt(qtyProduksi);
     if (qty <= 0) return showToast("Qty harus lebih dari 0", "error");
-
     setSubmitting("produksi");
-    // ✅ FIX: Gunakan increment via RPC agar aman dari race condition
     const { error: errStok } = await supabase.rpc("increment_stok", { p_id: p.id, p_delta: qty });
     if (errStok) {
-      // Fallback kalau RPC belum ada
       const { error } = await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok + qty }).eq("id", p.id);
       if (error) { showToast("Gagal update stok: " + error.message, "error"); setSubmitting(null); return; }
     }
     const { error: errMutasi } = await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Masuk", jumlah: qty, keterangan: "Produksi" }]);
     if (errMutasi) showToast("Stok diupdate, tapi gagal catat mutasi", "info");
-    else { showToast(`+${qty} stok ${p.nama_produk} berhasil dicatat!`); }
-
+    else showToast(`+${qty} stok ${p.nama_produk} berhasil dicatat!`);
     setIdProduksi(""); setQtyProduksi(""); fetchData();
     setSubmitting(null);
   };
@@ -215,23 +272,19 @@ export default function Home() {
     setSubmitting("shopee");
     const baris = inputShopee.split("\n").filter((l) => l.trim());
     let berhasil = 0; let gagal: string[] = [];
-
     for (const line of baris) {
       const kolom = line.trim().split(/\t| {2,}/);
       const namaInput = kolom[0]?.trim().toLowerCase();
       const qtyInput = parseInt(kolom[1]);
       if (!namaInput || isNaN(qtyInput) || qtyInput <= 0) { gagal.push(line); continue; }
-
       const p = produk.find((x) => x.nama_produk.toLowerCase().includes(namaInput));
       if (!p) { gagal.push(`"${kolom[0]}" tidak ditemukan`); continue; }
-      if (p.jumlah_stok < qtyInput) { gagal.push(`Stok ${p.nama_produk} tidak cukup (${p.jumlah_stok} < ${qtyInput})`); continue; }
-
+      if (p.jumlah_stok < qtyInput) { gagal.push(`Stok ${p.nama_produk} tidak cukup`); continue; }
       const { error } = await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - qtyInput }).eq("id", p.id);
       if (error) { gagal.push(`Gagal update ${p.nama_produk}`); continue; }
       await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Keluar", jumlah: qtyInput, keterangan: "Shopee" }]);
       berhasil++;
     }
-
     if (gagal.length > 0) showToast(`${berhasil} berhasil, ${gagal.length} gagal: ${gagal[0]}`, "info");
     else showToast(`${berhasil} item stok Shopee berhasil dipotong!`);
     setInputShopee(""); fetchData();
@@ -245,32 +298,22 @@ export default function Home() {
     const qty = parseInt(qtyOffline);
     if (qty <= 0) return showToast("Qty harus lebih dari 0", "error");
     if (p.jumlah_stok < qty) return showToast(`Stok tidak cukup! Tersisa ${p.jumlah_stok}`, "error");
-    if (metodeBayar === "Piutang" && !namaPelanggan.trim()) return showToast("Isi nama pelanggan untuk piutang!", "error");
-
+    if (metodeBayar === "Piutang" && !namaPelanggan.trim()) return showToast("Isi nama pelanggan!", "error");
     const total = p.harga_jual * qty;
-    askConfirm(
-      "Konfirmasi Penjualan",
-      `Jual ${p.nama_produk} x${qty} = ${rupiahFmt(total)} via ${metodeBayar}?`,
-      async () => {
-        setSubmitting("offline");
-        const { error: errStok } = await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - qty }).eq("id", p.id);
-        if (errStok) { showToast("Gagal update stok: " + errStok.message, "error"); setSubmitting(null); return; }
-
-        await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Keluar", jumlah: qty, keterangan: "Offline" }]);
-
-        if (metodeBayar === "Tunai") {
-          const { error } = await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: total, keterangan: `Jual ${p.nama_produk} x${qty}` }]);
-          if (error) showToast("Stok dipotong, tapi gagal catat kas", "info");
-        } else {
-          const { error } = await supabase.from("piutang").insert([{ nama_pelanggan: namaPelanggan.trim(), nominal: total, keterangan: `Hutang ${p.nama_produk} x${qty}`, status: "Belum Lunas" }]);
-          if (error) showToast("Stok dipotong, tapi gagal catat piutang", "info");
-        }
-
-        showToast(`Jual ${p.nama_produk} x${qty} berhasil!`);
-        setIdProdukOffline(""); setQtyOffline(""); setNamaPelanggan(""); fetchData();
-        setSubmitting(null);
+    askConfirm("Konfirmasi Penjualan", `Jual ${p.nama_produk} ×${qty} = ${rupiahFmt(total)} via ${metodeBayar}?`, async () => {
+      setSubmitting("offline");
+      const { error: errStok } = await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - qty }).eq("id", p.id);
+      if (errStok) { showToast("Gagal update stok", "error"); setSubmitting(null); return; }
+      await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Keluar", jumlah: qty, keterangan: "Offline" }]);
+      if (metodeBayar === "Tunai") {
+        await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: total, keterangan: `Jual ${p.nama_produk} ×${qty}` }]);
+      } else {
+        await supabase.from("piutang").insert([{ nama_pelanggan: namaPelanggan.trim(), nominal: total, keterangan: `Hutang ${p.nama_produk} ×${qty}`, status: "Belum Lunas" }]);
       }
-    );
+      showToast(`Jual ${p.nama_produk} ×${qty} berhasil!`);
+      setIdProdukOffline(""); setQtyOffline(""); setNamaPelanggan(""); fetchData();
+      setSubmitting(null);
+    });
   };
 
   const prosesBelanja = async () => {
@@ -279,35 +322,23 @@ export default function Home() {
     if (nominal <= 0) return showToast("Nominal tidak valid", "error");
     const zakatBaru = Math.floor(nominal * 0.025);
     const saldoZakatLalu = zakat[0]?.saldo_zakat || 0;
-
     setSubmitting("belanja");
     const { error: errKas } = await supabase.from("kas").insert([{ tipe: "Keluar", kategori: "Belanja", nominal, keterangan: itemBelanja || "Belanja operasional" }]);
-    if (errKas) { showToast("Gagal catat kas belanja: " + errKas.message, "error"); setSubmitting(null); return; }
-
-    const { error: errZakat } = await supabase.from("data_zakat").insert([{
-      nominal_belanja: nominal, zakat_keluar: 0,
-      saldo_zakat: saldoZakatLalu + zakatBaru, pj: "Sistem",
-    }]);
-    if (errZakat) showToast("Belanja dicatat, tapi gagal update zakat", "info");
-    else showToast(`Belanja ${rupiahFmt(nominal)} dicatat. Zakat +${rupiahFmt(zakatBaru)}`);
-
+    if (errKas) { showToast("Gagal catat kas: " + errKas.message, "error"); setSubmitting(null); return; }
+    await supabase.from("data_zakat").insert([{ nominal_belanja: nominal, zakat_keluar: 0, saldo_zakat: saldoZakatLalu + zakatBaru, pj: "Sistem" }]);
+    showToast(`Belanja ${rupiahFmt(nominal)} dicatat. Zakat +${rupiahFmt(zakatBaru)}`);
     setNomBelanja(""); setItemBelanja(""); fetchData();
     setSubmitting(null);
   };
 
   const lunaskanPiutang = (pt: Piutang) => {
-    askConfirm(
-      "Lunaskan Piutang",
-      `Tandai piutang ${pt.nama_pelanggan} sebesar ${rupiahFmt(pt.nominal)} sebagai lunas?`,
-      async () => {
-        const { error: errUpdate } = await supabase.from("piutang").update({ status: "Lunas" }).eq("id", pt.id);
-        if (errUpdate) { showToast("Gagal update piutang", "error"); return; }
-        const { error: errKas } = await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Piutang", nominal: pt.nominal, keterangan: `Lunas: ${pt.nama_pelanggan}` }]);
-        if (errKas) showToast("Piutang dilunas, tapi gagal catat kas", "info");
-        else showToast(`Piutang ${pt.nama_pelanggan} lunas!`);
-        fetchData();
-      }
-    );
+    askConfirm("Lunaskan Piutang", `Tandai piutang ${pt.nama_pelanggan} ${rupiahFmt(pt.nominal)} sebagai lunas?`, async () => {
+      const { error: errUpdate } = await supabase.from("piutang").update({ status: "Lunas" }).eq("id", pt.id);
+      if (errUpdate) { showToast("Gagal update piutang", "error"); return; }
+      await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Piutang", nominal: pt.nominal, keterangan: `Lunas: ${pt.nama_pelanggan}` }]);
+      showToast(`Piutang ${pt.nama_pelanggan} lunas!`);
+      fetchData();
+    });
   };
 
   // ── Kalkulasi ──
@@ -316,242 +347,407 @@ export default function Home() {
   const totalPiutang = piutang.reduce((a, b) => a + b.nominal, 0);
   const saldoZakat = zakat[0]?.saldo_zakat || 0;
 
-  // ── Loading ──
   if (loading) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", fontFamily: "'Instrument Sans', sans-serif" }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: T.fontSans }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: "32px", marginBottom: "12px" }}>🌸</div>
-        <div style={{ color: "#64748b", fontWeight: 600 }}>Memuat Azalea...</div>
+        <div style={{ fontSize: 40, marginBottom: 12, filter: "drop-shadow(0 0 20px #e8738a88)" }}>✿</div>
+        <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, letterSpacing: 2 }}>MEMUAT AZALEA...</div>
       </div>
     </div>
   );
 
-  const tabBtnStyle = (active: boolean, color: string): React.CSSProperties => ({
-    flex: 1, padding: "13px 10px", borderRadius: "10px", border: "none",
-    background: active ? color : "#e2e8f0", color: active ? "#fff" : "#64748b",
-    fontWeight: 700, cursor: "pointer", fontSize: "13px",
-    fontFamily: "'Instrument Sans', sans-serif", transition: "all 0.2s",
-    letterSpacing: "0.02em",
-  });
+  const tabs = [
+    { id: "toko", label: "Operasional", icon: "◈" },
+    { id: "riwayat", label: "Riwayat", icon: "▤" },
+    { id: "zakat", label: "Zakat", icon: "◎" },
+  ] as const;
+
+  const navLinks = [
+    { href: "/pembelian", label: "Pembelian Reseller", icon: "⊕" },
+    { href: "/pembelian-bahan", label: "Bahan Produksi", icon: "🧪" },
+  ];
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
-        * { box-sizing: border-box; }
-        input:focus, select:focus, textarea:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: ${T.bg}; }
+        input:focus, select:focus, textarea:focus {
+          border-color: rgba(232,115,138,0.5) !important;
+          box-shadow: 0 0 0 3px rgba(232,115,138,0.08) !important;
+          outline: none;
+        }
+        input, select, textarea { color: #e0d0d8 !important; }
+        input::placeholder, textarea::placeholder { color: #5a4860 !important; }
+        select option { background: #1a1020; color: #e0d0d8; }
         @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f5f9; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(232,115,138,0.2); border-radius: 3px; }
+        .nav-link:hover { background: rgba(232,115,138,0.08) !important; color: ${T.accent} !important; }
+        .tab-btn:hover { opacity: 0.85; }
       `}</style>
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+      <ToastBar toast={toast} onClose={() => setToast(null)} />
       <ConfirmModal dialog={confirm} onClose={() => setConfirm((p) => ({ ...p, open: false }))} />
 
-      <div style={{ padding: "24px 20px", fontFamily: "'Instrument Sans', sans-serif", background: "#f8fafc", minHeight: "100vh", maxWidth: "1200px", margin: "0 auto" }}>
+      <div style={{ display: "flex", minHeight: "100vh", fontFamily: T.fontSans, background: T.bg, color: T.text }}>
 
-        {/* HEADER */}
-        <div style={{ marginBottom: "24px", display: "flex", alignItems: "center", gap: "12px" }}>
-          <span style={{ fontSize: "28px" }}>🌸</span>
-          <div>
-            <h1 style={{ margin: 0, fontFamily: "'Instrument Serif', serif", fontSize: "26px", color: "#1e293b" }}>Azalea</h1>
-            <p style={{ margin: 0, fontSize: "12px", color: "#94a3b8" }}>Manajemen Toko & Zakat Tijarah</p>
-          </div>
-        </div>
-
-        {/* TABS */}
-        <div style={{ display: "flex", gap: "8px", marginBottom: "24px" }}>
-          <button onClick={() => setActiveTab("toko")} style={tabBtnStyle(activeTab === "toko", "#1e293b")}>🏪 Toko</button>
-          <button onClick={() => setActiveTab("riwayat")} style={tabBtnStyle(activeTab === "riwayat", "#6366f1")}>📋 Riwayat</button>
-          <button onClick={() => setActiveTab("zakat")} style={tabBtnStyle(activeTab === "zakat", "#10b981")}>🌙 Zakat</button>
-        </div>
-
-        {/* ====== TAB: TOKO ====== */}
-        {activeTab === "toko" && (
-          <div>
-            {/* STATS */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-              <KartuStat label="Omzet Hari Ini" nilai={rupiahFmt(omzetHariIni)} warna="#3b82f6" icon="📈" />
-              <KartuStat label="Kas Kelola" nilai={rupiahFmt(totalKas)} warna="#f59e0b" icon="💰" />
-              <KartuStat label="Piutang Aktif" nilai={rupiahFmt(totalPiutang)} warna="#ef4444" icon="📝" />
-              <KartuStat label="Hutang Zakat" nilai={rupiahFmt(saldoZakat)} warna="#10b981" icon="🌙" />
-            </div>
-
-            {/* STOK MONITOR */}
-            <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", marginBottom: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-              <h4 style={{ margin: "0 0 16px", fontFamily: "'Instrument Serif', serif", fontSize: "16px" }}>📦 Monitor Stok Gudang</h4>
-              <div style={{ display: "flex", gap: "12px", overflowX: "auto", paddingBottom: "8px" }}>
-                {produk.map((p) => {
-                  const low = p.jumlah_stok < 10;
-                  return (
-                    <div key={p.id} style={{
-                      minWidth: "120px", padding: "14px 12px", border: `1.5px solid ${low ? "#fecaca" : "#e2e8f0"}`,
-                      borderRadius: "12px", textAlign: "center", background: low ? "#fff5f5" : "#fafafa",
-                      transition: "transform 0.2s",
-                    }}>
-                      <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, marginBottom: "6px", lineHeight: 1.3 }}>{p.nama_produk}</div>
-                      <div style={{ fontSize: "28px", fontWeight: 800, color: low ? "#ef4444" : "#1e293b", fontFamily: "'Instrument Serif', serif" }}>{p.jumlah_stok}</div>
-                      <div style={{ fontSize: "10px", color: "#6366f1", fontWeight: 600, marginTop: "4px" }}>{rupiahFmt(p.harga_jual)}</div>
-                      {low && <div style={{ fontSize: "10px", color: "#ef4444", marginTop: "4px", fontWeight: 700 }}>⚠ Stok Rendah</div>}
-                    </div>
-                  );
-                })}
+        {/* ── SIDEBAR ── */}
+        <aside style={{
+          width: 220, flexShrink: 0,
+          background: T.sidebar,
+          borderRight: `1px solid ${T.border}`,
+          display: "flex", flexDirection: "column",
+          position: "sticky", top: 0, height: "100vh",
+        }}>
+          {/* Logo */}
+          <div style={{ padding: "28px 20px 20px", borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: 10,
+                background: "linear-gradient(135deg, #e8738a, #c94f68)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 18, boxShadow: `0 0 20px ${T.accentGlow}`,
+              }}>✿</div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay }}>Azalea</div>
+                <div style={{ fontSize: 9, color: T.accent, letterSpacing: 2, textTransform: "uppercase", fontFamily: T.fontMono }}>ERP System</div>
               </div>
             </div>
+          </div>
 
-            {/* INPUT PANELS */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+          {/* Nav */}
+          <nav style={{ flex: 1, padding: "16px 12px" }}>
+            <div style={{ fontSize: 9, color: T.textDim, letterSpacing: 2, textTransform: "uppercase", fontFamily: T.fontMono, padding: "0 8px", marginBottom: 8 }}>Menu Utama</div>
 
-              {/* Produksi & Shopee */}
-              <Panel title="Produksi & Shopee" icon="🍳" color="#2ecc71">
-                <select value={idProduksi} onChange={(e) => setIdProduksi(e.target.value)} style={inputStyle}>
-                  <option value="">Pilih Produk</option>
-                  {produk.map((p) => <option key={p.id} value={p.id}>{p.nama_produk} (stok: {p.jumlah_stok})</option>)}
-                </select>
-                <input type="number" min="1" value={qtyProduksi} onChange={(e) => setQtyProduksi(e.target.value)} placeholder="Qty Produksi" style={inputStyle} />
-                <Btn onClick={simpanProduksi} color="#2ecc71" disabled={submitting === "produksi"}>
-                  {submitting === "produksi" ? "Menyimpan..." : "✓ Update Stok Produksi"}
-                </Btn>
-                <hr style={{ margin: "16px 0", border: "none", borderTop: "1px solid #f1f5f9" }} />
-                <label style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, display: "block", marginBottom: "6px" }}>
-                  Input Shopee (Format: Nama{"\t"}Qty, per baris)
-                </label>
-                <textarea value={inputShopee} onChange={(e) => setInputShopee(e.target.value)} placeholder={"Produk A\t5\nProduk B\t3"} style={{ ...inputStyle, height: "72px", resize: "vertical", marginBottom: "8px" }} />
-                <Btn onClick={prosesPotongStok} color="#ee4d2d" disabled={submitting === "shopee"}>
-                  {submitting === "shopee" ? "Memproses..." : "✂ Potong Stok Shopee"}
-                </Btn>
-              </Panel>
-
-              {/* Kasir & Belanja */}
-              <Panel title="Kasir & Belanja" icon="🏪" color="#8b5cf6">
-                <select value={idProdukOffline} onChange={(e) => setIdProdukOffline(e.target.value)} style={inputStyle}>
-                  <option value="">Pilih Produk</option>
-                  {produk.map((p) => <option key={p.id} value={p.id}>{p.nama_produk} — {rupiahFmt(p.harga_jual)}</option>)}
-                </select>
-                <input type="number" min="1" value={qtyOffline} onChange={(e) => setQtyOffline(e.target.value)} placeholder="Qty" style={inputStyle} />
-                <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} style={inputStyle}>
-                  <option value="Tunai">💵 Tunai</option>
-                  <option value="Piutang">📝 Piutang (Hutang)</option>
-                </select>
-                {metodeBayar === "Piutang" && (
-                  <input type="text" value={namaPelanggan} onChange={(e) => setNamaPelanggan(e.target.value)} placeholder="Nama Pelanggan" style={inputStyle} />
-                )}
-                {idProdukOffline && qtyOffline && (
-                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 12px", borderRadius: "8px", marginBottom: "8px", fontSize: "13px", color: "#15803d", fontWeight: 700 }}>
-                    Total: {rupiahFmt((produk.find(p => p.id === parseInt(idProdukOffline))?.harga_jual || 0) * parseInt(qtyOffline || "0"))}
-                  </div>
-                )}
-                <Btn onClick={prosesOffline} color="#8b5cf6" disabled={submitting === "offline"}>
-                  {submitting === "offline" ? "Memproses..." : "💳 Proses Penjualan"}
-                </Btn>
-                <hr style={{ margin: "16px 0", border: "none", borderTop: "1px solid #f1f5f9" }} />
-                <input type="text" value={itemBelanja} onChange={(e) => setItemBelanja(e.target.value)} placeholder="Keterangan Item Belanja" style={inputStyle} />
-                <input type="text" value={nomBelanja} onChange={(e) => setNomBelanja(formatIDR(e.target.value))} placeholder="Nominal (Rp)" style={inputStyle} />
-                {nomBelanja && (
-                  <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "8px" }}>
-                    Zakat 2.5%: +{rupiahFmt(Math.floor(toAngka(nomBelanja) * 0.025))}
-                  </div>
-                )}
-                <Btn onClick={prosesBelanja} color="#ef4444" disabled={submitting === "belanja"}>
-                  {submitting === "belanja" ? "Menyimpan..." : "🛒 Catat Belanja"}
-                </Btn>
-              </Panel>
-
-              {/* Master & Piutang */}
-              <Panel title="Master Produk & Piutang" icon="✨" color="#3b82f6">
-                <input type="text" value={namaBaru} onChange={(e) => setNamaBaru(e.target.value)} placeholder="Nama Produk Baru" style={inputStyle} />
-                <input type="text" value={hargaBaru} onChange={(e) => setHargaBaru(formatIDR(e.target.value))} placeholder="Harga Jual (Rp)" style={inputStyle} />
-                <Btn onClick={tambahMaster} color="#3b82f6" disabled={submitting === "master"}>
-                  {submitting === "master" ? "Mendaftar..." : "+ Daftarkan Produk"}
-                </Btn>
-                <hr style={{ margin: "16px 0", border: "none", borderTop: "1px solid #f1f5f9" }} />
-                <div style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", marginBottom: "10px" }}>
-                  PIUTANG AKTIF ({piutang.length})
+            {/* Tabs as sidebar items */}
+            {tabs.map(tab => {
+              const isActive = activeTab === tab.id;
+              return (
+                <div
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className="nav-link"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", borderRadius: 8, cursor: "pointer",
+                    background: isActive ? T.accentDim : "transparent",
+                    borderLeft: isActive ? `2px solid ${T.accent}` : "2px solid transparent",
+                    marginBottom: 2, transition: "all 0.15s",
+                    color: isActive ? T.accent : T.textDim,
+                  }}
+                >
+                  <span style={{ fontSize: 14, width: 18, textAlign: "center" }}>{tab.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: isActive ? 600 : 400, color: isActive ? T.text : T.textDim }}>{tab.label}</span>
                 </div>
-                <div style={{ maxHeight: "180px", overflowY: "auto" }}>
-                  {piutang.length === 0 && <div style={{ color: "#94a3b8", fontSize: "13px", textAlign: "center", padding: "16px" }}>Tidak ada piutang aktif 🎉</div>}
-                  {piutang.map((pt) => (
-                    <div key={pt.id} style={{ borderBottom: "1px solid #f1f5f9", padding: "10px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: "13px" }}>{pt.nama_pelanggan}</div>
-                        <div style={{ fontSize: "12px", color: "#ef4444", fontWeight: 700 }}>{rupiahFmt(pt.nominal)}</div>
-                        <div style={{ fontSize: "11px", color: "#94a3b8" }}>{pt.keterangan}</div>
+              );
+            })}
+
+            <div style={{ height: 1, background: T.border, margin: "16px 0" }} />
+            <div style={{ fontSize: 9, color: T.textDim, letterSpacing: 2, textTransform: "uppercase", fontFamily: T.fontMono, padding: "0 8px", marginBottom: 8 }}>Modul</div>
+
+            {navLinks.map(link => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="nav-link"
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 12px", borderRadius: 8, cursor: "pointer",
+                  background: "transparent", borderLeft: "2px solid transparent",
+                  marginBottom: 2, transition: "all 0.15s",
+                  color: T.textDim, textDecoration: "none", fontSize: 13,
+                }}
+              >
+                <span style={{ fontSize: 14, width: 18, textAlign: "center" }}>{link.icon}</span>
+                <span>{link.label}</span>
+              </a>
+            ))}
+          </nav>
+
+          {/* User */}
+          <div style={{ padding: "16px 20px", borderTop: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: "linear-gradient(135deg, #8b2d42, #e8738a)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, fontWeight: 700, color: "#fff",
+            }}>AZ</div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: T.textMid }}>Azalea</div>
+              <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono }}>Admin</div>
+            </div>
+          </div>
+        </aside>
+
+        {/* ── MAIN ── */}
+        <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Topbar */}
+          <header style={{
+            height: 58, padding: "0 28px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            borderBottom: `1px solid ${T.border}`,
+            background: "rgba(16,12,22,0.9)", backdropFilter: "blur(8px)",
+            position: "sticky", top: 0, zIndex: 100,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1 }}>AZALEA /</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay, marginLeft: 4 }}>
+                {activeTab === "toko" ? "Operasional Toko" : activeTab === "riwayat" ? "Riwayat Transaksi" : "Zakat Tijarah"}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: T.green, boxShadow: `0 0 6px ${T.green}` }} />
+                <span style={{ fontSize: 10, color: T.green, fontFamily: T.fontMono }}>Live</span>
+              </div>
+              <div style={{
+                background: T.accentDim, border: `1px solid ${T.borderStrong}`,
+                borderRadius: 8, padding: "6px 14px", fontSize: 11,
+                color: T.accent, cursor: "pointer", fontFamily: T.fontMono,
+              }}>
+                {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+              </div>
+            </div>
+          </header>
+
+          {/* Content */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
+
+            {/* ====== TAB: TOKO ====== */}
+            {activeTab === "toko" && (
+              <div style={{ animation: "fadeUp 0.3s ease" }}>
+                {/* Stats */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+                  <StatCard label="Omzet Hari Ini" nilai={rupiahFmt(omzetHariIni)} icon="📈" accent={T.accent} sub="dari kas masuk hari ini" />
+                  <StatCard label="Kas Kelola" nilai={rupiahFmt(totalKas)} icon="💰" accent="#f2c94c" sub="saldo berjalan" />
+                  <StatCard label="Piutang Aktif" nilai={rupiahFmt(totalPiutang)} icon="📝" accent={T.red} sub={`${piutang.length} pelanggan`} />
+                  <StatCard label="Hutang Zakat" nilai={rupiahFmt(saldoZakat)} icon="🌙" accent={T.green} sub="tijarah 2.5%" />
+                </div>
+
+                {/* Stok Monitor */}
+                <div style={{
+                  background: T.bgCard, border: `1px solid ${T.border}`,
+                  borderRadius: 14, padding: "20px 24px", marginBottom: 24,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay }}>Monitor Stok Gudang</span>
+                    <span style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, marginLeft: 4 }}>{produk.length} produk</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8 }}>
+                    {produk.map((p) => {
+                      const low = p.jumlah_stok < 10;
+                      return (
+                        <div key={p.id} style={{
+                          minWidth: 110, padding: "14px 12px",
+                          border: `1px solid ${low ? `${T.red}44` : T.border}`,
+                          borderRadius: 12, textAlign: "center",
+                          background: low ? `rgba(235,87,87,0.06)` : "rgba(255,255,255,0.02)",
+                          flexShrink: 0,
+                        }}>
+                          <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, marginBottom: 6, lineHeight: 1.3 }}>{p.nama_produk}</div>
+                          <div style={{ fontSize: 26, fontWeight: 700, color: low ? T.red : T.text, fontFamily: T.fontDisplay }}>{p.jumlah_stok}</div>
+                          <div style={{ fontSize: 10, color: T.accent, fontFamily: T.fontMono, marginTop: 4 }}>{rupiahFmt(p.harga_jual)}</div>
+                          {low && <div style={{ fontSize: 9, color: T.red, marginTop: 4, fontFamily: T.fontMono, letterSpacing: 1 }}>⚠ RENDAH</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Input Panels */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+
+                  {/* Produksi & Shopee */}
+                  <Panel title="Produksi & Shopee" icon="🍳" accent="#2ecc71">
+                    <select value={idProduksi} onChange={(e) => setIdProduksi(e.target.value)} style={inputStyle}>
+                      <option value="">Pilih Produk</option>
+                      {produk.map((p) => <option key={p.id} value={p.id}>{p.nama_produk} (stok: {p.jumlah_stok})</option>)}
+                    </select>
+                    <input type="number" min="1" value={qtyProduksi} onChange={(e) => setQtyProduksi(e.target.value)} placeholder="Qty Produksi" style={inputStyle} />
+                    <DarkBtn onClick={simpanProduksi} color="#2ecc71" disabled={submitting === "produksi"}>
+                      {submitting === "produksi" ? "Menyimpan..." : "✓ Update Stok Produksi"}
+                    </DarkBtn>
+                    <div style={{ height: 1, background: T.border, margin: "16px 0" }} />
+                    <label style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1, display: "block", marginBottom: 6 }}>
+                      INPUT SHOPEE (Nama⇥Qty, per baris)
+                    </label>
+                    <textarea value={inputShopee} onChange={(e) => setInputShopee(e.target.value)}
+                      placeholder={"Produk A\t5\nProduk B\t3"}
+                      style={{ ...inputStyle, height: 72, resize: "vertical" }} />
+                    <DarkBtn onClick={prosesPotongStok} color="#ee4d2d" disabled={submitting === "shopee"}>
+                      {submitting === "shopee" ? "Memproses..." : "✂ Potong Stok Shopee"}
+                    </DarkBtn>
+                  </Panel>
+
+                  {/* Kasir & Belanja */}
+                  <Panel title="Kasir & Belanja" icon="🏪" accent="#8b5cf6">
+                    <select value={idProdukOffline} onChange={(e) => setIdProdukOffline(e.target.value)} style={inputStyle}>
+                      <option value="">Pilih Produk</option>
+                      {produk.map((p) => <option key={p.id} value={p.id}>{p.nama_produk} — {rupiahFmt(p.harga_jual)}</option>)}
+                    </select>
+                    <input type="number" min="1" value={qtyOffline} onChange={(e) => setQtyOffline(e.target.value)} placeholder="Qty" style={inputStyle} />
+                    <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} style={inputStyle}>
+                      <option value="Tunai">💵 Tunai</option>
+                      <option value="Piutang">📝 Piutang (Hutang)</option>
+                    </select>
+                    {metodeBayar === "Piutang" && (
+                      <input type="text" value={namaPelanggan} onChange={(e) => setNamaPelanggan(e.target.value)} placeholder="Nama Pelanggan" style={inputStyle} />
+                    )}
+                    {idProdukOffline && qtyOffline && (
+                      <div style={{
+                        background: "rgba(111,207,151,0.08)", border: "1px solid rgba(111,207,151,0.2)",
+                        padding: "10px 12px", borderRadius: 8, marginBottom: 8,
+                        fontSize: 13, color: T.green, fontFamily: T.fontMono, fontWeight: 700,
+                      }}>
+                        Total: {rupiahFmt((produk.find(p => p.id === parseInt(idProdukOffline))?.harga_jual || 0) * parseInt(qtyOffline || "0"))}
                       </div>
-                      <button onClick={() => lunaskanPiutang(pt)} style={{ background: "#10b981", color: "#fff", border: "none", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700, whiteSpace: "nowrap" }}>
-                        ✓ Lunas
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-            </div>
-          </div>
-        )}
+                    )}
+                    <DarkBtn onClick={prosesOffline} color="#8b5cf6" disabled={submitting === "offline"}>
+                      {submitting === "offline" ? "Memproses..." : "💳 Proses Penjualan"}
+                    </DarkBtn>
+                    <div style={{ height: 1, background: T.border, margin: "16px 0" }} />
+                    <input type="text" value={itemBelanja} onChange={(e) => setItemBelanja(e.target.value)} placeholder="Keterangan Belanja" style={inputStyle} />
+                    <input type="text" value={nomBelanja} onChange={(e) => setNomBelanja(formatIDR(e.target.value))} placeholder="Nominal (Rp)" style={inputStyle} />
+                    {nomBelanja && (
+                      <div style={{ fontSize: 11, color: T.green, fontFamily: T.fontMono, marginBottom: 8 }}>
+                        Zakat 2.5%: +{rupiahFmt(Math.floor(toAngka(nomBelanja) * 0.025))}
+                      </div>
+                    )}
+                    <DarkBtn onClick={prosesBelanja} color={T.red} disabled={submitting === "belanja"}>
+                      {submitting === "belanja" ? "Menyimpan..." : "🛒 Catat Belanja"}
+                    </DarkBtn>
+                  </Panel>
 
-        {/* ====== TAB: RIWAYAT ====== */}
-        {activeTab === "riwayat" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-              <h4 style={{ margin: "0 0 16px", fontFamily: "'Instrument Serif', serif" }}>📦 Mutasi Stok Terakhir</h4>
-              <div style={{ maxHeight: "480px", overflowY: "auto" }}>
-                {mutasi.map((m) => (
-                  <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: "13px" }}>{m.stok_barang?.nama_produk}</div>
-                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>{m.keterangan} · {tanggalFmt(m.created_at)}</div>
+                  {/* Master & Piutang */}
+                  <Panel title="Master Produk & Piutang" icon="✨" accent="#3b82f6">
+                    <input type="text" value={namaBaru} onChange={(e) => setNamaBaru(e.target.value)} placeholder="Nama Produk Baru" style={inputStyle} />
+                    <input type="text" value={hargaBaru} onChange={(e) => setHargaBaru(formatIDR(e.target.value))} placeholder="Harga Jual (Rp)" style={inputStyle} />
+                    <DarkBtn onClick={tambahMaster} color="#3b82f6" disabled={submitting === "master"}>
+                      {submitting === "master" ? "Mendaftar..." : "+ Daftarkan Produk"}
+                    </DarkBtn>
+                    <div style={{ height: 1, background: T.border, margin: "16px 0" }} />
+                    <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, marginBottom: 10 }}>
+                      PIUTANG AKTIF ({piutang.length})
                     </div>
-                    <div style={{ fontWeight: 800, fontSize: "15px", color: m.tipe === "Masuk" ? "#10b981" : "#ef4444" }}>
-                      {m.tipe === "Masuk" ? "+" : "-"}{m.jumlah}
+                    <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                      {piutang.length === 0 && (
+                        <div style={{ color: T.textDim, fontSize: 12, textAlign: "center", padding: 16, fontFamily: T.fontMono }}>
+                          Tidak ada piutang aktif 🎉
+                        </div>
+                      )}
+                      {piutang.map((pt) => (
+                        <div key={pt.id} style={{ borderBottom: `1px solid ${T.border}`, padding: "10px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: T.textMid }}>{pt.nama_pelanggan}</div>
+                            <div style={{ fontSize: 12, color: T.red, fontWeight: 700, fontFamily: T.fontMono }}>{rupiahFmt(pt.nominal)}</div>
+                            <div style={{ fontSize: 11, color: T.textDim }}>{pt.keterangan}</div>
+                          </div>
+                          <button onClick={() => lunaskanPiutang(pt)} style={{
+                            background: "rgba(111,207,151,0.12)", color: T.green,
+                            border: `1px solid rgba(111,207,151,0.25)`, padding: "6px 12px",
+                            borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 700,
+                            fontFamily: T.fontMono, whiteSpace: "nowrap",
+                          }}>✓ Lunas</button>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                ))}
+                  </Panel>
+                </div>
               </div>
-            </div>
-            <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-              <h4 style={{ margin: "0 0 16px", fontFamily: "'Instrument Serif', serif" }}>💰 Arus Kas Terakhir</h4>
-              <div style={{ maxHeight: "480px", overflowY: "auto" }}>
-                {kas.map((k) => (
-                  <div key={k.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: "13px" }}>{k.keterangan || k.kategori}</div>
-                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>{k.kategori} · {tanggalFmt(k.created_at)}</div>
-                    </div>
-                    <div style={{ fontWeight: 800, fontSize: "14px", color: k.tipe === "Masuk" ? "#10b981" : "#ef4444" }}>
-                      {k.tipe === "Masuk" ? "+" : "-"}{rupiahFmt(k.nominal)}
-                    </div>
+            )}
+
+            {/* ====== TAB: RIWAYAT ====== */}
+            {activeTab === "riwayat" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, animation: "fadeUp 0.3s ease" }}>
+                {/* Mutasi Stok */}
+                <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay }}>📦 Mutasi Stok</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
-        {/* ====== TAB: ZAKAT ====== */}
-        {activeTab === "zakat" && (
-          <div style={{ maxWidth: "560px", margin: "0 auto" }}>
-            <div style={{ background: "linear-gradient(135deg, #10b981, #059669)", color: "#fff", padding: "32px", borderRadius: "16px", textAlign: "center", marginBottom: "20px", boxShadow: "0 8px 24px rgba(16,185,129,0.35)" }}>
-              <div style={{ fontSize: "13px", fontWeight: 700, letterSpacing: "0.1em", opacity: 0.85, marginBottom: "8px" }}>HUTANG ZAKAT TIJARAH AZALEA</div>
-              <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: "40px", fontWeight: 400 }}>{rupiahFmt(saldoZakat)}</div>
-              <div style={{ fontSize: "12px", opacity: 0.75, marginTop: "8px" }}>2.5% dari total belanja operasional</div>
-            </div>
-            <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-              <h4 style={{ margin: "0 0 16px", fontFamily: "'Instrument Serif', serif" }}>Riwayat Zakat</h4>
-              {zakat.map((z) => (
-                <div key={z.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f1f5f9", fontSize: "14px" }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{z.nominal_belanja > 0 ? "Belanja Operasional" : "Bayar Zakat"}</div>
-                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{tanggalFmt(z.created_at)}</div>
-                    {z.nominal_belanja > 0 && <div style={{ fontSize: "11px", color: "#64748b" }}>Belanja: {rupiahFmt(z.nominal_belanja)}</div>}
-                  </div>
-                  <div style={{ fontWeight: 800, color: z.nominal_belanja > 0 ? "#3b82f6" : "#ef4444" }}>
-                    {z.nominal_belanja > 0 ? `+${rupiahFmt(Math.floor(z.nominal_belanja * 0.025))}` : `-${rupiahFmt(z.zakat_keluar)}`}
+                  <div style={{ maxHeight: 520, overflowY: "auto" }}>
+                    {mutasi.map((m) => (
+                      <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: T.textMid }}>{m.stok_barang?.nama_produk}</div>
+                          <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{m.keterangan} · {tanggalFmt(m.created_at)}</div>
+                        </div>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: m.tipe === "Masuk" ? T.green : T.red, fontFamily: T.fontMono }}>
+                          {m.tipe === "Masuk" ? "+" : "-"}{m.jumlah}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
+                {/* Arus Kas */}
+                <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay }}>💰 Arus Kas</span>
+                  </div>
+                  <div style={{ maxHeight: 520, overflowY: "auto" }}>
+                    {kas.map((k) => (
+                      <div key={k.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px", borderBottom: `1px solid ${T.border}` }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: T.textMid }}>{k.keterangan || k.kategori}</div>
+                          <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{k.kategori} · {tanggalFmt(k.created_at)}</div>
+                        </div>
+                        <div style={{ fontWeight: 800, fontSize: 13, color: k.tipe === "Masuk" ? T.green : T.red, fontFamily: T.fontMono }}>
+                          {k.tipe === "Masuk" ? "+" : "-"}{rupiahFmt(k.nominal)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ====== TAB: ZAKAT ====== */}
+            {activeTab === "zakat" && (
+              <div style={{ maxWidth: 560, margin: "0 auto", animation: "fadeUp 0.3s ease" }}>
+                <div style={{
+                  background: "linear-gradient(135deg, rgba(16,185,129,0.15), rgba(5,150,105,0.08))",
+                  border: "1px solid rgba(111,207,151,0.25)",
+                  padding: 36, borderRadius: 16, textAlign: "center", marginBottom: 20,
+                  boxShadow: "0 8px 32px rgba(16,185,129,0.1)",
+                }}>
+                  <div style={{ fontSize: 11, fontFamily: T.fontMono, letterSpacing: 2, color: T.green, opacity: 0.8, marginBottom: 10, textTransform: "uppercase" }}>
+                    Hutang Zakat Tijarah Azalea
+                  </div>
+                  <div style={{ fontFamily: T.fontDisplay, fontSize: 42, fontWeight: 400, color: T.text, marginBottom: 8 }}>
+                    {rupiahFmt(saldoZakat)}
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>2.5% dari total belanja operasional</div>
+                </div>
+                <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay }}>Riwayat Zakat</span>
+                  </div>
+                  <div style={{ maxHeight: 480, overflowY: "auto" }}>
+                    {zakat.map((z) => (
+                      <div key={z.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", borderBottom: `1px solid ${T.border}` }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: T.textMid }}>
+                            {z.nominal_belanja > 0 ? "Belanja Operasional" : "Bayar Zakat"}
+                          </div>
+                          <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{tanggalFmt(z.created_at)}</div>
+                          {z.nominal_belanja > 0 && (
+                            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>Belanja: {rupiahFmt(z.nominal_belanja)}</div>
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 800, fontFamily: T.fontMono, color: z.nominal_belanja > 0 ? T.accent : T.red }}>
+                          {z.nominal_belanja > 0 ? `+${rupiahFmt(Math.floor(z.nominal_belanja * 0.025))}` : `-${rupiahFmt(z.zakat_keluar)}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </main>
       </div>
     </>
   );

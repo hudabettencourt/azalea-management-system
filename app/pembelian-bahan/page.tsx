@@ -7,6 +7,7 @@ type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; s
 type PembelianBahan = { id: number; tanggal: string; supplier_nama: string; total_bayar: number; metode_bayar: string; status_bayar: string; total_item: number; created_at: string };
 type HutangBahan = { id: number; supplier_nama: string; nominal: number; status: string; created_at: string };
 type ItemBeli = { bahan_id: string; nama: string; qty: string; harga_beli: string; satuan: string };
+type DetailPembelian = { id: number; bahan_baku_id: number; qty: number; harga_beli: number; bahan_baku: { nama: string; satuan: string } };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
@@ -51,6 +52,11 @@ export default function PembelianBahanPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [activeTab, setActiveTab] = useState<"beli" | "riwayat" | "hutang" | "master">("beli");
 
+  // Expand detail riwayat
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [detailMap, setDetailMap] = useState<Record<number, DetailPembelian[]>>({});
+  const [loadingDetail, setLoadingDetail] = useState<number | null>(null);
+
   const [supplierNama, setSupplierNama] = useState("");
   const [metodeBayar, setMetodeBayar] = useState("Tunai");
   const [catatan, setCatatan] = useState("");
@@ -89,6 +95,19 @@ export default function PembelianBahanPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const toggleDetail = async (id: number) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (detailMap[id]) return; // sudah di-cache
+    setLoadingDetail(id);
+    const { data, error } = await supabase
+      .from("detail_pembelian_bahan")
+      .select("*, bahan_baku(nama, satuan)")
+      .eq("pembelian_bahan_id", id);
+    if (!error && data) setDetailMap(prev => ({ ...prev, [id]: data }));
+    setLoadingDetail(null);
+  };
 
   const addItem = () => setItems([...items, { bahan_id: "", nama: "", qty: "", harga_beli: "", satuan: "" }]);
   const removeItem = (idx: number) => { if (items.length === 1) return; setItems(items.filter((_, i) => i !== idx)); };
@@ -406,22 +425,73 @@ export default function PembelianBahanPage() {
               <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", animation: "fadeUp 0.3s ease" }}>
                 <div style={{ padding: "18px 24px", borderBottom: `1px solid ${T.border}` }}>
                   <h3 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 18, color: T.text }}>Riwayat Pembelian Bahan</h3>
+                  <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 4 }}>▶ Klik transaksi untuk lihat rincian bahan</div>
                 </div>
-                <div>
-                  {riwayat.length === 0 && <div style={{ textAlign: "center", color: T.textDim, padding: 40, fontFamily: T.fontMono, fontSize: 13 }}>Belum ada riwayat pembelian bahan</div>}
-                  {riwayat.map(r => (
-                    <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${T.border}` }}>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: T.textMid }}>{r.supplier_nama}</div>
-                        <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{tanggalFmt(r.created_at)} · {r.total_item} bahan · {r.metode_bayar}</div>
+                {riwayat.length === 0 && <div style={{ textAlign: "center", color: T.textDim, padding: 40, fontFamily: T.fontMono, fontSize: 13 }}>Belum ada riwayat pembelian bahan</div>}
+                {riwayat.map(r => {
+                  const isOpen = expandedId === r.id;
+                  const details = detailMap[r.id];
+                  const isLoadingThis = loadingDetail === r.id;
+                  return (
+                    <div key={r.id}>
+                      {/* Header row */}
+                      <div
+                        onClick={() => toggleDetail(r.id)}
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 24px", borderBottom: `1px solid ${T.border}`, cursor: "pointer", background: isOpen ? "rgba(232,115,138,0.05)" : "transparent", transition: "background 0.15s" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <span style={{ fontSize: 11, color: isOpen ? T.accent : T.textDim, display: "inline-block", transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▶</span>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: T.textMid }}>{r.supplier_nama}</div>
+                            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{tanggalFmt(r.created_at)} · {r.total_item} bahan · {r.metode_bayar}</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: 800, fontSize: 15, color: T.text, fontFamily: T.fontMono }}>{rupiahFmt(r.total_bayar)}</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: r.status_bayar === "Lunas" ? T.green : T.yellow, fontFamily: T.fontMono }}>{r.status_bayar}</div>
+                        </div>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 800, fontSize: 15, color: T.text, fontFamily: T.fontMono }}>{rupiahFmt(r.total_bayar)}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: r.status_bayar === "Lunas" ? T.green : T.yellow, fontFamily: T.fontMono }}>{r.status_bayar}</div>
-                      </div>
+
+                      {/* Detail expand */}
+                      {isOpen && (
+                        <div style={{ background: "rgba(0,0,0,0.25)", borderBottom: `1px solid ${T.border}` }}>
+                          {isLoadingThis && (
+                            <div style={{ padding: "16px 24px", color: T.textDim, fontFamily: T.fontMono, fontSize: 12 }}>⏳ Memuat rincian...</div>
+                          )}
+                          {!isLoadingThis && details && details.length > 0 && (
+                            <>
+                              {/* Kolom header */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 130px 130px", gap: 8, padding: "9px 24px 9px 52px", borderBottom: `1px solid ${T.border}` }}>
+                                {["NAMA BAHAN", "QTY", "HARGA / SATUAN", "SUBTOTAL"].map(h => (
+                                  <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1, fontWeight: 700 }}>{h}</div>
+                                ))}
+                              </div>
+                              {details.map((d, i) => (
+                                <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 70px 130px 130px", gap: 8, padding: "11px 24px 11px 52px", borderBottom: i < details.length - 1 ? `1px solid rgba(232,115,138,0.06)` : "none", alignItems: "center" }}>
+                                  <div>
+                                    <div style={{ fontSize: 13, color: T.textMid, fontWeight: 600 }}>{d.bahan_baku?.nama || "—"}</div>
+                                    <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{d.bahan_baku?.satuan}</div>
+                                  </div>
+                                  <div style={{ fontSize: 13, color: T.text, fontFamily: T.fontMono }}>{d.qty}</div>
+                                  <div style={{ fontSize: 13, color: T.text, fontFamily: T.fontMono }}>{rupiahFmt(d.harga_beli)}</div>
+                                  <div style={{ fontSize: 13, color: T.accent, fontFamily: T.fontMono, fontWeight: 700 }}>{rupiahFmt(d.qty * d.harga_beli)}</div>
+                                </div>
+                              ))}
+                              {/* Total baris */}
+                              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 16, padding: "11px 24px", borderTop: `1px solid ${T.border}` }}>
+                                <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1 }}>TOTAL</span>
+                                <span style={{ fontSize: 17, fontWeight: 800, color: T.text, fontFamily: T.fontDisplay }}>{rupiahFmt(r.total_bayar)}</span>
+                              </div>
+                            </>
+                          )}
+                          {!isLoadingThis && (!details || details.length === 0) && (
+                            <div style={{ padding: "16px 24px", color: T.textDim, fontFamily: T.fontMono, fontSize: 12 }}>Tidak ada data rincian tersimpan</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
 

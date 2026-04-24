@@ -1,103 +1,46 @@
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+"use client";
 
-// ─── Role → halaman yang boleh diakses ───────────────────────────────────────
-const ROLE_ACCESS: Record<string, string[]> = {
-  owner: ["/", "/dashboard", "/pembelian", "/pembelian-bahan", "/produksi", "/penjualan", "/admin"],
-  super_admin: ["/", "/dashboard", "/pembelian", "/pembelian-bahan", "/produksi", "/penjualan", "/admin"],
-  keuangan: ["/", "/dashboard"],
-  purchasing: ["/pembelian", "/pembelian-bahan"],
-  produksi: ["/produksi"],
-  kasir: ["/penjualan"],
-  admin_penjualan: ["/penjualan"],
-}
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
-// Halaman yang tidak perlu login
-const PUBLIC_PATHS = ["/login"]
+export type UserRole = "owner" | "super_admin" | "keuangan" | "produksi" | "purchasing" | "kasir" | "admin_penjualan" | null;
 
-// Cek apakah path diizinkan untuk role tertentu
-function isAllowed(pathname: string, role: string): boolean {
-  // owner & super_admin bisa akses semua
-  if (role === "owner" || role === "super_admin") return true
+export type UserProfile = {
+  id: string;
+  email: string;
+  nama: string;
+  role: UserRole;
+};
 
-  const allowed = ROLE_ACCESS[role] || []
-  return allowed.some(p => pathname === p || pathname.startsWith(p + "/"))
-}
+export function useRole() {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { setLoading(false); return; }
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, email, nama, role")
+          .eq("id", session.user.id)
+          .single();
+        setProfile(data || null);
+      } catch {
+        setProfile(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
 
-  // Skip static files
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon") ||
-    pathname.includes(".")
-  ) {
-    return NextResponse.next({ request })
-  }
+  const isOwner = profile?.role === "owner" || profile?.role === "super_admin";
+  const isKeuangan = profile?.role === "keuangan" || isOwner;
+  const isPurchasing = profile?.role === "purchasing" || isOwner;
+  const isProduksi = profile?.role === "produksi" || isOwner;
+  const isKasir = profile?.role === "kasir" || profile?.role === "admin_penjualan" || isOwner;
 
-  let response = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value)
-            response.cookies.set(name, value, options)
-          })
-        },
-      },
-    }
-  )
-
-  const { data: { session } } = await supabase.auth.getSession()
-
-  // Belum login → redirect ke /login
-  if (!session) {
-    if (PUBLIC_PATHS.includes(pathname)) return response
-    return NextResponse.redirect(new URL("/login", request.url))
-  }
-
-  // Sudah login tapi buka /login → redirect ke /
-  if (session && pathname === "/login") {
-    return NextResponse.redirect(new URL("/", request.url))
-  }
-
-  // Ambil role dari tabel profiles
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", session.user.id)
-    .single()
-
-  const role = profile?.role || ""
-
-  // Kalau role tidak dikenali → redirect ke /login
-  if (!role) {
-    return NextResponse.redirect(new URL("/login", request.url))
-  }
-
-  // Cek akses halaman
-  if (!isAllowed(pathname, role)) {
-    // Redirect ke halaman default per role
-    const defaultPage: Record<string, string> = {
-      keuangan: "/",
-      purchasing: "/pembelian",
-      produksi: "/produksi",
-      kasir: "/penjualan",
-      admin_penjualan: "/penjualan",
-    }
-    const redirect = defaultPage[role] || "/login"
-    return NextResponse.redirect(new URL(redirect, request.url))
-  }
-
-  return response
-}
-
-export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  return { profile, loading, isOwner, isKeuangan, isPurchasing, isProduksi, isKasir };
 }

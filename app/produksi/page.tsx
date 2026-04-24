@@ -375,7 +375,7 @@ export default function ProduksiPage() {
             )}
 
             <button onClick={simpanProduksi} disabled={submitting || stokWarnings.length > 0} style={{
-              width: "100%", padding: "13px", border: "none", borderRadius: "10px",
+              width: "100%", padding: "13px", borderRadius: "10px",
               background: (submitting || stokWarnings.length > 0) ? "transparent" : C.accent + "25",
               border: `1px solid ${(submitting || stokWarnings.length > 0) ? C.dim : C.accent + "60"}`,
               color: (submitting || stokWarnings.length > 0) ? C.dim : C.accent,

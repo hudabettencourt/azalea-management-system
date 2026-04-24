@@ -466,7 +466,7 @@ export default function PembelianBahanPage() {
             )}
 
             <button onClick={simpanPembelian} disabled={submitting} style={{
-              width: "100%", padding: "13px", border: "none", borderRadius: "10px",
+              width: "100%", padding: "13px", borderRadius: "10px",
               background: submitting ? C.dim : C.accent + "25",
               border: `1px solid ${submitting ? C.dim : C.accent + "60"}`,
               color: submitting ? C.dim : C.accent,

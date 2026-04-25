@@ -11,6 +11,7 @@ type PiutangShopee = { toko_id: number; toko_nama: string; total_piutang: number
 type ReturShopee = { id: number; toko_id: number; produk_id: number; qty: number; nominal: number; tipe: string; stok_kembali: boolean; created_at: string; nama_produk?: string; nama_toko?: string };
 type PencairanShopee = { id: number; toko_id: number; nominal_cair: number; nominal_piutang: number; selisih: number; created_at: string; nama_toko?: string };
 type Piutang = { id: number; nama_pelanggan: string; nominal: number; keterangan: string; status: string };
+type KeranjangItem = { produk_id: number; nama_produk: string; harga_jual: number; qty: number; subtotal: number };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
@@ -79,11 +80,42 @@ export default function PenjualanPage() {
   const [cairTokoId, setCairTokoId] = useState("");
   const [cairNominal, setCairNominal] = useState("");
 
-  // Form Offline
+  // Form Offline — Keranjang
+  const [keranjang, setKeranjang] = useState<KeranjangItem[]>([]);
   const [offlineProdukId, setOfflineProdukId] = useState("");
   const [offlineQty, setOfflineQty] = useState("");
   const [offlineMetode, setOfflineMetode] = useState("Tunai");
   const [offlineNamaPelanggan, setOfflineNamaPelanggan] = useState("");
+
+  const totalKeranjang = keranjang.reduce((a, k) => a + k.subtotal, 0);
+
+  const tambahKeranjang = () => {
+    if (!offlineProdukId || !offlineQty) return showToast("Pilih produk & isi qty!", "error");
+    const p = produk.find(x => x.id === parseInt(offlineProdukId));
+    if (!p) return showToast("Produk tidak ditemukan", "error");
+    const qty = parseInt(offlineQty);
+    if (qty <= 0) return showToast("Qty harus lebih dari 0", "error");
+
+    // Cek stok termasuk yang sudah di keranjang
+    const qtyDiKeranjang = keranjang.find(k => k.produk_id === p.id)?.qty || 0;
+    if (p.jumlah_stok < qtyDiKeranjang + qty) {
+      return showToast(`Stok tidak cukup! Tersisa ${p.jumlah_stok - qtyDiKeranjang}`, "error");
+    }
+
+    setKeranjang(prev => {
+      const existing = prev.find(k => k.produk_id === p.id);
+      if (existing) {
+        return prev.map(k => k.produk_id === p.id
+          ? { ...k, qty: k.qty + qty, subtotal: (k.qty + qty) * k.harga_jual }
+          : k
+        );
+      }
+      return [...prev, { produk_id: p.id, nama_produk: p.nama_produk, harga_jual: p.harga_jual, qty, subtotal: p.harga_jual * qty }];
+    });
+    setOfflineProdukId(""); setOfflineQty("");
+  };
+
+  const hapusKeranjang = (produk_id: number) => setKeranjang(prev => prev.filter(k => k.produk_id !== produk_id));
 
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
@@ -277,30 +309,30 @@ export default function PenjualanPage() {
     setSubmitting(null);
   };
 
-  // ── Action: Penjualan Offline ──
+  // ── Action: Penjualan Offline (Keranjang) ──
   const prosesOffline = async () => {
-    if (!offlineProdukId || !offlineQty) return showToast("Pilih produk & isi qty!", "error");
-    const p = produk.find(x => x.id === parseInt(offlineProdukId));
-    if (!p) return showToast("Produk tidak ditemukan", "error");
-    const qty = parseInt(offlineQty);
-    if (qty <= 0) return showToast("Qty harus lebih dari 0", "error");
-    if (p.jumlah_stok < qty) return showToast(`Stok tidak cukup! Tersisa ${p.jumlah_stok}`, "error");
+    if (keranjang.length === 0) return showToast("Keranjang kosong!", "error");
     if (offlineMetode === "Piutang" && !offlineNamaPelanggan.trim()) return showToast("Isi nama pelanggan!", "error");
 
-    const total = p.harga_jual * qty;
     setSubmitting("offline");
 
-    await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - qty }).eq("id", p.id);
-    await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Keluar", jumlah: qty, keterangan: "Offline" }]);
-
-    if (offlineMetode === "Tunai") {
-      await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: total, keterangan: `Jual ${p.nama_produk} ×${qty}` }]);
-    } else {
-      await supabase.from("piutang").insert([{ nama_pelanggan: offlineNamaPelanggan.trim(), nominal: total, keterangan: `Hutang ${p.nama_produk} ×${qty}`, status: "Belum Lunas" }]);
+    for (const item of keranjang) {
+      const p = produk.find(x => x.id === item.produk_id);
+      if (!p) continue;
+      await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - item.qty }).eq("id", p.id);
+      await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Keluar", jumlah: item.qty, keterangan: "Offline" }]);
     }
 
-    showToast(`Jual ${p.nama_produk} ×${qty} = ${rupiahFmt(total)} via ${offlineMetode}`);
-    setOfflineProdukId(""); setOfflineQty(""); setOfflineNamaPelanggan("");
+    const keterangan = keranjang.map(k => `${k.nama_produk} ×${k.qty}`).join(", ");
+
+    if (offlineMetode === "Tunai") {
+      await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: totalKeranjang, keterangan }]);
+    } else {
+      await supabase.from("piutang").insert([{ nama_pelanggan: offlineNamaPelanggan.trim(), nominal: totalKeranjang, keterangan, status: "Belum Lunas" }]);
+    }
+
+    showToast(`${keranjang.length} item terjual = ${rupiahFmt(totalKeranjang)} via ${offlineMetode}`);
+    setKeranjang([]); setOfflineNamaPelanggan(""); setOfflineProdukId(""); setOfflineQty("");
     fetchData();
     setSubmitting(null);
   };
@@ -644,15 +676,50 @@ export default function PenjualanPage() {
         {/* ══ TAB OFFLINE ══ */}
         {activeTab === "offline" && (
           <div style={{ animation: "fadeUp 0.25s ease", display: "grid", gridTemplateColumns: "420px 1fr", gap: 20 }}>
+
+            {/* Form Tambah Item */}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
               <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
                 Penjualan Offline
               </h3>
+
+              {/* Tambah item ke keranjang */}
+              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tambah Item</label>
               <select value={offlineProdukId} onChange={e => setOfflineProdukId(e.target.value)} style={inputStyle}>
                 <option value="">— Pilih Produk —</option>
                 {produk.map(p => <option key={p.id} value={p.id}>{p.nama_produk} — {rupiahFmt(p.harga_jual)} (stok: {p.jumlah_stok})</option>)}
               </select>
-              <input type="number" min="1" value={offlineQty} onChange={e => setOfflineQty(e.target.value)} placeholder="Qty" style={inputStyle} />
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input type="number" min="1" value={offlineQty} onChange={e => setOfflineQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                <button onClick={tambahKeranjang} style={{ padding: "10px 18px", borderRadius: 8, background: C.accentDim, color: C.accent, fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 13, whiteSpace: "nowrap", border: `1px solid ${C.accent}40` }}>
+                  + Tambah
+                </button>
+              </div>
+
+              {/* Keranjang */}
+              {keranjang.length > 0 && (
+                <div style={{ background: "#120e1e", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Keranjang ({keranjang.length} item)</div>
+                  {keranjang.map(k => (
+                    <div key={k.produk_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.dim}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, color: C.textMid, fontWeight: 600 }}>{k.nama_produk}</div>
+                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.harga_jual)} × {k.qty}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
+                        <button onClick={() => hapusKeranjang(k.produk_id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, opacity: 0.7, padding: "2px 4px" }}>×</button>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Total</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(totalKeranjang)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Metode bayar */}
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 {["Tunai", "Piutang"].map(m => (
                   <button key={m} onClick={() => setOfflineMetode(m)} style={{ flex: 1, padding: "9px", border: `1px solid ${offlineMetode === m ? C.accent : C.border}`, borderRadius: 8, background: offlineMetode === m ? C.accentDim : "transparent", color: offlineMetode === m ? C.accent : C.muted, fontFamily: C.fontSans, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
@@ -663,13 +730,9 @@ export default function PenjualanPage() {
               {offlineMetode === "Piutang" && (
                 <input type="text" value={offlineNamaPelanggan} onChange={e => setOfflineNamaPelanggan(e.target.value)} placeholder="Nama Pelanggan" style={inputStyle} />
               )}
-              {offlineProdukId && offlineQty && (
-                <div style={{ background: C.green + "15", border: `1px solid ${C.green}30`, borderRadius: 8, padding: "10px 12px", marginBottom: 10, fontSize: 13, fontWeight: 700, color: C.green, fontFamily: C.fontMono }}>
-                  Total: {rupiahFmt((produk.find(p => p.id === parseInt(offlineProdukId))?.harga_jual || 0) * parseInt(offlineQty || "0"))}
-                </div>
-              )}
-              <button onClick={prosesOffline} disabled={submitting === "offline"} style={{ width: "100%", padding: "12px", border: "none", borderRadius: 8, background: submitting === "offline" ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.accent})`, color: "#fff", fontWeight: 700, cursor: submitting === "offline" ? "not-allowed" : "pointer", fontFamily: C.fontMono, fontSize: 13, boxShadow: `0 4px 16px ${C.accent}33` }}>
-                {submitting === "offline" ? "Memproses..." : "💳 Proses Penjualan"}
+
+              <button onClick={prosesOffline} disabled={submitting === "offline" || keranjang.length === 0} style={{ width: "100%", padding: "12px", border: "none", borderRadius: 8, background: keranjang.length === 0 ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.accent})`, color: keranjang.length === 0 ? C.muted : "#fff", fontWeight: 700, cursor: keranjang.length === 0 ? "not-allowed" : "pointer", fontFamily: C.fontMono, fontSize: 13, boxShadow: keranjang.length === 0 ? "none" : `0 4px 16px ${C.accent}33` }}>
+                {submitting === "offline" ? "Memproses..." : `💳 Proses ${keranjang.length > 0 ? rupiahFmt(totalKeranjang) : "Penjualan"}`}
               </button>
             </div>
 

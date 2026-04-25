@@ -107,8 +107,7 @@ export default function DashboardPage() {
       textDecoration: "none",
       fontFamily: "'DM Sans', sans-serif",
       whiteSpace: "nowrap",
-    }}
-  >
+    }}>
     🏠 Home
   </a>
 </div>

@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 
 type Toko = { id: number; nama: string };
-type StokBarang = { id: number; nama: string; stok: number; sku: string | null };
+type StokBarang = { id: number; nama_produk: string; jumlah_stok: number; sku: string | null };
 
 type ParsedOrder = {
   no_pesanan: string;
@@ -66,7 +66,7 @@ export function ShopeeUploadTab() {
     setInitialized(true);
     const [resToko, resStok] = await Promise.all([
       supabase.from("toko_shopee").select("id, nama").eq("aktif", true).order("nama"),
-      supabase.from("stok_barang").select("id, nama, stok, sku").order("nama"),
+      supabase.from("stok_barang").select("id, nama_produk, jumlah_stok, sku").order("nama_produk"),
     ]);
     if (resToko.data) setTokoList(resToko.data);
     if (resStok.data) setStokBarang(resStok.data);
@@ -137,7 +137,7 @@ export function ShopeeUploadTab() {
           tanggal_pesanan: String(r["Waktu Pesanan Dibuat"] || "").trim(),
           isDuplicate: existingSet.has(String(r["No. Pesanan"]).trim()),
           skuDitemukan: !!produk,
-          produkNama: produk?.nama,
+          produkNama: produk?.nama_produk,
           produkId: produk?.id,
         };
       });
@@ -168,8 +168,8 @@ export function ShopeeUploadTab() {
 
       for (const [produkId, totalKeluar] of qtyPerProduk) {
         const produk = stokBarang.find(s => s.id === produkId);
-        if (produk && produk.stok < totalKeluar)
-          throw new Error(`Stok ${produk.nama} tidak cukup! Tersedia: ${produk.stok}, butuh: ${totalKeluar}`);
+        if (produk && produk.jumlah_stok < totalKeluar)
+          throw new Error(`Stok ${produk.nama_produk} tidak cukup! Tersedia: ${produk.jumlah_stok}, butuh: ${totalKeluar}`);
       }
 
       const { data: penjualanData, error: errHeader } = await supabase
@@ -197,7 +197,7 @@ export function ShopeeUploadTab() {
       for (const [produkId, totalKeluar] of qtyPerProduk) {
         const produk = stokBarang.find(s => s.id === produkId);
         if (!produk) continue;
-        await supabase.from("stok_barang").update({ stok: produk.stok - totalKeluar }).eq("id", produkId);
+        await supabase.from("stok_barang").update({ jumlah_stok: produk.jumlah_stok - totalKeluar }).eq("id", produkId);
         await supabase.from("mutasi_stok").insert([{
           stok_barang_id: produkId,
           tipe: "Keluar",

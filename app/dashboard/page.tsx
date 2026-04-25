@@ -77,40 +77,38 @@ export default function DashboardPage() {
         padding: "32px 28px",
         color: "#e2d9f3",
       }}>
-        {/* Header */}
-<div style={{ marginBottom: "32px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-  <div>
-    <h1 style={{
-      margin: 0, fontFamily: "'DM Serif Display', serif",
-      fontSize: "28px", color: "#f0eaff",
-      fontWeight: 400,
-    }}>
-      Dashboard Azalea
-    </h1>
-    <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#7c6d8a", fontFamily: "'DM Mono', monospace" }}>
-      {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
-    </p>
-  </div>
-  
-    href="/"
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-      padding: "8px 16px",
-      background: "#a78bfa15",
-      border: "1px solid #a78bfa40",
-      borderRadius: "8px",
-      color: "#a78bfa",
-      fontWeight: 600,
-      fontSize: "13px",
-      textDecoration: "none",
-      fontFamily: "'DM Sans', sans-serif",
-      whiteSpace: "nowrap",
-    }}>
-    🏠 Home
-  </a>
-</div>
+ {/* Header */}
+        <div style={{ marginBottom: "32px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <h1 style={{
+              margin: 0, fontFamily: "'DM Serif Display', serif",
+              fontSize: "28px", color: "#f0eaff",
+              fontWeight: 400,
+            }}>
+              Dashboard Azalea
+            </h1>
+            <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#7c6d8a", fontFamily: "'DM Mono', monospace" }}>
+              {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+            </p>
+          </div>
+          <a href="/" style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "8px 16px",
+            background: "#a78bfa15",
+            border: "1px solid #a78bfa40",
+            borderRadius: "8px",
+            color: "#a78bfa",
+            fontWeight: 600,
+            fontSize: "13px",
+            textDecoration: "none",
+            fontFamily: "'DM Sans', sans-serif",
+            whiteSpace: "nowrap",
+          }}>
+            🏠 Home
+          </a>
+        </div>
 
         {loading ? (
           <div style={{ textAlign: "center", padding: "80px 0", color: "#7c6d8a" }}>

@@ -12,12 +12,13 @@ type MenuItem = {
 };
 
 const MENU: MenuItem[] = [
-  { label: "Home",                href: "/",                icon: "🏠" },  // ← tambah ini
-  { label: "Dashboard",           href: "/dashboard",       icon: "◈" },
-  { label: "Pembelian Reseller",  href: "/pembelian",       icon: "🛍" },
-  { label: "Pembelian Bahan",     href: "/pembelian-bahan", icon: "🧪" },
-  { label: "Produksi",            href: "/produksi",        icon: "⚙️" },
-  { label: "Admin",               href: "/admin",           icon: "🔐", roles: ["admin"] },
+  { label: "Home",               href: "/",                icon: "🏠" },
+  { label: "Dashboard",          href: "/dashboard",       icon: "◈" },
+  { label: "Pembelian Reseller", href: "/pembelian",       icon: "🛍" },
+  { label: "Pembelian Bahan",    href: "/pembelian-bahan", icon: "🧪" },
+  { label: "Produksi",           href: "/produksi",        icon: "⚙️" },
+  { label: "Penjualan",          href: "/penjualan",       icon: "🏪" }, // ← tambah ini
+  { label: "Admin",              href: "/admin",           icon: "🔐", roles: ["admin"] },
 ];
 
 interface SidebarProps {

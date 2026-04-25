@@ -12,6 +12,7 @@ type MenuItem = {
 };
 
 const MENU: MenuItem[] = [
+  { label: "Home",                href: "/",                icon: "🏠" },  // ← tambah ini
   { label: "Dashboard",           href: "/dashboard",       icon: "◈" },
   { label: "Pembelian Reseller",  href: "/pembelian",       icon: "🛍" },
   { label: "Pembelian Bahan",     href: "/pembelian-bahan", icon: "🧪" },
@@ -62,7 +63,10 @@ export default function Sidebar({ children }: SidebarProps) {
   const sidebarW = collapsed ? "60px" : "220px";
 
   const NavLink = ({ item }: { item: MenuItem }) => {
-    const active = pathname === item.href || pathname?.startsWith(item.href + "/");
+  const active =
+    item.href === "/"
+      ? pathname === "/"
+      : pathname === item.href || pathname?.startsWith(item.href + "/");
     return (
       <a
         href={item.href}

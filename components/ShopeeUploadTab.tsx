@@ -1,19 +1,11 @@
 "use client";
 
-/**
- * TAB: Input Orderan Shopee (Upload File)
- *
- * SETUP REQUIRED — jalankan SQL ini di Supabase sekali saja:
- *   (lihat bagian bawah komponen untuk SQL lengkap)
- */
-
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 
 type Toko = { id: number; nama: string };
 type StokBarang = { id: number; nama: string; stok: number; sku: string | null };
-type Toast = { msg: string; type: "success" | "error" | "info" };
 
 type ParsedOrder = {
   no_pesanan: string;
@@ -30,45 +22,63 @@ type ParsedOrder = {
   produkId?: number;
 };
 
+const C = {
+  bg: "#100c16",
+  card: "#1a1425",
+  border: "#2a1f3d",
+  text: "#e2d9f3",
+  textMid: "#c0aed4",
+  muted: "#7c6d8a",
+  dim: "#3d3050",
+  accent: "#a78bfa",
+  accentDim: "#a78bfa20",
+  green: "#34d399",
+  red: "#f87171",
+  yellow: "#fbbf24",
+  fontDisplay: "'DM Serif Display', serif",
+  fontMono: "'DM Mono', monospace",
+  fontSans: "'DM Sans', sans-serif",
+};
+
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 const tanggalFmt = (s: string) => {
-  try {
-    return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
-  } catch {
-    return s;
-  }
+  try { return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return s; }
 };
 
 export function ShopeeUploadTab() {
   const [tokoList, setTokoList] = useState<Toko[]>([]);
   const [stokBarang, setStokBarang] = useState<StokBarang[]>([]);
-  const [tokoId, setTokoId] = useState<string>("");
-  const [toast, setToast] = useState<Toast | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [tokoId, setTokoId] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [toastMsg, setToastMsg] = useState<{ msg: string; ok: boolean } | null>(null);
 
   const [fileName, setFileName] = useState("");
   const [parsedOrders, setParsedOrders] = useState<ParsedOrder[]>([]);
   const [skippedNoResi, setSkippedNoResi] = useState(0);
   const [step, setStep] = useState<"upload" | "preview" | "done">("upload");
+  const [initialized, setInitialized] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const showToast = (msg: string, type: Toast["type"] = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 4000);
-  };
-
-  const fetchInit = useCallback(async () => {
+  // Lazy-load data hanya saat komponen pertama kali dirender
+  const init = useCallback(async () => {
+    if (initialized) return;
+    setInitialized(true);
     const [resToko, resStok] = await Promise.all([
       supabase.from("toko_shopee").select("id, nama").eq("aktif", true).order("nama"),
       supabase.from("stok_barang").select("id, nama, stok, sku").order("nama"),
     ]);
     if (resToko.data) setTokoList(resToko.data);
     if (resStok.data) setStokBarang(resStok.data);
-    setLoading(false);
-  }, []);
+  }, [initialized]);
 
-  useEffect(() => { fetchInit(); }, [fetchInit]);
+  // Panggil init saat render pertama
+  if (!initialized) init();
+
+  const toast = (msg: string, ok = true) => {
+    setToastMsg({ msg, ok });
+    setTimeout(() => setToastMsg(null), 4000);
+  };
 
   const reset = () => {
     setParsedOrders([]);
@@ -91,20 +101,17 @@ export function ShopeeUploadTab() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-      if (rows.length === 0) return showToast("File kosong atau format tidak dikenal", "error");
+      if (rows.length === 0) return toast("File kosong atau format tidak dikenal", false);
 
-      // Filter hanya yang punya No. Resi (sudah diproses/dikirim)
       const withResi = rows.filter(r => {
         const resi = String(r["No. Resi"] || "").trim();
         return resi !== "" && resi !== "-";
       });
       setSkippedNoResi(rows.length - withResi.length);
 
-      if (withResi.length === 0) {
-        return showToast("Tidak ada pesanan dengan No. Resi di file ini", "error");
-      }
+      if (withResi.length === 0) return toast("Tidak ada pesanan dengan No. Resi di file ini", false);
 
-      // Cek duplikat — No. Pesanan yang sudah pernah diproses di DB
+      // Cek duplikat
       const noPesananList = withResi.map(r => String(r["No. Pesanan"]).trim());
       const { data: existing } = await supabase
         .from("detail_penjualan_shopee")
@@ -112,11 +119,9 @@ export function ShopeeUploadTab() {
         .in("no_pesanan", noPesananList);
       const existingSet = new Set((existing || []).map((x: any) => x.no_pesanan));
 
-      // Map SKU → produk dari stok_barang
+      // Map SKU → produk
       const skuMap = new Map<string, StokBarang>();
-      stokBarang.forEach(s => {
-        if (s.sku) skuMap.set(s.sku.trim().toUpperCase(), s);
-      });
+      stokBarang.forEach(s => { if (s.sku) skuMap.set(s.sku.trim().toUpperCase(), s); });
 
       const parsed: ParsedOrder[] = withResi.map(r => {
         const sku = String(r["SKU Induk"] || r["Nomor Referensi SKU"] || "").trim().toUpperCase();
@@ -140,7 +145,7 @@ export function ShopeeUploadTab() {
       setParsedOrders(parsed);
       setStep("preview");
     } catch (err: any) {
-      showToast("Gagal baca file: " + (err.message || "Format tidak dikenal"), "error");
+      toast("Gagal baca file: " + (err.message || "Format tidak dikenal"), false);
     }
   };
 
@@ -151,42 +156,30 @@ export function ShopeeUploadTab() {
   const totalNominal = validOrders.reduce((a, o) => a + o.total_pembayaran, 0);
 
   const submitPenjualan = async () => {
-    if (!tokoId) return showToast("Pilih toko dulu!", "error");
-    if (validOrders.length === 0) return showToast("Tidak ada pesanan valid untuk diproses", "error");
+    if (!tokoId) return toast("Pilih toko dulu!", false);
+    if (validOrders.length === 0) return toast("Tidak ada pesanan valid untuk diproses", false);
 
     setSubmitting(true);
     try {
-      // Hitung total qty keluar per produk
       const qtyPerProduk = new Map<number, number>();
       validOrders.forEach(o => {
         if (o.produkId) qtyPerProduk.set(o.produkId, (qtyPerProduk.get(o.produkId) || 0) + o.qty);
       });
 
-      // Validasi stok cukup sebelum proses
       for (const [produkId, totalKeluar] of qtyPerProduk) {
         const produk = stokBarang.find(s => s.id === produkId);
-        if (produk && produk.stok < totalKeluar) {
-          throw new Error(`Stok ${produk.nama} tidak cukup! Tersedia: ${produk.stok}, dibutuhkan: ${totalKeluar}`);
-        }
+        if (produk && produk.stok < totalKeluar)
+          throw new Error(`Stok ${produk.nama} tidak cukup! Tersedia: ${produk.stok}, butuh: ${totalKeluar}`);
       }
 
-      // 1. Simpan header penjualan_shopee
       const { data: penjualanData, error: errHeader } = await supabase
         .from("penjualan_shopee")
-        .insert([{
-          toko_id: parseInt(tokoId),
-          total_item: validOrders.length,
-          total_nominal: totalNominal,
-          tanggal_upload: new Date().toISOString().split("T")[0],
-        }])
-        .select()
-        .single();
+        .insert([{ toko_id: parseInt(tokoId), total_item: validOrders.length, total_nominal: totalNominal, tanggal_upload: new Date().toISOString().split("T")[0] }])
+        .select().single();
       if (errHeader) throw new Error("Gagal simpan header: " + errHeader.message);
 
-      // 2. Simpan detail per pesanan (bulk insert)
-      const { error: errDetail } = await supabase
-        .from("detail_penjualan_shopee")
-        .insert(validOrders.map(o => ({
+      const { error: errDetail } = await supabase.from("detail_penjualan_shopee").insert(
+        validOrders.map(o => ({
           penjualan_shopee_id: penjualanData.id,
           stok_barang_id: o.produkId,
           no_pesanan: o.no_pesanan,
@@ -196,18 +189,15 @@ export function ShopeeUploadTab() {
           harga_satuan: o.harga_satuan,
           total_pembayaran: o.total_pembayaran,
           tanggal_pesanan: o.tanggal_pesanan,
-        })));
+        }))
+      );
       if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
 
-      // 3. Potong stok + catat mutasi per produk
       const tokoNama = tokoList.find(t => t.id === parseInt(tokoId))?.nama || "";
       for (const [produkId, totalKeluar] of qtyPerProduk) {
         const produk = stokBarang.find(s => s.id === produkId);
         if (!produk) continue;
-        await supabase
-          .from("stok_barang")
-          .update({ stok: produk.stok - totalKeluar })
-          .eq("id", produkId);
+        await supabase.from("stok_barang").update({ stok: produk.stok - totalKeluar }).eq("id", produkId);
         await supabase.from("mutasi_stok").insert([{
           stok_barang_id: produkId,
           tipe: "Keluar",
@@ -216,186 +206,165 @@ export function ShopeeUploadTab() {
         }]);
       }
 
-      showToast(`✓ ${validOrders.length} pesanan berhasil diproses! Total ${rupiahFmt(totalNominal)}`);
+      toast(`✓ ${validOrders.length} pesanan berhasil! Total ${rupiahFmt(totalNominal)}`);
       setStep("done");
-      fetchInit();
     } catch (err: any) {
-      showToast(err.message || "Gagal simpan", "error");
+      toast(err.message || "Gagal simpan", false);
     } finally {
       setSubmitting(false);
     }
   };
 
   const inp: React.CSSProperties = {
-    width: "100%", padding: "9px 12px", border: "1.5px solid #e2e8f0",
-    borderRadius: "8px", fontFamily: "'Instrument Sans', sans-serif",
-    fontSize: "13px", boxSizing: "border-box", outline: "none", background: "#fff",
+    width: "100%", padding: "10px 14px",
+    background: "rgba(255,255,255,0.04)", border: `1.5px solid ${C.border}`,
+    borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13,
+    boxSizing: "border-box", outline: "none",
   };
 
-  if (loading) return (
-    <div style={{ textAlign: "center", padding: "48px", color: "#94a3b8", fontFamily: "'Instrument Sans', sans-serif" }}>
-      Memuat data...
-    </div>
-  );
-
   return (
-    <div style={{ fontFamily: "'Instrument Sans', sans-serif" }}>
+    <div style={{ fontFamily: C.fontSans, color: C.text }}>
 
-      {/* Toast notifikasi */}
-      {toast && (
+      {/* Toast */}
+      {toastMsg && (
         <div style={{
-          position: "fixed", top: "24px", right: "24px", zIndex: 9999,
-          background: toast.type === "success" ? "#10b981" : toast.type === "error" ? "#ef4444" : "#3b82f6",
-          color: "#fff", padding: "14px 20px", borderRadius: "12px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.2)", fontWeight: 600, fontSize: "14px",
-        }}>{toast.msg}</div>
+          position: "fixed", top: 24, right: 24, zIndex: 9999,
+          background: "#1a1020", border: `1px solid ${toastMsg.ok ? C.green : C.red}44`,
+          color: toastMsg.ok ? C.green : C.red,
+          padding: "14px 20px", borderRadius: 12,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          fontFamily: C.fontMono, fontWeight: 600, fontSize: 13, maxWidth: 380,
+        }}>{toastMsg.msg}</div>
       )}
 
-      {/* ── STEP 1: Pilih Toko + Upload File ────────────────────────────────── */}
-      <div style={{ background: "#fff", padding: "24px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: "16px" }}>
-        <h3 style={{ margin: "0 0 16px", fontFamily: "'Instrument Serif', serif", fontSize: "18px" }}>
+      {/* ── STEP 1: Pilih Toko + Upload ── */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, marginBottom: 16 }}>
+        <h3 style={{ margin: "0 0 14px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>
           Upload File Orderan Shopee
         </h3>
 
-        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "12px 16px", marginBottom: "20px", fontSize: "12px", color: "#1d4ed8", lineHeight: 1.7 }}>
-          💡 <strong>Cara pakai:</strong> Download file <em>To Ship</em> dari Seller Center per toko →
-          upload keesokan harinya → sistem otomatis ambil yang sudah ada No. Resi dan skip duplikat
+        <div style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: C.textMid, lineHeight: 1.7 }}>
+          💡 Download file <em>To Ship</em> dari Seller Center per toko → upload keesokan harinya → sistem ambil yang sudah ada No. Resi, skip duplikat otomatis
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div>
-            <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", display: "block", marginBottom: "6px" }}>
-              TOKO SHOPEE
-            </label>
+            <label style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>TOKO SHOPEE</label>
             <select value={tokoId} onChange={e => { setTokoId(e.target.value); reset(); }} style={inp}>
               <option value="">— Pilih Toko —</option>
               {tokoList.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", display: "block", marginBottom: "6px" }}>
-              FILE XLSX SHOPEE
-            </label>
+            <label style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>FILE XLSX SHOPEE</label>
             <input
               ref={fileRef}
               type="file"
               accept=".xlsx,.xls"
               disabled={!tokoId}
               onChange={handleFileChange}
-              style={{ ...inp, cursor: tokoId ? "pointer" : "not-allowed", background: tokoId ? "#fff" : "#f8fafc", color: "#374151" }}
+              style={{ ...inp, cursor: tokoId ? "pointer" : "not-allowed", opacity: tokoId ? 1 : 0.5 }}
             />
             {!tokoId && (
-              <div style={{ fontSize: "11px", color: "#f59e0b", marginTop: "4px", fontWeight: 600 }}>⚠ Pilih toko dulu</div>
+              <div style={{ fontSize: 11, color: C.yellow, marginTop: 4, fontWeight: 600, fontFamily: C.fontMono }}>⚠ Pilih toko dulu</div>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── STEP 2: Preview Tabel ────────────────────────────────────────────── */}
+      {/* ── STEP 2: Preview ── */}
       {step === "preview" && parsedOrders.length > 0 && (
-        <div style={{ background: "#fff", padding: "24px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: "16px" }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, marginBottom: 16 }}>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
             <div>
-              <h3 style={{ margin: "0 0 4px", fontFamily: "'Instrument Serif', serif", fontSize: "18px" }}>Preview Pesanan</h3>
-              <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                {fileName} · Toko: <strong style={{ color: "#1e293b" }}>{tokoList.find(t => t.id === parseInt(tokoId))?.nama}</strong>
+              <h3 style={{ margin: "0 0 4px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Preview Pesanan</h3>
+              <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
+                {fileName} · Toko: <strong style={{ color: C.accent }}>{tokoList.find(t => t.id === parseInt(tokoId))?.nama}</strong>
               </div>
             </div>
-            <button onClick={reset} style={{ background: "#f1f5f9", border: "none", color: "#64748b", padding: "6px 14px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>
+            <button onClick={reset} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.muted, padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: C.fontSans }}>
               ✕ Ganti File
             </button>
           </div>
 
-          {/* Status badges */}
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "20px" }}>
-            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "8px 14px", fontSize: "12px" }}>
-              <span style={{ color: "#15803d", fontWeight: 700 }}>✓ {validOrders.length} pesanan valid</span>
-              <span style={{ color: "#64748b", marginLeft: "6px" }}>· {totalQty} item · {rupiahFmt(totalNominal)}</span>
+          {/* Badges */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+            <div style={{ background: `${C.green}15`, border: `1px solid ${C.green}30`, borderRadius: 8, padding: "7px 14px", fontSize: 12 }}>
+              <span style={{ color: C.green, fontWeight: 700 }}>✓ {validOrders.length} pesanan valid</span>
+              <span style={{ color: C.muted, marginLeft: 6, fontFamily: C.fontMono }}>· {totalQty} item · {rupiahFmt(totalNominal)}</span>
             </div>
             {skippedNoResi > 0 && (
-              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", color: "#64748b" }}>
+              <div style={{ background: `${C.dim}80`, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 14px", fontSize: 12, color: C.muted }}>
                 ⏭ {skippedNoResi} belum ada resi (dilewati)
               </div>
             )}
             {dupOrders.length > 0 && (
-              <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", color: "#c2410c", fontWeight: 700 }}>
-                ⚠ {dupOrders.length} duplikat (sudah pernah diproses)
+              <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}30`, borderRadius: 8, padding: "7px 14px", fontSize: 12, color: C.yellow, fontWeight: 700 }}>
+                ⚠ {dupOrders.length} duplikat
               </div>
             )}
             {unknownSkuOrders.length > 0 && (
-              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", color: "#dc2626", fontWeight: 700 }}>
+              <div style={{ background: `${C.red}15`, border: `1px solid ${C.red}30`, borderRadius: 8, padding: "7px 14px", fontSize: 12, color: C.red, fontWeight: 700 }}>
                 ❌ {unknownSkuOrders.length} SKU tidak dikenal
               </div>
             )}
           </div>
 
-          {/* Tabel preview */}
-          <div style={{ overflowX: "auto", marginBottom: "16px" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+          {/* Tabel */}
+          <div style={{ overflowX: "auto", marginBottom: 16 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  {[
-                    { label: "Status", align: "left" },
-                    { label: "No. Pesanan", align: "left" },
-                    { label: "Tanggal", align: "left" },
-                    { label: "SKU", align: "left" },
-                    { label: "Produk (mapped)", align: "left" },
-                    { label: "Qty", align: "center" },
-                    { label: "Total Bayar", align: "right" },
-                  ].map(h => (
-                    <th key={h.label} style={{
-                      padding: "8px 12px", textAlign: h.align as any,
-                      fontWeight: 700, color: "#64748b", fontSize: "11px",
-                      letterSpacing: "0.05em", textTransform: "uppercase",
-                      borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap",
-                    }}>{h.label}</th>
+                <tr>
+                  {["Status", "No. Pesanan", "Tanggal", "SKU", "Produk", "Qty", "Total Bayar"].map((h, i) => (
+                    <th key={h} style={{
+                      padding: "8px 12px",
+                      textAlign: i === 5 ? "center" : i === 6 ? "right" : "left",
+                      fontWeight: 700, color: C.muted, fontSize: 10,
+                      letterSpacing: "0.08em", textTransform: "uppercase",
+                      borderBottom: `2px solid ${C.border}`, whiteSpace: "nowrap",
+                      fontFamily: C.fontMono,
+                    }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {parsedOrders.map((o, idx) => {
-                  const rowBg = o.isDuplicate ? "#fff7ed" : !o.skuDitemukan ? "#fef2f2" : idx % 2 === 0 ? "#fff" : "#fafafa";
+                  const rowBg = o.isDuplicate
+                    ? `${C.yellow}08`
+                    : !o.skuDitemukan
+                    ? `${C.red}08`
+                    : idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)";
                   return (
                     <tr key={o.no_pesanan} style={{ background: rowBg }}>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}` }}>
                         {o.isDuplicate
-                          ? <span style={{ color: "#f59e0b", fontWeight: 700, fontSize: "11px" }}>Duplikat</span>
+                          ? <span style={{ color: C.yellow, fontWeight: 700, fontSize: 11, fontFamily: C.fontMono }}>Duplikat</span>
                           : !o.skuDitemukan
-                          ? <span style={{ color: "#ef4444", fontWeight: 700, fontSize: "11px" }}>SKU ?</span>
-                          : <span style={{ color: "#10b981", fontWeight: 700 }}>✓</span>
+                          ? <span style={{ color: C.red, fontWeight: 700, fontSize: 11, fontFamily: C.fontMono }}>SKU ?</span>
+                          : <span style={{ color: C.green, fontWeight: 700 }}>✓</span>
                         }
                       </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9", fontFamily: "monospace", fontSize: "11px", color: "#64748b" }}>
-                        {o.no_pesanan}
-                      </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap" }}>
-                        {tanggalFmt(o.tanggal_pesanan)}
-                      </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 700, color: o.skuDitemukan ? "#6366f1" : "#ef4444" }}>
-                        {o.sku}
-                      </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9", color: o.skuDitemukan ? "#1e293b" : "#94a3b8" }}>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}`, fontFamily: C.fontMono, fontSize: 11, color: C.muted }}>{o.no_pesanan}</td>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", color: C.textMid }}>{tanggalFmt(o.tanggal_pesanan)}</td>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}`, fontWeight: 700, color: o.skuDitemukan ? C.accent : C.red, fontFamily: C.fontMono }}>{o.sku}</td>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}`, color: o.skuDitemukan ? C.textMid : C.muted }}>
                         {o.skuDitemukan ? o.produkNama : <em>Tidak ditemukan — isi SKU di Master Produk</em>}
                       </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9", textAlign: "center", fontWeight: 700 }}>
-                        {o.qty}
-                      </td>
-                      <td style={{ padding: "9px 12px", borderBottom: "1px solid #f1f5f9", textAlign: "right", fontWeight: 700 }}>
-                        {rupiahFmt(o.total_pembayaran)}
-                      </td>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}`, textAlign: "center", fontWeight: 700, fontFamily: C.fontMono, color: C.text }}>{o.qty}</td>
+                      <td style={{ padding: "9px 12px", borderBottom: `1px solid ${C.border}`, textAlign: "right", fontWeight: 700, fontFamily: C.fontMono, color: C.text }}>{rupiahFmt(o.total_pembayaran)}</td>
                     </tr>
                   );
                 })}
               </tbody>
               {validOrders.length > 0 && (
                 <tfoot>
-                  <tr style={{ background: "#f8fafc" }}>
-                    <td colSpan={5} style={{ padding: "10px 12px", fontWeight: 700, fontSize: "12px", color: "#64748b" }}>
+                  <tr style={{ background: `${C.accent}10` }}>
+                    <td colSpan={5} style={{ padding: "10px 12px", fontWeight: 700, fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
                       TOTAL VALID ({validOrders.length} pesanan)
                     </td>
-                    <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 800, fontSize: "13px" }}>{totalQty}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: "13px" }}>{rupiahFmt(totalNominal)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "center", fontWeight: 800, fontSize: 13, color: C.text, fontFamily: C.fontMono }}>{totalQty}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 13, color: C.accent, fontFamily: C.fontMono }}>{rupiahFmt(totalNominal)}</td>
                   </tr>
                 </tfoot>
               )}
@@ -404,22 +373,22 @@ export function ShopeeUploadTab() {
 
           {/* Warning SKU tidak dikenal */}
           {unknownSkuOrders.length > 0 && (
-            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "10px", padding: "12px 16px", marginBottom: "16px", fontSize: "12px", color: "#991b1b", lineHeight: 1.7 }}>
-              <strong>❌ SKU tidak dikenal:</strong> {Array.from(new Set(unknownSkuOrders.map(o => o.sku))).join(", ")}
-              <br />Buka <strong>Admin → Master Produk</strong> → edit produk → isi kolom <strong>SKU</strong> dengan nilai di atas, lalu upload ulang.
+            <div style={{ background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 12, color: C.red, lineHeight: 1.7 }}>
+              <strong>❌ SKU tidak dikenal:</strong> <span style={{ fontFamily: C.fontMono }}>{Array.from(new Set(unknownSkuOrders.map(o => o.sku))).join(", ")}</span>
+              <br />Buka <strong>Admin → Master Produk</strong> → edit produk → isi kolom <strong>SKU</strong>, lalu upload ulang.
             </div>
           )}
 
-          {/* Tombol submit */}
           {validOrders.length > 0 && (
             <button
               onClick={submitPenjualan}
               disabled={submitting}
               style={{
-                width: "100%", padding: "13px", border: "none", borderRadius: "10px",
-                background: submitting ? "#cbd5e1" : "#6366f1",
+                width: "100%", padding: 13, border: "none", borderRadius: 10,
+                background: submitting ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.accent})`,
                 color: "#fff", fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer",
-                fontFamily: "'Instrument Sans', sans-serif", fontSize: "15px",
+                fontFamily: C.fontMono, fontSize: 14,
+                boxShadow: submitting ? "none" : `0 4px 16px ${C.accent}33`,
               }}
             >
               {submitting ? "Memproses..." : `✓ Proses ${validOrders.length} Pesanan — Potong Stok & Catat Piutang`}
@@ -428,51 +397,21 @@ export function ShopeeUploadTab() {
         </div>
       )}
 
-      {/* ── STEP 3: Selesai ─────────────────────────────────────────────────── */}
+      {/* ── STEP 3: Selesai ── */}
       {step === "done" && (
-        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "40px 24px", borderRadius: "14px", textAlign: "center", marginBottom: "16px" }}>
-          <div style={{ fontSize: "40px", marginBottom: "12px" }}>🎉</div>
-          <div style={{ fontWeight: 800, fontSize: "20px", color: "#15803d", marginBottom: "8px", fontFamily: "'Instrument Serif', serif" }}>
+        <div style={{ background: `${C.green}10`, border: `1px solid ${C.green}30`, padding: "40px 24px", borderRadius: 14, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
+          <div style={{ fontWeight: 700, fontSize: 20, color: C.green, marginBottom: 8, fontFamily: C.fontDisplay }}>
             Berhasil Diproses!
           </div>
-          <div style={{ color: "#166534", fontSize: "14px", marginBottom: "24px" }}>
+          <div style={{ color: C.textMid, fontSize: 14, marginBottom: 24, fontFamily: C.fontMono }}>
             {validOrders.length} pesanan · {totalQty} item · {rupiahFmt(totalNominal)}
           </div>
-          <button onClick={reset} style={{ background: "#10b981", color: "#fff", border: "none", padding: "10px 28px", borderRadius: "8px", cursor: "pointer", fontWeight: 700, fontFamily: "'Instrument Sans', sans-serif", fontSize: "14px" }}>
+          <button onClick={reset} style={{ background: C.green, color: "#0a1a12", border: "none", padding: "10px 28px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontFamily: C.fontMono, fontSize: 14 }}>
             + Upload File Toko Lain
           </button>
         </div>
       )}
-
-      {/* ── Info SQL Setup ───────────────────────────────────────────────────── */}
-      <div style={{ background: "#fff", padding: "20px", borderRadius: "14px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginTop: "8px" }}>
-        <h4 style={{ margin: "0 0 10px", fontSize: "13px", fontWeight: 700, color: "#64748b" }}>
-          📋 SETUP SUPABASE — Jalankan sekali di SQL Editor
-        </h4>
-        <pre style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", fontSize: "11px", overflowX: "auto", color: "#1e293b", lineHeight: 1.8, margin: 0 }}>
-{`-- 1. Tambah kolom SKU ke stok_barang
-ALTER TABLE stok_barang ADD COLUMN IF NOT EXISTS sku TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS stok_barang_sku_idx
-  ON stok_barang(sku) WHERE sku IS NOT NULL;
-
--- 2. Tambah kolom yang dibutuhkan di detail_penjualan_shopee
-ALTER TABLE detail_penjualan_shopee
-  ADD COLUMN IF NOT EXISTS no_pesanan TEXT,
-  ADD COLUMN IF NOT EXISTS no_resi TEXT,
-  ADD COLUMN IF NOT EXISTS sku TEXT,
-  ADD COLUMN IF NOT EXISTS harga_satuan NUMERIC,
-  ADD COLUMN IF NOT EXISTS total_pembayaran NUMERIC,
-  ADD COLUMN IF NOT EXISTS tanggal_pesanan TEXT;
-
--- 3. Tambah kolom tanggal_upload di penjualan_shopee
-ALTER TABLE penjualan_shopee
-  ADD COLUMN IF NOT EXISTS tanggal_upload DATE;
-
--- 4. Isi SKU produk (sesuaikan nama produk kamu)
-UPDATE stok_barang SET sku = 'SM1KG'
-  WHERE nama ILIKE '%siomay mini%1%kg%';`}
-        </pre>
-      </div>
     </div>
   );
 }

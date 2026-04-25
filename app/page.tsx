@@ -135,9 +135,7 @@ export default function Home() {
   const [qtyOffline, setQtyOffline] = useState("");
   const [namaPelanggan, setNamaPelanggan] = useState("");
   const [metodeBayar, setMetodeBayar] = useState("Tunai");
-  const [nomBelanja, setNomBelanja] = useState("");
-  const [itemBelanja, setItemBelanja] = useState("");
-
+ 
   const showToast = (msg: string, type: Toast["type"] = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
   const askConfirm = (title: string, desc: string, onConfirm: () => void) => setConfirm({ open: true, title, desc, onConfirm });
 
@@ -247,19 +245,7 @@ export default function Home() {
     });
   };
 
-  const prosesBelanja = async () => {
-    if (!nomBelanja) return showToast("Isi nominal belanja!", "error");
-    const nominal = toAngka(nomBelanja);
-    if (nominal <= 0) return showToast("Nominal tidak valid", "error");
-    const zakatBaru = Math.floor(nominal * 0.025);
-    const saldoZakatLalu = zakat[0]?.saldo_zakat || 0;
-    setSubmitting("belanja");
-    const { error: errKas } = await supabase.from("kas").insert([{ tipe: "Keluar", kategori: "Belanja", nominal, keterangan: itemBelanja || "Belanja operasional" }]);
-    if (errKas) { showToast("Gagal catat kas: " + errKas.message, "error"); setSubmitting(null); return; }
-    await supabase.from("data_zakat").insert([{ nominal_belanja: nominal, zakat_keluar: 0, saldo_zakat: saldoZakatLalu + zakatBaru, pj: "Sistem" }]);
-    showToast(`Belanja ${rupiahFmt(nominal)} dicatat. Zakat +${rupiahFmt(zakatBaru)}`);
-    setNomBelanja(""); setItemBelanja(""); fetchData(); setSubmitting(null);
-  };
+ 
 
   const lunaskanPiutang = (pt: Piutang) => {
     askConfirm("Lunaskan Piutang", `Tandai piutang ${pt.nama_pelanggan} ${rupiahFmt(pt.nominal)} sebagai lunas?`, async () => {
@@ -466,11 +452,7 @@ export default function Home() {
                       </div>
                     )}
                     <DarkBtn onClick={prosesOffline} color="#8b5cf6" disabled={submitting === "offline"}>{submitting === "offline" ? "Memproses..." : "💳 Proses Penjualan"}</DarkBtn>
-                    <hr style={{ margin: "16px 0", border: "none", borderTop: `1px solid ${T.border}` }} />
-                    <input type="text" value={itemBelanja} onChange={e => setItemBelanja(e.target.value)} placeholder="Keterangan Belanja" style={inputStyle} />
-                    <input type="text" value={nomBelanja} onChange={e => setNomBelanja(formatIDR(e.target.value))} placeholder="Nominal (Rp)" style={inputStyle} />
-                    {nomBelanja && <div style={{ fontSize: 11, color: T.green, fontFamily: T.fontMono, marginBottom: 8 }}>Zakat 2.5%: +{rupiahFmt(Math.floor(toAngka(nomBelanja) * 0.025))}</div>}
-                    <DarkBtn onClick={prosesBelanja} color={T.red} disabled={submitting === "belanja"}>{submitting === "belanja" ? "Menyimpan..." : "🛒 Catat Belanja"}</DarkBtn>
+                    
                   </Panel>
 
                   <Panel title="Master Produk & Piutang" icon="✨" accent="#3b82f6">

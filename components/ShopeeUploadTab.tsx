@@ -161,6 +161,18 @@ export function ShopeeUploadTab() {
 
     setSubmitting(true);
     try {
+      // Cek duplikat sekali lagi sebelum insert apapun (antisipasi retry)
+      const noPesananList = validOrders.map(o => o.no_pesanan);
+      const { data: existingCheck } = await supabase
+        .from("detail_penjualan_shopee")
+        .select("no_pesanan")
+        .in("no_pesanan", noPesananList);
+      const alreadySaved = (existingCheck || []).map((x: any) => x.no_pesanan);
+      if (alreadySaved.length > 0) {
+        setSubmitting(false);
+        return toast(`${alreadySaved.length} pesanan sudah tersimpan sebelumnya. Upload ulang file untuk refresh.`, false);
+      }
+
       const qtyPerProduk = new Map<number, number>();
       validOrders.forEach(o => {
         if (o.produkId) qtyPerProduk.set(o.produkId, (qtyPerProduk.get(o.produkId) || 0) + o.qty);
@@ -174,7 +186,7 @@ export function ShopeeUploadTab() {
 
       const { data: penjualanData, error: errHeader } = await supabase
         .from("penjualan_shopee")
-        .insert([{ toko_id: parseInt(tokoId), total_item: validOrders.length, total_nominal: totalNominal, tanggal_upload: new Date().toISOString().split("T")[0] }])
+        .insert([{ toko_id: parseInt(tokoId), total_item: validOrders.length, total_nominal: Math.round(totalNominal), tanggal_upload: new Date().toISOString().split("T")[0] }])
         .select().single();
       if (errHeader) throw new Error("Gagal simpan header: " + errHeader.message);
 

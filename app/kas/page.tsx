@@ -22,8 +22,8 @@ const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", {
   timeZone: "Asia/Jakarta",
 });
 
-const KATEGORI_MASUK = ["Shopee", "Offline", "Piutang", "Modal", "Lain-lain"];
-const KATEGORI_KELUAR = ["Operasional", "Transport", "Gaji", "Prive", "Beli Bahan", "Hutang Supplier", "Fee Shopee", "Lain-lain"];
+const KATEGORI_MASUK = ["Modal", "Lain-lain"];
+const KATEGORI_KELUAR = ["Operasional", "Transport", "Gaji", "Prive", "Lain-lain"];
 
 const PAGE_SIZE = 15;
 
@@ -57,7 +57,7 @@ export default function KasPage() {
 
   // Form input
   const [tipe, setTipe] = useState<"Masuk" | "Keluar">("Masuk");
-  const [kategori, setKategori] = useState("Shopee");
+  const [kategori, setKategori] = useState("Modal");
   const [nominal, setNominal] = useState("");
   const [keterangan, setKeterangan] = useState("");
   const [tanggalManual, setTanggalManual] = useState(
@@ -100,7 +100,7 @@ export default function KasPage() {
   // Update kategori default saat tipe berubah
   const handleTipeChange = (t: "Masuk" | "Keluar") => {
     setTipe(t);
-    setKategori(t === "Masuk" ? "Shopee" : "Operasional");
+    setKategori(t === "Masuk" ? "Modal" : "Operasional");
   };
 
   // ── Simpan transaksi kas ──
@@ -307,6 +307,16 @@ export default function KasPage() {
             <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>
               Input Transaksi Kas
             </h3>
+
+            {/* Info banner */}
+            <div style={{ background: C.accent + "10", border: `1px solid ${C.accent}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 20, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
+              💡 <strong style={{ color: C.accent }}>Input di sini hanya untuk transaksi manual.</strong> Transaksi berikut sudah otomatis tercatat dari modulnya masing-masing:
+              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {["Beli Bahan → /pembelian-bahan", "Beli Reseller → /pembelian", "Penjualan Offline → /penjualan", "Pencairan Shopee → /penjualan", "Lunasi Piutang → /penjualan"].map(t => (
+                  <span key={t} style={{ background: C.dim, padding: "2px 8px", borderRadius: 4, fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{t}</span>
+                ))}
+              </div>
+            </div>
 
             {/* Tipe: Masuk / Keluar */}
             <div style={{ marginBottom: 16 }}>

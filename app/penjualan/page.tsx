@@ -116,12 +116,14 @@ export default function PenjualanPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  // ── FIX 1: fetchData — ambil total_ditarik dari penjualan_shopee ──
   const fetchData = useCallback(async () => {
     try {
       const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline] = await Promise.all([
         supabase.from("toko_shopee").select("*").eq("aktif", true).order("id"),
         supabase.from("stok_barang").select("*").order("nama_produk"),
-        supabase.from("penjualan_shopee").select("toko_id, total_nominal"),
+        // FIX: ambil total_ditarik juga, dan semua status (bukan hanya Belum Ditarik)
+        supabase.from("penjualan_shopee").select("toko_id, total_nominal, total_ditarik, status"),
         supabase.from("retur_shopee").select("*, stok_barang(nama_produk), toko_shopee(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("pencairan_shopee").select("*, toko_shopee(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("piutang").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
@@ -135,17 +137,38 @@ export default function PenjualanPage() {
       const pencairanData = resPencairan.data || [];
       const tokoList = resToko.data || [];
 
+      // FIX 1: hitung sisa piutang = total_nominal - total_ditarik per record,
+      // lalu kurangi retur. Tidak pakai pencairan_shopee karena sudah ada di total_ditarik.
       const piutangPerToko: PiutangShopee[] = tokoList.map((t: Toko) => {
-        const totalPiutang = penjualanData.filter((p: any) => p.toko_id === t.id).reduce((a: number, p: any) => a + (p.total_nominal || 0), 0);
-        const totalRetur = returData.filter((r: any) => r.toko_id === t.id).reduce((a: number, r: any) => a + (r.nominal || 0), 0);
-        const totalCair = pencairanData.filter((p: any) => p.toko_id === t.id).reduce((a: number, p: any) => a + (p.nominal_cair || 0), 0);
+        const penjualanToko = penjualanData.filter((p: any) => p.toko_id === t.id);
+
+        // Total omzet kotor dari semua upload
+        const totalPiutang = penjualanToko.reduce((a: number, p: any) =>
+          a + Math.round(p.total_nominal || 0), 0);
+
+        // Total yang sudah ditarik (dari field total_ditarik di penjualan_shopee)
+        const totalDitarik = penjualanToko.reduce((a: number, p: any) =>
+          a + Math.round(p.total_ditarik || 0), 0);
+
+        // Total retur/pembatalan untuk toko ini
+        const totalRetur = returData
+          .filter((r: any) => r.toko_id === t.id)
+          .reduce((a: number, r: any) => a + Math.round(r.nominal || 0), 0);
+
+        // total_cair = sum dari pencairan_shopee (untuk tampilan riwayat saja)
+        const totalCair = pencairanData
+          .filter((p: any) => p.toko_id === t.id)
+          .reduce((a: number, p: any) => a + Math.round(p.nominal_cair || 0), 0);
+
+        const sisaPiutang = totalPiutang - totalDitarik - totalRetur;
+
         return {
           toko_id: t.id,
           toko_nama: t.nama,
           total_piutang: totalPiutang,
           total_retur: totalRetur,
           total_cair: totalCair,
-          sisa_piutang: totalPiutang - totalRetur - totalCair,
+          sisa_piutang: Math.max(sisaPiutang, 0),
         };
       });
 
@@ -168,7 +191,7 @@ export default function PenjualanPage() {
     const qty = parseInt(returQty);
     const p = produk.find(x => x.id === parseInt(returProdukId));
     if (!p) return showToast("Produk tidak ditemukan", "error");
-    const nominal = p.harga_jual * qty;
+    const nominal = Math.round(p.harga_jual * qty);
 
     setSubmitting("retur");
     const { error } = await supabase.from("retur_shopee").insert([{
@@ -184,7 +207,13 @@ export default function PenjualanPage() {
 
     if (returStokKembali) {
       await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok + qty }).eq("id", p.id);
-      await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Masuk", jumlah: qty, keterangan: `${returTipe} Shopee` }]);
+      // FIX 2: mutasi_stok pakai stok_barang_id & qty (bukan produk_id & jumlah)
+      await supabase.from("mutasi_stok").insert([{
+        stok_barang_id: p.id,
+        tipe: "Masuk",
+        qty,
+        keterangan: `${returTipe} Shopee`,
+      }]);
     }
 
     showToast(`${returTipe} ${p.nama_produk} ×${qty} dicatat. Piutang berkurang ${rupiahFmt(nominal)}`);
@@ -194,46 +223,84 @@ export default function PenjualanPage() {
   };
 
   // ── Action: Pencairan Dana ──
+  // FIX 3: tambah Math.round(), update total_ditarik di penjualan_shopee
   const prosesPencairan = async () => {
     if (!cairTokoId || !cairNominal) return showToast("Lengkapi semua field!", "error");
     const nominalCair = toAngka(cairNominal);
+    if (nominalCair <= 0) return showToast("Nominal tidak valid!", "error");
+
     const tokoData = piutangShopee.find(p => p.toko_id === parseInt(cairTokoId));
     if (!tokoData) return showToast("Toko tidak ditemukan", "error");
     if (tokoData.sisa_piutang <= 0) return showToast("Tidak ada piutang aktif untuk toko ini", "error");
 
-    const nominalPiutang = tokoData.sisa_piutang;
-    const selisih = nominalPiutang - nominalCair;
+    const nominalPiutang = Math.round(tokoData.sisa_piutang);
+    const selisih = Math.round(nominalPiutang - nominalCair);
 
     setSubmitting("cair");
-    const { error: errCair } = await supabase.from("pencairan_shopee").insert([{
-      toko_id: parseInt(cairTokoId),
-      nominal_cair: nominalCair,
-      nominal_piutang: nominalPiutang,
-      selisih,
-    }]);
-
-    if (errCair) { showToast("Gagal catat pencairan: " + errCair.message, "error"); setSubmitting(null); return; }
-
-    await supabase.from("kas").insert([{
-      tipe: "Masuk",
-      kategori: "Shopee",
-      nominal: nominalCair,
-      keterangan: `Pencairan Shopee - ${tokoData.toko_nama}`,
-    }]);
-
-    if (selisih > 0) {
-      await supabase.from("kas").insert([{
-        tipe: "Keluar",
-        kategori: "Fee Shopee",
-        nominal: selisih,
-        keterangan: `Fee/Potongan Shopee - ${tokoData.toko_nama}`,
+    try {
+      // Insert ke pencairan_shopee (semua nilai sudah integer)
+      const { error: errCair } = await supabase.from("pencairan_shopee").insert([{
+        toko_id: parseInt(cairTokoId),
+        nominal_cair: nominalCair,
+        nominal_piutang: nominalPiutang,
+        selisih: Math.max(selisih, 0),
       }]);
-    }
+      if (errCair) throw new Error("Gagal catat pencairan: " + errCair.message);
 
-    showToast(`Pencairan ${tokoData.toko_nama} berhasil! Dana: ${rupiahFmt(nominalCair)}, Fee: ${rupiahFmt(Math.max(selisih, 0))}`);
-    setCairTokoId(""); setCairNominal("");
-    fetchData();
-    setSubmitting(null);
+      // FIX 3: Update total_ditarik di semua penjualan_shopee toko ini yang belum lunas
+      // Ambil dulu record yang belum lunas, lalu update total_ditarik-nya
+      const { data: penjualanBelumLunas } = await supabase
+        .from("penjualan_shopee")
+        .select("id, total_nominal, total_ditarik")
+        .eq("toko_id", parseInt(cairTokoId))
+        .neq("status", "Lunas")
+        .order("created_at", { ascending: true });
+
+      // Distribusikan nominal cair ke record penjualan dari yang terlama
+      let sisaCair = nominalCair;
+      for (const pj of (penjualanBelumLunas || [])) {
+        if (sisaCair <= 0) break;
+        const sisaRecord = Math.round((pj.total_nominal || 0) - (pj.total_ditarik || 0));
+        if (sisaRecord <= 0) continue;
+
+        const ditarikSekarang = Math.min(sisaCair, sisaRecord);
+        const totalDitarikBaru = Math.round((pj.total_ditarik || 0) + ditarikSekarang);
+        const sudahLunas = totalDitarikBaru >= Math.round(pj.total_nominal || 0);
+
+        await supabase.from("penjualan_shopee").update({
+          total_ditarik: totalDitarikBaru,
+          status: sudahLunas ? "Lunas" : "Sebagian",
+        }).eq("id", pj.id);
+
+        sisaCair -= ditarikSekarang;
+      }
+
+      // Catat kas masuk
+      await supabase.from("kas").insert([{
+        tipe: "Masuk",
+        kategori: "Shopee",
+        nominal: nominalCair,
+        keterangan: `Pencairan Shopee - ${tokoData.toko_nama}`,
+      }]);
+
+      // Catat fee sebagai kas keluar kalau ada selisih
+      if (selisih > 0) {
+        await supabase.from("kas").insert([{
+          tipe: "Keluar",
+          kategori: "Fee Shopee",
+          nominal: selisih,
+          keterangan: `Fee/Potongan Shopee - ${tokoData.toko_nama}`,
+        }]);
+      }
+
+      showToast(`Pencairan ${tokoData.toko_nama} berhasil! Dana: ${rupiahFmt(nominalCair)}${selisih > 0 ? `, Fee: ${rupiahFmt(selisih)}` : ""}`);
+      setCairTokoId(""); setCairNominal("");
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message || "Gagal catat pencairan", "error");
+    } finally {
+      setSubmitting(null);
+    }
   };
 
   // ── Action: Penjualan Offline ──
@@ -247,7 +314,13 @@ export default function PenjualanPage() {
       const p = produk.find(x => x.id === item.produk_id);
       if (!p) continue;
       await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - item.qty }).eq("id", p.id);
-      await supabase.from("mutasi_stok").insert([{ produk_id: p.id, tipe: "Keluar", jumlah: item.qty, keterangan: "Offline" }]);
+      // FIX 2: mutasi_stok pakai stok_barang_id & qty
+      await supabase.from("mutasi_stok").insert([{
+        stok_barang_id: p.id,
+        tipe: "Keluar",
+        qty: item.qty,
+        keterangan: "Penjualan Offline",
+      }]);
     }
 
     const keterangan = keranjang.map(k => `${k.nama_produk} ×${k.qty}`).join(", ");
@@ -280,7 +353,7 @@ export default function PenjualanPage() {
     boxSizing: "border-box", outline: "none",
   };
 
-  const totalPiutangShopee = piutangShopee.reduce((a, p) => a + Math.max(p.sisa_piutang, 0), 0);
+  const totalPiutangShopee = piutangShopee.reduce((a, p) => a + p.sisa_piutang, 0);
   const totalPiutangOffline = piutangOffline.reduce((a, p) => a + p.nominal, 0);
 
   if (loading) return (
@@ -314,12 +387,8 @@ export default function PenjualanPage() {
         {/* Header */}
         <div style={{ marginBottom: 28, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
-            <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: 28, color: "#f0eaff", fontWeight: 400 }}>
-              Penjualan
-            </h1>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>
-              Kelola orderan Shopee & penjualan offline
-            </p>
+            <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: 28, color: "#f0eaff", fontWeight: 400 }}>Penjualan</h1>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Kelola orderan Shopee & penjualan offline</p>
           </div>
           <a href="/" style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: C.accentDim, border: `1px solid ${C.accent}40`, borderRadius: 8, color: C.accent, fontWeight: 600, fontSize: 13, textDecoration: "none", fontFamily: C.fontSans, whiteSpace: "nowrap" }}>
             🏠 Home
@@ -346,26 +415,20 @@ export default function PenjualanPage() {
 
         {/* Tab Utama */}
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-          {[
-            { id: "shopee", label: "🛍 Shopee" },
-            { id: "offline", label: "🏪 Offline" },
-          ].map(tab => (
+          {[{ id: "shopee", label: "🛍 Shopee" }, { id: "offline", label: "🏪 Offline" }].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{
               padding: "10px 24px", borderRadius: 10, border: "none", cursor: "pointer",
               fontFamily: C.fontSans, fontWeight: 600, fontSize: 14,
               background: activeTab === tab.id ? C.accent : C.card,
               color: activeTab === tab.id ? "#fff" : C.muted,
               transition: "all 0.15s",
-            }}>
-              {tab.label}
-            </button>
+            }}>{tab.label}</button>
           ))}
         </div>
 
         {/* ══ TAB SHOPEE ══ */}
         {activeTab === "shopee" && (
           <div style={{ animation: "fadeUp 0.25s ease" }}>
-            {/* Sub-tab */}
             <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.card, padding: 4, borderRadius: 10, width: "fit-content", border: `1px solid ${C.border}` }}>
               {[
                 { id: "input", label: "📤 Input Orderan" },
@@ -379,16 +442,11 @@ export default function PenjualanPage() {
                   background: activeShopeeTab === t.id ? C.accentDim : "transparent",
                   color: activeShopeeTab === t.id ? C.accent : C.muted,
                   transition: "all 0.15s",
-                }}>
-                  {t.label}
-                </button>
+                }}>{t.label}</button>
               ))}
             </div>
 
-            {/* ── Input Orderan: Upload File Shopee ── */}
-            {activeShopeeTab === "input" && (
-              <ShopeeUploadTab />
-            )}
+            {activeShopeeTab === "input" && <ShopeeUploadTab />}
 
             {/* ── Piutang per Toko ── */}
             {activeShopeeTab === "piutang" && (
@@ -411,7 +469,7 @@ export default function PenjualanPage() {
                     ))}
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Sisa Piutang</span>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: p.sisa_piutang > 0 ? C.yellow : C.green, fontFamily: C.fontMono }}>{rupiahFmt(Math.max(p.sisa_piutang, 0))}</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: p.sisa_piutang > 0 ? C.yellow : C.green, fontFamily: C.fontMono }}>{rupiahFmt(p.sisa_piutang)}</span>
                     </div>
                   </div>
                 ))}
@@ -422,9 +480,7 @@ export default function PenjualanPage() {
             {activeShopeeTab === "retur" && (
               <div style={{ display: "grid", gridTemplateColumns: "400px 1fr", gap: 20 }}>
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
-                  <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
-                    Catat Retur / Pembatalan
-                  </h3>
+                  <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Catat Retur / Pembatalan</h3>
                   <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tipe</label>
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     {["Pembatalan", "Retur"].map(t => (
@@ -458,18 +514,18 @@ export default function PenjualanPage() {
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
                   <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Riwayat Retur</h3>
                   <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                    {returList.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada retur</div>
-                    ) : returList.map(r => (
-                      <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{r.nama_produk} ×{r.qty}</div>
-                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{r.nama_toko} · {r.tipe} · {tanggalFmt(r.created_at)}</div>
-                          <div style={{ fontSize: 10, color: r.stok_kembali ? C.green : C.red, fontFamily: C.fontMono }}>{r.stok_kembali ? "✓ Stok kembali" : "✗ Stok tidak kembali"}</div>
+                    {returList.length === 0
+                      ? <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada retur</div>
+                      : returList.map(r => (
+                        <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{r.nama_produk} ×{r.qty}</div>
+                            <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{r.nama_toko} · {r.tipe} · {tanggalFmt(r.created_at)}</div>
+                            <div style={{ fontSize: 10, color: r.stok_kembali ? C.green : C.red, fontFamily: C.fontMono }}>{r.stok_kembali ? "✓ Stok kembali" : "✗ Stok tidak kembali"}</div>
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, fontFamily: C.fontMono }}>-{rupiahFmt(r.nominal)}</div>
                         </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: C.red, fontFamily: C.fontMono }}>-{rupiahFmt(r.nominal)}</div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               </div>
@@ -479,9 +535,7 @@ export default function PenjualanPage() {
             {activeShopeeTab === "pencairan" && (
               <div style={{ display: "grid", gridTemplateColumns: "400px 1fr", gap: 20 }}>
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
-                  <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
-                    Input Pencairan Dana Shopee
-                  </h3>
+                  <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Input Pencairan Dana Shopee</h3>
                   <select value={cairTokoId} onChange={e => { setCairTokoId(e.target.value); setCairNominal(""); }} style={inputStyle}>
                     <option value="">— Pilih Toko —</option>
                     {piutangShopee.filter(p => p.sisa_piutang > 0).map(p => (
@@ -496,19 +550,13 @@ export default function PenjualanPage() {
                       </div>
                     </div>
                   )}
-                  <input
-                    type="text"
-                    value={cairNominal}
-                    onChange={e => setCairNominal(formatIDR(e.target.value))}
-                    placeholder="Nominal dana yang cair (Rp)"
-                    style={inputStyle}
-                  />
+                  <input type="text" value={cairNominal} onChange={e => setCairNominal(formatIDR(e.target.value))} placeholder="Nominal dana yang cair (Rp)" style={inputStyle} />
                   {cairTokoId && cairNominal && (
                     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
                       {(() => {
                         const piutang = piutangShopee.find(p => p.toko_id === parseInt(cairTokoId))?.sisa_piutang || 0;
                         const cair = toAngka(cairNominal);
-                        const selisih = piutang - cair;
+                        const selisih = Math.round(piutang - cair);
                         return (
                           <>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -531,21 +579,21 @@ export default function PenjualanPage() {
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
                   <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Riwayat Pencairan</h3>
                   <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                    {pencairanList.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada pencairan</div>
-                    ) : pencairanList.map(p => (
-                      <div key={p.id} style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{p.nama_toko}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: C.fontMono }}>+{rupiahFmt(p.nominal_cair)}</span>
+                    {pencairanList.length === 0
+                      ? <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada pencairan</div>
+                      : pencairanList.map(p => (
+                        <div key={p.id} style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{p.nama_toko}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: C.fontMono }}>+{rupiahFmt(p.nominal_cair)}</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 16 }}>
+                            <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>Piutang: {rupiahFmt(p.nominal_piutang)}</span>
+                            <span style={{ fontSize: 11, color: C.red, fontFamily: C.fontMono }}>Fee: {rupiahFmt(p.selisih)}</span>
+                            <span style={{ fontSize: 11, color: C.dim, fontFamily: C.fontMono }}>{tanggalFmt(p.created_at)}</span>
+                          </div>
                         </div>
-                        <div style={{ display: "flex", gap: 16 }}>
-                          <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>Piutang: {rupiahFmt(p.nominal_piutang)}</span>
-                          <span style={{ fontSize: 11, color: C.red, fontFamily: C.fontMono }}>Fee: {rupiahFmt(p.selisih)}</span>
-                          <span style={{ fontSize: 11, color: C.dim, fontFamily: C.fontMono }}>{tanggalFmt(p.created_at)}</span>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               </div>
@@ -557,9 +605,7 @@ export default function PenjualanPage() {
         {activeTab === "offline" && (
           <div style={{ animation: "fadeUp 0.25s ease", display: "grid", gridTemplateColumns: "420px 1fr", gap: 20 }}>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
-              <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
-                Penjualan Offline
-              </h3>
+              <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Penjualan Offline</h3>
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tambah Item</label>
               <select value={offlineProdukId} onChange={e => setOfflineProdukId(e.target.value)} style={inputStyle}>
                 <option value="">— Pilih Produk —</option>
@@ -567,9 +613,7 @@ export default function PenjualanPage() {
               </select>
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <input type="number" min="1" value={offlineQty} onChange={e => setOfflineQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
-                <button onClick={tambahKeranjang} style={{ padding: "10px 18px", borderRadius: 8, background: C.accentDim, color: C.accent, fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 13, whiteSpace: "nowrap", border: `1px solid ${C.accent}40` }}>
-                  + Tambah
-                </button>
+                <button onClick={tambahKeranjang} style={{ padding: "10px 18px", borderRadius: 8, background: C.accentDim, color: C.accent, fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 13, whiteSpace: "nowrap", border: `1px solid ${C.accent}40` }}>+ Tambah</button>
               </div>
               {keranjang.length > 0 && (
                 <div style={{ background: "#120e1e", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
@@ -606,30 +650,29 @@ export default function PenjualanPage() {
                 {submitting === "offline" ? "Memproses..." : `💳 Proses ${keranjang.length > 0 ? rupiahFmt(totalKeranjang) : "Penjualan"}`}
               </button>
             </div>
-
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
               <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
                 Piutang Offline Aktif
                 <span style={{ marginLeft: 8, fontSize: 12, color: C.red, fontFamily: C.fontMono }}>{rupiahFmt(totalPiutangOffline)}</span>
               </h3>
-              {piutangOffline.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "40px 0", color: C.green, fontSize: 13, fontFamily: C.fontMono }}>Tidak ada piutang aktif 🎉</div>
-              ) : (
-                <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                  {piutangOffline.map(pt => (
-                    <div key={pt.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{pt.nama_pelanggan}</div>
-                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{pt.keterangan}</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: C.red, fontFamily: C.fontMono }}>{rupiahFmt(pt.nominal)}</div>
+              {piutangOffline.length === 0
+                ? <div style={{ textAlign: "center", padding: "40px 0", color: C.green, fontSize: 13, fontFamily: C.fontMono }}>Tidak ada piutang aktif 🎉</div>
+                : (
+                  <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                    {piutangOffline.map(pt => (
+                      <div key={pt.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{pt.nama_pelanggan}</div>
+                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{pt.keterangan}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.red, fontFamily: C.fontMono }}>{rupiahFmt(pt.nominal)}</div>
+                        </div>
+                        <button onClick={() => lunaskanPiutang(pt)} style={{ background: C.green + "15", color: C.green, border: `1px solid ${C.green}30`, padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>
+                          ✓ Lunas
+                        </button>
                       </div>
-                      <button onClick={() => lunaskanPiutang(pt)} style={{ background: C.green + "15", color: C.green, border: `1px solid ${C.green}30`, padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>
-                        ✓ Lunas
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
             </div>
           </div>
         )}

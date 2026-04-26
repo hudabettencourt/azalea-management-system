@@ -131,7 +131,11 @@ export default function PembelianBahanPage() {
     setItems(newItems);
   };
 
-  const totalBayar = items.reduce((acc, item) => acc + (parseFloat(item.qty || "0") * parseInt(item.harga_beli || "0")), 0);
+  const totalBayar = Math.round(
+  items.reduce((acc, item) => 
+    acc + (parseFloat(item.qty || "0") * parseInt(item.harga_beli || "0")), 0
+  )
+);
 
   // ─── Simpan pembelian ───────────────────────────────────────────────────────
   const simpanPembelian = async () => {

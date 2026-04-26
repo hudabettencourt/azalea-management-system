@@ -159,7 +159,7 @@ export default function PembelianBahanPage() {
         const qty = parseFloat(item.qty);
         const harga = parseInt(item.harga_beli);
         const bahanId = parseInt(item.bahan_id);
-        const { error: errDetail } = await supabase.from("detail_pembelian_bahan").insert([{ pembelian_bahan_id: pembelianData.id, bahan_baku_id: bahanId, qty, harga_beli: harga, subtotal: qty * harga }]);
+        const { error: errDetail } = await supabase.from("detail_pembelian_bahan").insert([{ pembelian_bahan_id: pembelianData.id, bahan_baku_id: bahanId, qty, harga_beli: harga, }]);
         if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
         const { error: errRpc } = await supabase.rpc("update_hpp_bahan", { p_bahan_id: bahanId, p_qty: qty, p_harga_beli: harga });
         if (errRpc) {

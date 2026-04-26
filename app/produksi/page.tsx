@@ -5,17 +5,41 @@ import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 
 type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number };
-type ProduksiBatch = { id: number; nama_produk: string; qty_produksi: number; catatan: string | null; total_hpp: number; created_at: string; operator: string | null };
+type StokBarang = { id: number; nama_produk: string; jumlah_stok: number; sku: string | null };
+type ProduksiBatch = {
+  id: number;
+  nama_produk: string;
+  stok_barang_id: number | null;
+  qty_produksi: number;
+  catatan: string | null;
+  total_hpp: number;
+  hpp_per_unit: number;
+  created_at: string;
+  operator: string | null;
+};
 type BahanPakai = { bahan_id: string; nama: string; qty: string; satuan: string; stok_tersedia: number };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", {
+  day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+});
 
 const PAGE_SIZE = 10;
 
+const C = {
+  bg: "#100c16", card: "#1a1425", border: "#2a1f3d",
+  text: "#e2d9f3", textMid: "#c0aed4", muted: "#7c6d8a", dim: "#5a4f6a",
+  accent: "#a78bfa", success: "#34d399", danger: "#f87171", warn: "#fbbf24",
+  blue: "#60a5fa",
+  fontDisplay: "'DM Serif Display', serif",
+  fontMono: "'DM Mono', monospace",
+  fontSans: "'DM Sans', sans-serif",
+};
+
 export default function ProduksiPage() {
   const [bahan, setBahan] = useState<BahanBaku[]>([]);
+  const [stokBarang, setStokBarang] = useState<StokBarang[]>([]);
   const [riwayat, setRiwayat] = useState<ProduksiBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -23,13 +47,15 @@ export default function ProduksiPage() {
   const [activeTab, setActiveTab] = useState<"input" | "riwayat">("input");
 
   // Form produksi
-  const [namaProduk, setNamaProduk] = useState("");
+  const [stokBarangId, setStokBarangId] = useState("");
   const [qtyProduksi, setQtyProduksi] = useState("");
   const [operator, setOperator] = useState("");
   const [catatan, setCatatan] = useState("");
-  const [bahanPakai, setBahanPakai] = useState<BahanPakai[]>([{ bahan_id: "", nama: "", qty: "", satuan: "", stok_tersedia: 0 }]);
+  const [bahanPakai, setBahanPakai] = useState<BahanPakai[]>([
+    { bahan_id: "", nama: "", qty: "", satuan: "", stok_tersedia: 0 }
+  ]);
 
-  // Filter riwayat
+  // Filter & pagination riwayat
   const [filterNama, setFilterNama] = useState("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -45,13 +71,16 @@ export default function ProduksiPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [resBahan, resProduksi] = await Promise.all([
+      const [resBahan, resStok, resProduksi] = await Promise.all([
         supabase.from("bahan_baku").select("*").or("aktif.eq.true,aktif.is.null").order("kategori").order("nama"),
+        supabase.from("stok_barang").select("id, nama_produk, jumlah_stok, sku").order("nama_produk"),
         supabase.from("produksi_batch").select("*").order("created_at", { ascending: false }).limit(200),
       ]);
       if (resBahan.error) throw new Error("Gagal load bahan: " + resBahan.error.message);
+      if (resStok.error) throw new Error("Gagal load produk: " + resStok.error.message);
       if (resProduksi.error) throw new Error("Gagal load produksi: " + resProduksi.error.message);
       setBahan(resBahan.data || []);
+      setStokBarang(resStok.data || []);
       setRiwayat(resProduksi.data || []);
     } catch (err: any) {
       showToast(err.message || "Gagal memuat data", "error");
@@ -65,6 +94,7 @@ export default function ProduksiPage() {
   // ─── Bahan pakai helpers ────────────────────────────────────────────────────
   const addBahanPakai = () => setBahanPakai([...bahanPakai, { bahan_id: "", nama: "", qty: "", satuan: "", stok_tersedia: 0 }]);
   const removeBahanPakai = (idx: number) => { if (bahanPakai.length > 1) setBahanPakai(bahanPakai.filter((_, i) => i !== idx)); };
+
   const updateBahanPakai = (idx: number, field: keyof BahanPakai, value: string) => {
     const newItems = [...bahanPakai];
     if (field === "bahan_id") {
@@ -82,67 +112,114 @@ export default function ProduksiPage() {
     return acc + (parseFloat(item.qty || "0") * (b?.harga_beli_avg || 0));
   }, 0), [bahanPakai, bahan]);
 
-  const hppPerUnit = qtyProduksi && parseFloat(qtyProduksi) > 0 ? totalHPP / parseFloat(qtyProduksi) : 0;
+  const hppPerUnit = qtyProduksi && parseFloat(qtyProduksi) > 0
+    ? totalHPP / parseFloat(qtyProduksi)
+    : 0;
 
-  // Validasi stok cukup
+  // Validasi stok bahan cukup
   const stokWarnings = useMemo(() => {
     return bahanPakai.filter(item => {
       if (!item.bahan_id || !item.qty) return false;
       const b = bahan.find(x => x.id === parseInt(item.bahan_id));
-      return (b?.stok || 0) < parseFloat(item.qty);
+      return (b?.stok || 0) < parseFloat(item.qty || "0");
     });
   }, [bahanPakai, bahan]);
 
+  const produkTerpilih = stokBarang.find(s => s.id === parseInt(stokBarangId));
+
   // ─── Simpan produksi ────────────────────────────────────────────────────────
   const simpanProduksi = async () => {
-    if (!namaProduk.trim()) return showToast("Isi nama produk!", "error");
+    if (!stokBarangId) return showToast("Pilih produk yang diproduksi!", "error");
     if (!qtyProduksi || parseFloat(qtyProduksi) <= 0) return showToast("Isi qty produksi!", "error");
     const validItems = bahanPakai.filter(i => i.bahan_id && i.qty && parseFloat(i.qty) > 0);
     if (validItems.length === 0) return showToast("Minimal 1 bahan harus diisi!", "error");
     if (stokWarnings.length > 0) return showToast(`Stok tidak cukup: ${stokWarnings.map(i => i.nama).join(", ")}`, "error");
 
+    const qty = parseFloat(qtyProduksi);
+    const hppUnit = Math.round(hppPerUnit);
+    const totalHppBulat = Math.round(totalHPP);
+
     setSubmitting(true);
     try {
-      // Insert header batch produksi
-      const { data: batchData, error: errBatch } = await supabase.from("produksi_batch").insert([{
-        nama_produk: namaProduk.trim(),
-        qty_produksi: parseFloat(qtyProduksi),
-        total_hpp: Math.round(totalHPP),
-        hpp_per_unit: Math.round(hppPerUnit),
-        catatan: catatan.trim() || null,
-        operator: operator.trim() || null,
-      }]).select().single();
-
+      // 1. Insert header batch produksi
+      const { data: batchData, error: errBatch } = await supabase
+        .from("produksi_batch")
+        .insert([{
+          stok_barang_id: parseInt(stokBarangId),
+          nama_produk: produkTerpilih?.nama_produk || "",
+          qty_produksi: qty,
+          total_hpp: totalHppBulat,
+          hpp_per_unit: hppUnit,
+          catatan: catatan.trim() || null,
+          operator: operator.trim() || null,
+        }])
+        .select()
+        .single();
       if (errBatch) throw new Error("Gagal simpan batch: " + errBatch.message);
 
-      // Insert detail + kurangi stok
+      // 2. Insert detail bahan + kurangi stok bahan
       for (const item of validItems) {
-        const qty = parseFloat(item.qty);
+        const qtyBahan = parseFloat(item.qty);
         const bahanId = parseInt(item.bahan_id);
         const b = bahan.find(x => x.id === bahanId);
-        const hppBahan = b?.harga_beli_avg || 0;
 
         const { error: errDetail } = await supabase.from("detail_produksi_bahan").insert([{
           produksi_batch_id: batchData.id,
           bahan_baku_id: bahanId,
-          qty_pakai: qty,
-          hpp_bahan: Math.round(qty * hppBahan),
+          qty_pakai: qtyBahan,
+          hpp_bahan: Math.round(qtyBahan * (b?.harga_beli_avg || 0)),
         }]);
         if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
 
-        // Kurangi stok bahan
-        const stokBaru = Math.max(0, (b?.stok || 0) - qty);
-        const { error: errStok } = await supabase.from("bahan_baku").update({
+        // Kurangi stok bahan baku
+        const stokBaru = Math.max(0, (b?.stok || 0) - qtyBahan);
+        await supabase.from("bahan_baku").update({
           stok: stokBaru,
-          total_nilai_stok: stokBaru * (b?.harga_beli_avg || 0),
+          total_nilai_stok: Math.round(stokBaru * (b?.harga_beli_avg || 0)),
         }).eq("id", bahanId);
-        if (errStok) throw new Error("Gagal update stok: " + errStok.message);
       }
 
-      showToast(`Produksi ${namaProduk} (${qtyProduksi} pcs) berhasil! HPP: ${rupiahFmt(Math.round(hppPerUnit))}/pcs`);
+      // 3. FIX UTAMA: Tambah stok produk jadi + update HPP di stok_barang
+      // Pakai weighted average untuk HPP produk jadi
+      const produkSekarang = stokBarang.find(s => s.id === parseInt(stokBarangId));
+      const stokLama = produkSekarang?.jumlah_stok || 0;
+      const stokBaru = stokLama + qty;
+
+      // HPP weighted average: (stok lama × HPP lama + qty baru × HPP baru) / stok baru
+      // Ambil HPP lama dari riwayat produksi terakhir produk ini
+      const { data: hppLamaData } = await supabase
+        .from("produksi_batch")
+        .select("hpp_per_unit, qty_produksi")
+        .eq("stok_barang_id", parseInt(stokBarangId))
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const hppLama = hppLamaData?.[0]?.hpp_per_unit || hppUnit;
+      const hppBaru = stokBaru > 0
+        ? Math.round((stokLama * hppLama + qty * hppUnit) / stokBaru)
+        : hppUnit;
+
+      const { error: errStokBarang } = await supabase
+        .from("stok_barang")
+        .update({
+          jumlah_stok: stokBaru,
+          // Update HPP di stok_barang kalau ada kolomnya
+        })
+        .eq("id", parseInt(stokBarangId));
+      if (errStokBarang) throw new Error("Gagal update stok produk: " + errStokBarang.message);
+
+      // 4. Catat mutasi stok produk jadi
+      await supabase.from("mutasi_stok").insert([{
+        stok_barang_id: parseInt(stokBarangId),
+        tipe: "Masuk",
+        qty,
+        keterangan: `Produksi batch #${batchData.id} · HPP ${rupiahFmt(hppUnit)}/pcs`,
+      }]);
+
+      showToast(`✓ Produksi ${produkTerpilih?.nama_produk} (${qty} pcs) berhasil! HPP: ${rupiahFmt(hppUnit)}/pcs · Stok jadi: ${stokBaru}`);
 
       // Reset form
-      setNamaProduk(""); setQtyProduksi(""); setOperator(""); setCatatan("");
+      setStokBarangId(""); setQtyProduksi(""); setOperator(""); setCatatan("");
       setBahanPakai([{ bahan_id: "", nama: "", qty: "", satuan: "", stok_tersedia: 0 }]);
       fetchData();
       setActiveTab("riwayat");
@@ -180,27 +257,20 @@ export default function ProduksiPage() {
   const totalPages = Math.ceil(riwayatFiltered.length / PAGE_SIZE);
   const riwayatPage = riwayatFiltered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  // ─── Styles ─────────────────────────────────────────────────────────────────
-  const C = {
-    bg: "#100c16", card: "#1a1425", border: "#2a1f3d",
-    text: "#e2d9f3", muted: "#7c6d8a", dim: "#5a4f6a",
-    accent: "#a78bfa", success: "#34d399", danger: "#f87171", warn: "#fbbf24",
-    blue: "#60a5fa",
-  };
-
   const inputS: React.CSSProperties = {
     width: "100%", padding: "9px 12px",
     background: "#0f0b1a", border: `1.5px solid ${C.border}`, borderRadius: "8px",
-    color: C.text, fontFamily: "'DM Sans', sans-serif", fontSize: "13px",
+    color: C.text, fontFamily: C.fontSans, fontSize: "13px",
     boxSizing: "border-box", outline: "none",
   };
 
   const tabBtn = (active: boolean, color: string): React.CSSProperties => ({
-    flex: 1, padding: "10px 8px", borderRadius: "8px", border: `1px solid ${active ? color + "60" : C.border}`,
+    flex: 1, padding: "10px 8px", borderRadius: "8px",
+    border: `1px solid ${active ? color + "60" : C.border}`,
     background: active ? color + "20" : "transparent",
     color: active ? color : C.muted,
     fontWeight: 600, cursor: "pointer", fontSize: "13px",
-    fontFamily: "'DM Sans', sans-serif",
+    fontFamily: C.fontSans,
   });
 
   const kategoriList = Array.from(new Set(bahan.map(b => b.kategori).filter(Boolean)));
@@ -210,7 +280,7 @@ export default function ProduksiPage() {
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: "32px", marginBottom: "12px", color: C.blue }}>⚙️</div>
-          <div style={{ color: C.muted, fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}>Memuat data produksi...</div>
+          <div style={{ color: C.muted, fontWeight: 600, fontFamily: C.fontSans }}>Memuat data produksi...</div>
         </div>
       </div>
     </Sidebar>
@@ -228,22 +298,24 @@ export default function ProduksiPage() {
       {toast && (
         <div style={{
           position: "fixed", top: "24px", right: "24px", zIndex: 9999,
-          background: toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue,
-          color: "#fff", padding: "14px 20px", borderRadius: "12px",
+          background: toast.type === "success" ? "#0d2b1e" : toast.type === "error" ? "#2b0d0d" : "#0d1a2b",
+          border: `1px solid ${toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue}44`,
+          color: toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue,
+          padding: "14px 20px", borderRadius: "12px",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-          fontFamily: "'DM Sans', sans-serif", fontWeight: 600, fontSize: "14px",
+          fontFamily: C.fontMono, fontWeight: 600, fontSize: "13px", maxWidth: 400,
         }}>{toast.msg}</div>
       )}
 
-      <div style={{ padding: "28px 24px", fontFamily: "'DM Sans', sans-serif", background: C.bg, minHeight: "100vh", maxWidth: "960px", margin: "0 auto" }}>
+      <div style={{ padding: "28px 24px", fontFamily: C.fontSans, background: C.bg, minHeight: "100vh", maxWidth: "960px", margin: "0 auto" }}>
 
         {/* Header */}
         <div style={{ marginBottom: "28px" }}>
-          <h1 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: "26px", color: "#f0eaff", fontWeight: 400 }}>
+          <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: "26px", color: "#f0eaff", fontWeight: 400 }}>
             ⚙️ Produksi Batch
           </h1>
-          <p style={{ margin: "4px 0 0", fontSize: "12px", color: C.muted, fontFamily: "'DM Mono', monospace" }}>
-            Input produksi · Kurangi stok bahan otomatis · Hitung HPP
+          <p style={{ margin: "4px 0 0", fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>
+            Input produksi · Kurangi stok bahan · Tambah stok produk jadi · Hitung HPP otomatis
           </p>
         </div>
 
@@ -256,7 +328,7 @@ export default function ProduksiPage() {
           ].map((s, i) => (
             <div key={i} style={{ background: C.card, padding: "16px 20px", borderRadius: "14px", borderLeft: `4px solid ${s.color}` }}>
               <div style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>{s.label}</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: "#f0eaff", fontFamily: "'DM Serif Display', serif" }}>{s.value}</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: "#f0eaff", fontFamily: C.fontDisplay }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -270,26 +342,44 @@ export default function ProduksiPage() {
         {/* ─── TAB: INPUT PRODUKSI ─── */}
         {activeTab === "input" && (
           <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-            <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", fontSize: "18px", color: C.text, fontWeight: 400 }}>Input Batch Produksi</h3>
+            <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
+              Input Batch Produksi
+            </h3>
 
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
+            {/* FIX UTAMA: Pilih produk dari stok_barang */}
+            <div style={{ background: C.accent + "10", border: `1px solid ${C.accent}30`, borderRadius: "10px", padding: "14px 16px", marginBottom: "20px" }}>
+              <label style={{ fontSize: "11px", fontWeight: 700, color: C.accent, display: "block", marginBottom: "8px", letterSpacing: "0.08em" }}>
+                PRODUK YANG DIPRODUKSI
+              </label>
+              <select value={stokBarangId} onChange={e => setStokBarangId(e.target.value)} style={{ ...inputS, background: "#0f0b1a" }}>
+                <option value="">— Pilih Produk Jadi —</option>
+                {stokBarang.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.nama_produk} {s.sku ? `(${s.sku})` : ""} · stok: {s.jumlah_stok}
+                  </option>
+                ))}
+              </select>
+              {produkTerpilih && (
+                <div style={{ marginTop: "8px", fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>
+                  Stok sekarang: <strong style={{ color: C.textMid }}>{produkTerpilih.jumlah_stok}</strong> pcs
+                  {qtyProduksi && <span style={{ color: C.success, marginLeft: "8px" }}>→ setelah produksi: <strong>{produkTerpilih.jumlah_stok + parseFloat(qtyProduksi || "0")}</strong> pcs</span>}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
               <div>
-                <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>NAMA PRODUK</label>
-                <input type="text" value={namaProduk} onChange={e => setNamaProduk(e.target.value)} placeholder="e.g. Kue Nastar, Sirup Jahe..." style={inputS} />
-              </div>
-              <div>
-                <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>QTY PRODUKSI</label>
-                <input type="number" value={qtyProduksi} onChange={e => setQtyProduksi(e.target.value)} placeholder="pcs / unit" style={inputS} min="1" />
+                <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>QTY PRODUKSI (pcs)</label>
+                <input type="number" value={qtyProduksi} onChange={e => setQtyProduksi(e.target.value)} placeholder="Jumlah yang diproduksi" style={inputS} min="1" />
               </div>
               <div>
                 <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>OPERATOR</label>
                 <input type="text" value={operator} onChange={e => setOperator(e.target.value)} placeholder="Nama operator (opsional)" style={inputS} />
               </div>
-            </div>
-
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>CATATAN</label>
-              <input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Catatan produksi (opsional)" style={inputS} />
+              <div>
+                <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>CATATAN</label>
+                <input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Opsional" style={inputS} />
+              </div>
             </div>
 
             {/* Bahan yang dipakai */}
@@ -299,7 +389,9 @@ export default function ProduksiPage() {
                   BAHAN YANG DIPAKAI
                   {bahan.length === 0 && <span style={{ color: C.danger, marginLeft: "8px", fontWeight: 400 }}>⚠ Belum ada bahan di master</span>}
                 </label>
-                <button onClick={addBahanPakai} style={{ background: C.success + "15", border: `1px solid ${C.success}40`, color: C.success, padding: "5px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>+ Tambah Bahan</button>
+                <button onClick={addBahanPakai} style={{ background: C.success + "15", border: `1px solid ${C.success}40`, color: C.success, padding: "5px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>
+                  + Tambah Bahan
+                </button>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "2fr 100px 80px 140px 30px", gap: "8px", marginBottom: "6px" }}>
@@ -314,7 +406,8 @@ export default function ProduksiPage() {
                 return (
                   <div key={idx} style={{ marginBottom: "8px" }}>
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 100px 80px 140px 30px", gap: "8px", alignItems: "center" }}>
-                      <select value={item.bahan_id} onChange={e => updateBahanPakai(idx, "bahan_id", e.target.value)} style={{ ...inputS, borderColor: kurang ? C.danger + "80" : C.border }}>
+                      <select value={item.bahan_id} onChange={e => updateBahanPakai(idx, "bahan_id", e.target.value)}
+                        style={{ ...inputS, borderColor: kurang ? C.danger + "80" : C.border }}>
                         <option value="">— Pilih Bahan —</option>
                         {kategoriList.length > 0
                           ? kategoriList.map(kat => {
@@ -329,9 +422,10 @@ export default function ProduksiPage() {
                           : bahan.map(b => <option key={b.id} value={b.id}>{b.nama} (stok: {b.stok} {b.satuan})</option>)
                         }
                       </select>
-                      <input type="number" value={item.qty} onChange={e => updateBahanPakai(idx, "qty", e.target.value)} placeholder="0" style={{ ...inputS, borderColor: kurang ? C.danger + "80" : C.border }} min="0" step="0.1" />
+                      <input type="number" value={item.qty} onChange={e => updateBahanPakai(idx, "qty", e.target.value)}
+                        placeholder="0" style={{ ...inputS, borderColor: kurang ? C.danger + "80" : C.border }} min="0" step="0.1" />
                       <div style={{ padding: "9px 0", textAlign: "center", fontSize: "13px", color: C.muted }}>{item.satuan || "—"}</div>
-                      <div style={{ padding: "9px 0", fontSize: "13px", color: C.blue, fontFamily: "'DM Mono', monospace" }}>
+                      <div style={{ padding: "9px 0", fontSize: "13px", color: C.blue, fontFamily: C.fontMono }}>
                         {b && item.qty ? rupiahFmt(parseFloat(item.qty) * (b.harga_beli_avg || 0)) : "—"}
                       </div>
                       <button onClick={() => removeBahanPakai(idx)} style={{ background: C.danger + "15", border: `1px solid ${C.danger}30`, color: C.danger, width: "30px", height: "38px", borderRadius: "6px", cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
@@ -353,24 +447,32 @@ export default function ProduksiPage() {
 
             {/* Summary HPP */}
             <div style={{ background: "#0f0b1a", border: `1px solid ${C.border}`, borderRadius: "10px", padding: "16px", marginBottom: "16px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
                 <div>
                   <div style={{ fontSize: "11px", color: C.muted, fontWeight: 700, letterSpacing: "0.08em", marginBottom: "6px" }}>TOTAL HPP BAHAN</div>
-                  <div style={{ fontSize: "22px", fontWeight: 700, color: "#f0eaff", fontFamily: "'DM Serif Display', serif" }}>{rupiahFmt(Math.round(totalHPP))}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: "#f0eaff", fontFamily: C.fontDisplay }}>{rupiahFmt(Math.round(totalHPP))}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: "11px", color: C.muted, fontWeight: 700, letterSpacing: "0.08em", marginBottom: "6px" }}>HPP PER UNIT</div>
-                  <div style={{ fontSize: "22px", fontWeight: 700, color: C.blue, fontFamily: "'DM Serif Display', serif" }}>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: C.blue, fontFamily: C.fontDisplay }}>
                     {hppPerUnit > 0 ? rupiahFmt(Math.round(hppPerUnit)) : "—"}
                   </div>
-                  {qtyProduksi && <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>untuk {qtyProduksi} unit</div>}
+                  {qtyProduksi && <div style={{ fontSize: "11px", color: C.dim, marginTop: "2px" }}>untuk {qtyProduksi} pcs</div>}
+                </div>
+                <div>
+                  <div style={{ fontSize: "11px", color: C.muted, fontWeight: 700, letterSpacing: "0.08em", marginBottom: "6px" }}>STOK SETELAH PRODUKSI</div>
+                  <div style={{ fontSize: "20px", fontWeight: 700, color: C.success, fontFamily: C.fontDisplay }}>
+                    {produkTerpilih && qtyProduksi
+                      ? `${produkTerpilih.jumlah_stok + parseFloat(qtyProduksi)} pcs`
+                      : "—"}
+                  </div>
                 </div>
               </div>
             </div>
 
             {stokWarnings.length > 0 && (
               <div style={{ background: C.danger + "10", border: `1px solid ${C.danger}40`, borderRadius: "10px", padding: "12px 16px", marginBottom: "12px", fontSize: "13px", color: C.danger }}>
-                ❌ Stok tidak cukup: <strong>{stokWarnings.map(i => i.nama).join(", ")}</strong>. Kurangi qty atau lakukan pembelian bahan dulu.
+                ❌ Stok tidak cukup: <strong>{stokWarnings.map(i => i.nama).join(", ")}</strong>
               </div>
             )}
 
@@ -380,9 +482,9 @@ export default function ProduksiPage() {
               border: `1px solid ${(submitting || stokWarnings.length > 0) ? C.dim : C.accent + "60"}`,
               color: (submitting || stokWarnings.length > 0) ? C.dim : C.accent,
               fontWeight: 700, cursor: (submitting || stokWarnings.length > 0) ? "not-allowed" : "pointer",
-              fontFamily: "'DM Sans', sans-serif", fontSize: "15px",
+              fontFamily: C.fontSans, fontSize: "15px",
             }}>
-              {submitting ? "Menyimpan..." : "✓ Simpan Batch Produksi"}
+              {submitting ? "Menyimpan..." : `✓ Simpan Batch Produksi${produkTerpilih ? ` — ${produkTerpilih.nama_produk}` : ""}`}
             </button>
           </div>
         )}
@@ -390,19 +492,16 @@ export default function ProduksiPage() {
         {/* ─── TAB: RIWAYAT ─── */}
         {activeTab === "riwayat" && (
           <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-            <h3 style={{ margin: "0 0 16px", fontFamily: "'DM Serif Display', serif", color: C.text, fontWeight: 400 }}>Riwayat Batch Produksi</h3>
+            <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, color: C.text, fontWeight: 400 }}>Riwayat Batch Produksi</h3>
 
-            {/* Filter bar */}
             <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
-              <input
-                type="text" value={filterNama} placeholder="🔍 Cari nama produk..."
+              <input type="text" value={filterNama} placeholder="🔍 Cari nama produk..."
                 onChange={e => { setFilterNama(e.target.value); setCurrentPage(1); }}
                 style={{ ...inputS, flex: 1, padding: "8px 12px" }}
               />
               <button onClick={() => setSortDir(d => d === "desc" ? "asc" : "desc")} style={{
                 padding: "8px 14px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "8px",
-                color: C.muted, cursor: "pointer", fontSize: "12px", fontWeight: 600,
-                fontFamily: "'DM Sans', sans-serif",
+                color: C.muted, cursor: "pointer", fontSize: "12px", fontWeight: 600, fontFamily: C.fontSans,
               }}>
                 Tanggal {sortDir === "desc" ? "↓" : "↑"}
               </button>
@@ -414,64 +513,61 @@ export default function ProduksiPage() {
               </div>
             )}
 
-            {riwayatPage.map(r => (
-              <div key={r.id} style={{ borderBottom: `1px solid ${C.border}20`, marginBottom: "2px" }}>
-                {/* Row utama */}
-                <div
-                  onClick={() => toggleDetail(r.id)}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", cursor: "pointer" }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: "14px", color: C.text }}>{r.nama_produk}</div>
-                    <div style={{ fontSize: "11px", color: C.dim, fontFamily: "'DM Mono', monospace", marginTop: "2px" }}>
-                      {tanggalFmt(r.created_at)}{r.operator ? ` · ${r.operator}` : ""}
+            {riwayatPage.map(r => {
+              const produk = stokBarang.find(s => s.id === r.stok_barang_id);
+              return (
+                <div key={r.id} style={{ borderBottom: `1px solid ${C.border}20`, marginBottom: "2px" }}>
+                  <div onClick={() => toggleDetail(r.id)}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", cursor: "pointer" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: "14px", color: C.text }}>{r.nama_produk}</div>
+                      <div style={{ fontSize: "11px", color: C.dim, fontFamily: C.fontMono, marginTop: "2px" }}>
+                        {tanggalFmt(r.created_at)}{r.operator ? ` · ${r.operator}` : ""}
+                        {produk && <span style={{ color: C.accent, marginLeft: "6px" }}>· stok sekarang: {produk.jumlah_stok}</span>}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", marginRight: "12px" }}>
+                      <div style={{ fontWeight: 700, fontSize: "14px", color: "#f0eaff", fontFamily: C.fontMono }}>{r.qty_produksi} pcs</div>
+                      <div style={{ fontSize: "11px", color: C.blue, fontFamily: C.fontMono }}>
+                        HPP/pcs: {rupiahFmt(r.hpp_per_unit)} · Total: {rupiahFmt(r.total_hpp)}
+                      </div>
+                    </div>
+                    <div style={{ color: C.muted, fontSize: "12px", minWidth: "20px", textAlign: "center" }}>
+                      {expandedId === r.id ? "▲" : "▼"}
                     </div>
                   </div>
-                  <div style={{ textAlign: "right", marginRight: "12px" }}>
-                    <div style={{ fontWeight: 700, fontSize: "14px", color: "#f0eaff", fontFamily: "'DM Mono', monospace" }}>{r.qty_produksi} unit</div>
-                    <div style={{ fontSize: "11px", color: C.blue, fontFamily: "'DM Mono', monospace" }}>HPP: {rupiahFmt(r.total_hpp)}</div>
-                  </div>
-                  <div style={{ color: C.muted, fontSize: "12px", minWidth: "20px", textAlign: "center" }}>
-                    {expandedId === r.id ? "▲" : "▼"}
-                  </div>
-                </div>
 
-                {/* Detail expandable */}
-                {expandedId === r.id && (
-                  <div style={{ background: "#0f0b1a", borderRadius: "8px", padding: "14px", marginBottom: "10px" }}>
-                    {!detailCache[r.id] ? (
-                      <div style={{ color: C.muted, fontSize: "13px" }}>Memuat detail...</div>
-                    ) : detailCache[r.id].length === 0 ? (
-                      <div style={{ color: C.dim, fontSize: "13px" }}>Tidak ada detail tersimpan</div>
-                    ) : (
-                      <>
-                        <div style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: "10px" }}>BAHAN YANG DIPAKAI</div>
-                        {detailCache[r.id].map((d: any, i: number) => (
-                          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}30` }}>
-                            <div style={{ fontSize: "13px", color: C.text }}>{d.bahan_baku?.nama || `Bahan #${d.bahan_baku_id}`}</div>
-                            <div style={{ fontSize: "13px", color: C.muted, fontFamily: "'DM Mono', monospace" }}>
-                              {d.qty_pakai} {d.bahan_baku?.satuan} · {rupiahFmt(d.hpp_bahan)}
+                  {expandedId === r.id && (
+                    <div style={{ background: "#0f0b1a", borderRadius: "8px", padding: "14px", marginBottom: "10px" }}>
+                      {!detailCache[r.id] ? (
+                        <div style={{ color: C.muted, fontSize: "13px" }}>Memuat detail...</div>
+                      ) : detailCache[r.id].length === 0 ? (
+                        <div style={{ color: C.dim, fontSize: "13px" }}>Tidak ada detail tersimpan</div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: "10px" }}>BAHAN YANG DIPAKAI</div>
+                          {detailCache[r.id].map((d: any, i: number) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}30` }}>
+                              <span style={{ fontSize: "13px", color: C.text }}>{d.bahan_baku?.nama || `Bahan #${d.bahan_baku_id}`}</span>
+                              <span style={{ fontSize: "13px", color: C.muted, fontFamily: C.fontMono }}>
+                                {d.qty_pakai} {d.bahan_baku?.satuan} · {rupiahFmt(d.hpp_bahan)}
+                              </span>
                             </div>
-                          </div>
-                        ))}
-                        {r.catatan && (
-                          <div style={{ marginTop: "10px", fontSize: "12px", color: C.muted, fontStyle: "italic" }}>
-                            📝 {r.catatan}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+                          ))}
+                          {r.catatan && (
+                            <div style={{ marginTop: "10px", fontSize: "12px", color: C.muted, fontStyle: "italic" }}>📝 {r.catatan}</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", paddingTop: "12px", borderTop: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: "12px", color: C.muted }}>
-                  {riwayatFiltered.length} batch · hal {currentPage}/{totalPages}
-                </div>
+                <div style={{ fontSize: "12px", color: C.muted }}>{riwayatFiltered.length} batch · hal {currentPage}/{totalPages}</div>
                 <div style={{ display: "flex", gap: "6px" }}>
                   <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
                     style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "6px", color: currentPage === 1 ? C.dim : C.muted, cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "12px" }}>

@@ -11,14 +11,15 @@ type MenuItem = {
   roles?: string[];
 };
 
-const MENU: MenuItem[] = [
-  { label: "Home",               href: "/",                icon: "🏠" },
-  { label: "Dashboard",          href: "/dashboard",       icon: "◈" },
-  { label: "Pembelian Reseller", href: "/pembelian",       icon: "🛍" },
-  { label: "Pembelian Bahan",    href: "/pembelian-bahan", icon: "🧪" },
-  { label: "Produksi",           href: "/produksi",        icon: "⚙️" },
-  { label: "Penjualan",          href: "/penjualan",       icon: "🏪" }, // ← tambah ini
-  { label: "Admin",              href: "/admin",           icon: "🔐", roles: ["admin"] },
+const menuItems = [
+  { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/kas", label: "Kas", icon: "💰" },
+  { href: "/pembelian-bahan", label: "Pembelian Bahan", icon: "🧪" },
+  { href: "/pembelian", label: "Pembelian Produk", icon: "📦" },
+  { href: "/produksi", label: "Produksi", icon: "🏭" },
+  { href: "/penjualan", label: "Penjualan", icon: "🛒" },
+  { href: "/laporan", label: "Laporan", icon: "📈" }, // ✅ TAMBAH INI
+  { href: "/admin", label: "Admin", icon: "⚙️" },
 ];
 
 interface SidebarProps {

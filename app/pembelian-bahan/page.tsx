@@ -12,7 +12,15 @@ type Toast = { msg: string; type: "success" | "error" | "info" };
 type EditBahan = { id: number; nama: string; satuan: string; kategori: string } | null;
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+const tanggalFmt = (s: string) => 
+  new Date(s).toLocaleDateString("id-ID", { 
+    day: "2-digit", 
+    month: "short", 
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta", // ✅ Penting!
+  });
 
 const SATUAN_LIST = ["kg", "liter", "pack", "pcs", "roll", "karung", "lusin", "box", "gram", "ml"];
 const KATEGORI_LIST = ["Bahan Baku", "Bahan Penolong", "Packaging"];

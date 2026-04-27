@@ -3,34 +3,24 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 
 type LaporanData = {
-  // Pendapatan
   omzet_shopee: number;
   omzet_offline: number;
   retur_pembatalan: number;
   total_pendapatan: number;
-  
-  // HPP
   hpp_bahan: number;
   hpp_gaji_operator: number;
   hpp_gaji_packing: number;
   total_hpp: number;
-  
-  // Laba Kotor
   laba_kotor: number;
   margin_kotor: number;
-  
-  // Biaya Operasional
   biaya_fee_shopee: number;
   biaya_gaji: number;
   biaya_transport: number;
   biaya_operasional_lain: number;
   biaya_zakat: number;
   total_biaya_operasional: number;
-  
-  // Laba Bersih
   laba_bersih: number;
   margin_bersih: number;
 };
@@ -47,12 +37,6 @@ type ProdukProfit = {
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const val = Math.round(n || 0);
-  if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
-  if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
-  return val.toString();
-};
 const pctFmt = (n: number) => `${n.toFixed(1)}%`;
 
 const C = {
@@ -78,9 +62,8 @@ export default function LaporanPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [laporan, setLaporan] = useState<LaporanData | null>(null);
   const [produkProfit, setProdukProfit] = useState<ProdukProfit[]>([]);
-  const [activeTab, setActiveTab] = useState<"summary" | "produk" | "trend">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "produk">("summary");
   
-  // Filter periode
   const [filterMode, setFilterMode] = useState<"bulan" | "custom">("bulan");
   const [bulanTerpilih, setBulanTerpilih] = useState(() => {
     const now = new Date();
@@ -100,7 +83,6 @@ export default function LaporanPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Generate daftar bulan (12 bulan terakhir)
   const daftarBulan = useMemo(() => {
     const result = [];
     const now = new Date();
@@ -113,7 +95,6 @@ export default function LaporanPage() {
     return result;
   }, []);
 
-  // Hitung range tanggal berdasarkan filter
   const { startDate, endDate } = useMemo(() => {
     if (filterMode === "bulan") {
       const [year, month] = bulanTerpilih.split("-").map(Number);
@@ -136,7 +117,6 @@ export default function LaporanPage() {
   const fetchLaporan = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. PENDAPATAN - Omzet Shopee
       const { data: shopeeData } = await supabase
         .from("penjualan_shopee")
         .select("total_nominal")
@@ -145,7 +125,6 @@ export default function LaporanPage() {
       
       const omzet_shopee = (shopeeData || []).reduce((sum, r) => sum + (r.total_nominal || 0), 0);
 
-      // 2. PENDAPATAN - Omzet Offline
       const { data: offlineData } = await supabase
         .from("kas")
         .select("nominal")
@@ -156,7 +135,6 @@ export default function LaporanPage() {
       
       const omzet_offline = (offlineData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 3. PENDAPATAN - Retur/Pembatalan (mengurangi omzet)
       const { data: returData } = await supabase
         .from("retur_shopee")
         .select("nominal")
@@ -165,7 +143,6 @@ export default function LaporanPage() {
       
       const retur_pembatalan = (returData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 4. HPP - Data dari produksi_batch
       const { data: produksiData } = await supabase
         .from("produksi_batch")
         .select("total_hpp, gaji_operator, nama_produk, qty_produksi")
@@ -182,7 +159,6 @@ export default function LaporanPage() {
         hpp_gaji_operator += gaji;
         hpp_bahan += (hpp - gaji);
         
-        // Agregat per produk
         if (!produkMap[p.nama_produk]) {
           produkMap[p.nama_produk] = { qty: 0, hpp: 0 };
         }
@@ -190,12 +166,8 @@ export default function LaporanPage() {
         produkMap[p.nama_produk].hpp += hpp;
       });
 
-      // 5. Breakdown per produk (omzet dari penjualan)
-      // Untuk simplifikasi, kita asumsikan semua produk yang diproduksi terjual
-      // Di production, harus join dengan data penjualan real
       const produkProfitList: ProdukProfit[] = Object.entries(produkMap).map(([nama, data]) => {
-        // Asumsi harga jual (bisa ambil dari stok_barang)
-        const omzet_estimasi = data.hpp * 1.6; // Markup 60% sebagai estimasi
+        const omzet_estimasi = data.hpp * 1.6;
         const profit = omzet_estimasi - data.hpp;
         const margin = omzet_estimasi > 0 ? (profit / omzet_estimasi) * 100 : 0;
         
@@ -211,9 +183,8 @@ export default function LaporanPage() {
 
       setProdukProfit(produkProfitList);
 
-      const hpp_gaji_packing = 0; // TODO: Sesuaikan
+      const hpp_gaji_packing = 0;
 
-      // 6. BIAYA OPERASIONAL - Fee Shopee
       const { data: feeShopeeData } = await supabase
         .from("kas")
         .select("nominal")
@@ -224,7 +195,6 @@ export default function LaporanPage() {
       
       const biaya_fee_shopee = (feeShopeeData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 7. BIAYA OPERASIONAL - Gaji
       const { data: gajiData } = await supabase
         .from("kas")
         .select("nominal")
@@ -235,7 +205,6 @@ export default function LaporanPage() {
       
       const biaya_gaji = (gajiData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 8. BIAYA OPERASIONAL - Transport
       const { data: transportData } = await supabase
         .from("kas")
         .select("nominal")
@@ -246,7 +215,6 @@ export default function LaporanPage() {
       
       const biaya_transport = (transportData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 9. BIAYA OPERASIONAL - Lain-lain
       const { data: operasionalData } = await supabase
         .from("kas")
         .select("nominal")
@@ -257,7 +225,6 @@ export default function LaporanPage() {
       
       const biaya_operasional_lain = (operasionalData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 10. BIAYA OPERASIONAL - Zakat
       const { data: zakatData } = await supabase
         .from("data_zakat")
         .select("zakat_keluar")
@@ -266,7 +233,6 @@ export default function LaporanPage() {
       
       const biaya_zakat = (zakatData || []).reduce((sum, r) => sum + (r.zakat_keluar || 0), 0);
 
-      // KALKULASI FINAL
       const total_pendapatan = omzet_shopee + omzet_offline - retur_pembatalan;
       const total_hpp = hpp_bahan + hpp_gaji_operator + hpp_gaji_packing;
       const laba_kotor = total_pendapatan - total_hpp;
@@ -333,13 +299,6 @@ export default function LaporanPage() {
     transition: "all 0.15s",
   });
 
-  // Data untuk chart breakdown (pie-like)
-  const chartData = laporan ? [
-    { name: "HPP", value: laporan.total_hpp, fill: C.danger },
-    { name: "Biaya Ops", value: laporan.total_biaya_operasional, fill: C.warning },
-    { name: "Laba Bersih", value: laporan.laba_bersih, fill: C.success },
-  ] : [];
-
   if (loading) {
     return (
       <Sidebar>
@@ -368,7 +327,6 @@ export default function LaporanPage() {
         }
       `}</style>
 
-      {/* Toast */}
       {toast && (
         <div style={{
           position: "fixed", top: 24, right: 24, zIndex: 9999,
@@ -391,7 +349,6 @@ export default function LaporanPage() {
 
       <div style={{ padding: "28px 24px", fontFamily: C.fontSans, background: C.bg, minHeight: "100vh", maxWidth: "1200px", margin: "0 auto" }}>
         
-        {/* Header */}
         <div style={{ marginBottom: "28px" }}>
           <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: "26px", color: "#f0eaff", fontWeight: 400 }}>
             📊 Laporan Laba Rugi
@@ -401,7 +358,6 @@ export default function LaporanPage() {
           </p>
         </div>
 
-        {/* Filter Periode */}
         <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}`, marginBottom: "24px" }}>
           <div style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: "12px" }}>
             FILTER PERIODE
@@ -462,9 +418,9 @@ export default function LaporanPage() {
           )}
         </div>
 
-        {/* Summary Cards */}
         {laporan && (
           <>
+            {/* ✅ FIX BUG 1: Ganti rupiahShort jadi rupiahFmt untuk angka lengkap */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px", marginBottom: "24px" }}>
               {[
                 { label: "Omzet", value: laporan.total_pendapatan, color: C.blue, pct: null },
@@ -477,8 +433,9 @@ export default function LaporanPage() {
                   <div style={{ fontSize: "10px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px" }}>
                     {s.label}
                   </div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: s.color, fontFamily: C.fontMono, marginBottom: "4px" }}>
-                    {rupiahShort(s.value)}
+                  {/* ✅ FIX: Pakai rupiahFmt bukan rupiahShort */}
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: s.color, fontFamily: C.fontMono, marginBottom: "4px", wordBreak: "break-word", lineHeight: 1.3 }}>
+                    {rupiahFmt(s.value)}
                   </div>
                   {s.pct !== null && (
                     <div style={{ fontSize: "11px", color: C.muted, fontFamily: C.fontMono }}>
@@ -489,7 +446,6 @@ export default function LaporanPage() {
               ))}
             </div>
 
-            {/* Tabs */}
             <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
               <button onClick={() => setActiveTab("summary")} style={tabBtn(activeTab === "summary", C.accent)}>
                 📋 Summary
@@ -497,12 +453,8 @@ export default function LaporanPage() {
               <button onClick={() => setActiveTab("produk")} style={tabBtn(activeTab === "produk", C.success)}>
                 📦 Per Produk
               </button>
-              <button onClick={() => setActiveTab("trend")} style={tabBtn(activeTab === "trend", C.blue)}>
-                📈 Visualisasi
-              </button>
             </div>
 
-            {/* TAB: SUMMARY */}
             {activeTab === "summary" && (
               <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
                 <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
@@ -621,29 +573,26 @@ export default function LaporanPage() {
                   </div>
                 </div>
 
-                {/* Export Buttons */}
-                <div style={{ marginTop: "24px", display: "flex", gap: "10px" }}>
-                  <button
-                    onClick={() => window.print()}
-                    style={{
-                      flex: 1,
-                      padding: "12px",
-                      borderRadius: "10px",
-                      background: C.success + "20",
-                      border: `1px solid ${C.success}40`,
-                      color: C.success,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      fontSize: "14px",
-                    }}
-                  >
-                    🖨️ Print
-                  </button>
-                </div>
+                <button
+                  onClick={() => window.print()}
+                  style={{
+                    width: "100%",
+                    marginTop: "24px",
+                    padding: "12px",
+                    borderRadius: "10px",
+                    background: C.success + "20",
+                    border: `1px solid ${C.success}40`,
+                    color: C.success,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: "14px",
+                  }}
+                >
+                  🖨️ Print Laporan
+                </button>
               </div>
             )}
 
-            {/* TAB: PER PRODUK */}
             {activeTab === "produk" && (
               <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
                 <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
@@ -655,90 +604,56 @@ export default function LaporanPage() {
                     Belum ada data produksi untuk periode ini
                   </div>
                 ) : (
-                  <div>
-                    {produkProfit.map((p, i) => (
-                      <div key={i} style={{ 
-                        marginBottom: "12px", 
-                        padding: "16px", 
-                        background: "#0f0b1a", 
-                        borderRadius: "10px",
-                        border: `1px solid ${C.border}`,
-                      }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
-                          <div>
-                            <div style={{ fontSize: "14px", fontWeight: 600, color: C.text, marginBottom: "4px" }}>
-                              {p.nama_produk}
-                            </div>
-                            <div style={{ fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>
-                              {p.qty_terjual} pcs diproduksi
-                            </div>
+                  produkProfit.map((p, i) => (
+                    <div key={i} style={{ 
+                      marginBottom: "12px", 
+                      padding: "16px", 
+                      background: "#0f0b1a", 
+                      borderRadius: "10px",
+                      border: `1px solid ${C.border}`,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                        <div>
+                          <div style={{ fontSize: "14px", fontWeight: 600, color: C.text, marginBottom: "4px" }}>
+                            {p.nama_produk}
                           </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: "16px", fontWeight: 700, color: C.success, fontFamily: C.fontMono }}>
-                              {rupiahFmt(p.profit)}
-                            </div>
-                            <div style={{ fontSize: "12px", color: C.muted }}>
-                              Margin {pctFmt(p.margin)}
-                            </div>
+                          <div style={{ fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>
+                            {p.qty_terjual} pcs diproduksi
                           </div>
                         </div>
-
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px" }}>
-                          <div>
-                            <div style={{ color: C.muted, marginBottom: "2px" }}>Omzet Estimasi</div>
-                            <div style={{ color: C.text, fontWeight: 600, fontFamily: C.fontMono }}>
-                              {rupiahFmt(p.omzet)}
-                            </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: "16px", fontWeight: 700, color: C.success, fontFamily: C.fontMono }}>
+                            {rupiahFmt(p.profit)}
                           </div>
-                          <div>
-                            <div style={{ color: C.muted, marginBottom: "2px" }}>HPP</div>
-                            <div style={{ color: C.text, fontWeight: 600, fontFamily: C.fontMono }}>
-                              {rupiahFmt(p.hpp)}
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{ color: C.muted, marginBottom: "2px" }}>Profit</div>
-                            <div style={{ color: C.success, fontWeight: 700, fontFamily: C.fontMono }}>
-                              {rupiahFmt(p.profit)}
-                            </div>
+                          <div style={{ fontSize: "12px", color: C.muted }}>
+                            Margin {pctFmt(p.margin)}
                           </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px" }}>
+                        <div>
+                          <div style={{ color: C.muted, marginBottom: "2px" }}>Omzet Estimasi</div>
+                          <div style={{ color: C.text, fontWeight: 600, fontFamily: C.fontMono }}>
+                            {rupiahFmt(p.omzet)}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: C.muted, marginBottom: "2px" }}>HPP</div>
+                          <div style={{ color: C.text, fontWeight: 600, fontFamily: C.fontMono }}>
+                            {rupiahFmt(p.hpp)}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: C.muted, marginBottom: "2px" }}>Profit</div>
+                          <div style={{ color: C.success, fontWeight: 700, fontFamily: C.fontMono }}>
+                            {rupiahFmt(p.profit)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
                 )}
-              </div>
-            )}
-
-            {/* TAB: VISUALISASI */}
-            {activeTab === "trend" && (
-              <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-                <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
-                  Visualisasi Data
-                </h3>
-
-                <div style={{ marginBottom: "32px" }}>
-                  <div style={{ fontSize: "13px", fontWeight: 600, color: C.muted, marginBottom: "16px" }}>
-                    Breakdown Pendapatan
-                  </div>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-                      <XAxis dataKey="name" stroke={C.muted} style={{ fontSize: "12px" }} />
-                      <YAxis stroke={C.muted} style={{ fontSize: "12px" }} />
-                      <Tooltip 
-                        contentStyle={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "8px" }}
-                        labelStyle={{ color: C.text }}
-                        formatter={(value: any) => rupiahFmt(value)}
-                      />
-                      <Bar dataKey="value" fill={C.accent} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div style={{ fontSize: "11px", color: C.muted, textAlign: "center", fontStyle: "italic" }}>
-                  📈 Fitur trend chart 6 bulan terakhir coming soon
-                </div>
               </div>
             )}
           </>

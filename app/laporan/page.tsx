@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 
 type LaporanData = {
   // Pendapatan
@@ -34,9 +35,24 @@ type LaporanData = {
   margin_bersih: number;
 };
 
+type ProdukProfit = {
+  nama_produk: string;
+  qty_terjual: number;
+  omzet: number;
+  hpp: number;
+  profit: number;
+  margin: number;
+};
+
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
+const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
+const rupiahShort = (n: number) => {
+  const val = Math.round(n || 0);
+  if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
+  if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
+  return val.toString();
+};
 const pctFmt = (n: number) => `${n.toFixed(1)}%`;
 
 const C = {
@@ -61,6 +77,8 @@ export default function LaporanPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<Toast | null>(null);
   const [laporan, setLaporan] = useState<LaporanData | null>(null);
+  const [produkProfit, setProdukProfit] = useState<ProdukProfit[]>([]);
+  const [activeTab, setActiveTab] = useState<"summary" | "produk" | "trend">("summary");
   
   // Filter periode
   const [filterMode, setFilterMode] = useState<"bulan" | "custom">("bulan");
@@ -150,24 +168,50 @@ export default function LaporanPage() {
       // 4. HPP - Data dari produksi_batch
       const { data: produksiData } = await supabase
         .from("produksi_batch")
-        .select("total_hpp, gaji_operator")
+        .select("total_hpp, gaji_operator, nama_produk, qty_produksi")
         .gte("created_at", startDate)
         .lte("created_at", endDate);
       
       let hpp_bahan = 0;
       let hpp_gaji_operator = 0;
+      const produkMap: Record<string, { qty: number; hpp: number }> = {};
       
       (produksiData || []).forEach(p => {
         const gaji = p.gaji_operator || 0;
         const hpp = p.total_hpp || 0;
         hpp_gaji_operator += gaji;
-        hpp_bahan += (hpp - gaji); // HPP total - gaji = HPP bahan
+        hpp_bahan += (hpp - gaji);
+        
+        // Agregat per produk
+        if (!produkMap[p.nama_produk]) {
+          produkMap[p.nama_produk] = { qty: 0, hpp: 0 };
+        }
+        produkMap[p.nama_produk].qty += p.qty_produksi;
+        produkMap[p.nama_produk].hpp += hpp;
       });
 
-      // 5. HPP - Gaji Packing (asumsi: dicatat di kas atau bisa dari produksi juga)
-      // Untuk sekarang kita ambil dari kas kategori tertentu atau bisa di-skip
-      // Kalau gaji packing juga masuk ke produksi_batch, tinggal sum
-      const hpp_gaji_packing = 0; // TODO: Sesuaikan dengan logic kamu
+      // 5. Breakdown per produk (omzet dari penjualan)
+      // Untuk simplifikasi, kita asumsikan semua produk yang diproduksi terjual
+      // Di production, harus join dengan data penjualan real
+      const produkProfitList: ProdukProfit[] = Object.entries(produkMap).map(([nama, data]) => {
+        // Asumsi harga jual (bisa ambil dari stok_barang)
+        const omzet_estimasi = data.hpp * 1.6; // Markup 60% sebagai estimasi
+        const profit = omzet_estimasi - data.hpp;
+        const margin = omzet_estimasi > 0 ? (profit / omzet_estimasi) * 100 : 0;
+        
+        return {
+          nama_produk: nama,
+          qty_terjual: data.qty,
+          omzet: omzet_estimasi,
+          hpp: data.hpp,
+          profit,
+          margin,
+        };
+      }).sort((a, b) => b.profit - a.profit);
+
+      setProdukProfit(produkProfitList);
+
+      const hpp_gaji_packing = 0; // TODO: Sesuaikan
 
       // 6. BIAYA OPERASIONAL - Fee Shopee
       const { data: feeShopeeData } = await supabase
@@ -180,7 +224,7 @@ export default function LaporanPage() {
       
       const biaya_fee_shopee = (feeShopeeData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 7. BIAYA OPERASIONAL - Gaji (admin, host live, dll - bukan produksi)
+      // 7. BIAYA OPERASIONAL - Gaji
       const { data: gajiData } = await supabase
         .from("kas")
         .select("nominal")
@@ -213,7 +257,7 @@ export default function LaporanPage() {
       
       const biaya_operasional_lain = (operasionalData || []).reduce((sum, r) => sum + (r.nominal || 0), 0);
 
-      // 10. BIAYA OPERASIONAL - Zakat (ambil dari tabel data_zakat)
+      // 10. BIAYA OPERASIONAL - Zakat
       const { data: zakatData } = await supabase
         .from("data_zakat")
         .select("zakat_keluar")
@@ -275,6 +319,27 @@ export default function LaporanPage() {
     outline: "none",
   };
 
+  const tabBtn = (active: boolean, color: string): React.CSSProperties => ({
+    flex: 1,
+    padding: "10px 8px",
+    borderRadius: "8px",
+    border: `1px solid ${active ? color + "60" : C.border}`,
+    background: active ? color + "20" : "transparent",
+    color: active ? color : C.muted,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontSize: "13px",
+    fontFamily: C.fontSans,
+    transition: "all 0.15s",
+  });
+
+  // Data untuk chart breakdown (pie-like)
+  const chartData = laporan ? [
+    { name: "HPP", value: laporan.total_hpp, fill: C.danger },
+    { name: "Biaya Ops", value: laporan.total_biaya_operasional, fill: C.warning },
+    { name: "Laba Bersih", value: laporan.laba_bersih, fill: C.success },
+  ] : [];
+
   if (loading) {
     return (
       <Sidebar>
@@ -297,6 +362,10 @@ export default function LaporanPage() {
         select option { background: #1a1020; color: #e2d9f3; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: #2a1f3d; border-radius: 2px; }
+        @media print {
+          @page { margin: 1cm; }
+          body { background: white !important; }
+        }
       `}</style>
 
       {/* Toast */}
@@ -320,7 +389,7 @@ export default function LaporanPage() {
         </div>
       )}
 
-      <div style={{ padding: "28px 24px", fontFamily: C.fontSans, background: C.bg, minHeight: "100vh", maxWidth: "1100px", margin: "0 auto" }}>
+      <div style={{ padding: "28px 24px", fontFamily: C.fontSans, background: C.bg, minHeight: "100vh", maxWidth: "1200px", margin: "0 auto" }}>
         
         {/* Header */}
         <div style={{ marginBottom: "28px" }}>
@@ -409,7 +478,7 @@ export default function LaporanPage() {
                     {s.label}
                   </div>
                   <div style={{ fontSize: "16px", fontWeight: 700, color: s.color, fontFamily: C.fontMono, marginBottom: "4px" }}>
-                    {rupiahFmt(s.value)}
+                    {rupiahShort(s.value)}
                   </div>
                   {s.pct !== null && (
                     <div style={{ fontSize: "11px", color: C.muted, fontFamily: C.fontMono }}>
@@ -420,160 +489,258 @@ export default function LaporanPage() {
               ))}
             </div>
 
-            {/* Detail Breakdown */}
-            <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-              <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
-                Detail Breakdown
-              </h3>
-
-              {/* PENDAPATAN */}
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: C.blue, marginBottom: "12px", letterSpacing: "0.05em" }}>
-                  PENDAPATAN
-                </div>
-                {[
-                  { label: "Penjualan Shopee", value: laporan.omzet_shopee },
-                  { label: "Penjualan Offline", value: laporan.omzet_offline },
-                  { label: "Retur/Pembatalan", value: -laporan.retur_pembatalan, isNegative: true },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-                    <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
-                    <span style={{ fontSize: "13px", fontWeight: 600, color: item.isNegative ? C.danger : C.text, fontFamily: C.fontMono }}>
-                      {item.isNegative && item.value !== 0 && "("}
-                      {rupiahFmt(Math.abs(item.value))}
-                      {item.isNegative && item.value !== 0 && ")"}
-                    </span>
-                  </div>
-                ))}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 12px", background: C.blue + "10", marginTop: "4px", borderRadius: "8px" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue }}>TOTAL PENDAPATAN</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue, fontFamily: C.fontMono }}>
-                    {rupiahFmt(laporan.total_pendapatan)}
-                  </span>
-                </div>
-              </div>
-
-              {/* HPP */}
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: C.danger, marginBottom: "12px", letterSpacing: "0.05em" }}>
-                  HARGA POKOK PENJUALAN (HPP)
-                </div>
-                {[
-                  { label: "Bahan Baku & Packaging", value: laporan.hpp_bahan },
-                  { label: "Gaji Operator Produksi", value: laporan.hpp_gaji_operator },
-                  { label: "Gaji Tim Packing", value: laporan.hpp_gaji_packing },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-                    <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
-                    <span style={{ fontSize: "13px", fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>
-                      {rupiahFmt(item.value)}
-                    </span>
-                  </div>
-                ))}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 12px", background: C.danger + "10", marginTop: "4px", borderRadius: "8px" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: C.danger }}>TOTAL HPP</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: C.danger, fontFamily: C.fontMono }}>
-                    {rupiahFmt(laporan.total_hpp)}
-                  </span>
-                </div>
-              </div>
-
-              {/* LABA KOTOR */}
-              <div style={{ marginBottom: "24px", padding: "16px", background: C.success + "10", borderRadius: "10px", border: `1px solid ${C.success}30` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: "11px", color: C.muted, marginBottom: "4px" }}>LABA KOTOR (Gross Profit)</div>
-                    <div style={{ fontSize: "20px", fontWeight: 700, color: C.success, fontFamily: C.fontDisplay }}>
-                      {rupiahFmt(laporan.laba_kotor)}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: "16px", fontWeight: 700, color: C.success, fontFamily: C.fontMono }}>
-                    {pctFmt(laporan.margin_kotor)}
-                  </div>
-                </div>
-              </div>
-
-              {/* BIAYA OPERASIONAL */}
-              <div style={{ marginBottom: "24px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700, color: C.warning, marginBottom: "12px", letterSpacing: "0.05em" }}>
-                  BIAYA OPERASIONAL
-                </div>
-                {[
-                  { label: "Fee Shopee (Komisi, Ongkir, Ads)", value: laporan.biaya_fee_shopee },
-                  { label: "Gaji (Admin, Host Live, CS, dll)", value: laporan.biaya_gaji },
-                  { label: "Transport & Delivery", value: laporan.biaya_transport },
-                  { label: "Operasional Lain-lain", value: laporan.biaya_operasional_lain },
-                  { label: "Zakat (2.5% otomatis)", value: laporan.biaya_zakat },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-                    <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
-                    <span style={{ fontSize: "13px", fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>
-                      {rupiahFmt(item.value)}
-                    </span>
-                  </div>
-                ))}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 12px", background: C.warning + "10", marginTop: "4px", borderRadius: "8px" }}>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: C.warning }}>TOTAL BIAYA OPERASIONAL</span>
-                  <span style={{ fontSize: "14px", fontWeight: 700, color: C.warning, fontFamily: C.fontMono }}>
-                    {rupiahFmt(laporan.total_biaya_operasional)}
-                  </span>
-                </div>
-              </div>
-
-              {/* LABA BERSIH */}
-              <div style={{ padding: "20px", background: C.accent + "15", borderRadius: "12px", border: `2px solid ${C.accent}40` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: "12px", color: C.muted, marginBottom: "6px", letterSpacing: "0.08em" }}>LABA BERSIH (Net Profit)</div>
-                    <div style={{ fontSize: "28px", fontWeight: 700, color: C.accent, fontFamily: C.fontDisplay }}>
-                      {rupiahFmt(laporan.laba_bersih)}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "11px", color: C.muted, marginBottom: "4px" }}>Margin</div>
-                    <div style={{ fontSize: "24px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono }}>
-                      {pctFmt(laporan.margin_bersih)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Export Button */}
-              <div style={{ marginTop: "24px", display: "flex", gap: "10px" }}>
-                <button
-                  onClick={() => showToast("Fitur export PDF coming soon!", "info")}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    borderRadius: "10px",
-                    background: C.blue + "20",
-                    border: `1px solid ${C.blue}40`,
-                    color: C.blue,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  📄 Export PDF
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    borderRadius: "10px",
-                    background: C.success + "20",
-                    border: `1px solid ${C.success}40`,
-                    color: C.success,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  🖨️ Print
-                </button>
-              </div>
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
+              <button onClick={() => setActiveTab("summary")} style={tabBtn(activeTab === "summary", C.accent)}>
+                📋 Summary
+              </button>
+              <button onClick={() => setActiveTab("produk")} style={tabBtn(activeTab === "produk", C.success)}>
+                📦 Per Produk
+              </button>
+              <button onClick={() => setActiveTab("trend")} style={tabBtn(activeTab === "trend", C.blue)}>
+                📈 Visualisasi
+              </button>
             </div>
+
+            {/* TAB: SUMMARY */}
+            {activeTab === "summary" && (
+              <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+                <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
+                  Detail Breakdown
+                </h3>
+
+                {/* PENDAPATAN */}
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: C.blue, marginBottom: "12px", letterSpacing: "0.05em" }}>
+                    PENDAPATAN
+                  </div>
+                  {[
+                    { label: "Penjualan Shopee", value: laporan.omzet_shopee },
+                    { label: "Penjualan Offline", value: laporan.omzet_offline },
+                    { label: "Retur/Pembatalan", value: -laporan.retur_pembatalan, isNegative: true },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: item.isNegative ? C.danger : C.text, fontFamily: C.fontMono }}>
+                        {item.isNegative && item.value !== 0 && "("}
+                        {rupiahFmt(Math.abs(item.value))}
+                        {item.isNegative && item.value !== 0 && ")"}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 12px", background: C.blue + "10", marginTop: "4px", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue }}>TOTAL PENDAPATAN</span>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue, fontFamily: C.fontMono }}>
+                      {rupiahFmt(laporan.total_pendapatan)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* HPP */}
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: C.danger, marginBottom: "12px", letterSpacing: "0.05em" }}>
+                    HARGA POKOK PENJUALAN (HPP)
+                  </div>
+                  {[
+                    { label: "Bahan Baku & Packaging", value: laporan.hpp_bahan },
+                    { label: "Gaji Operator Produksi", value: laporan.hpp_gaji_operator },
+                    { label: "Gaji Tim Packing", value: laporan.hpp_gaji_packing },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>
+                        {rupiahFmt(item.value)}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 12px", background: C.danger + "10", marginTop: "4px", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.danger }}>TOTAL HPP</span>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.danger, fontFamily: C.fontMono }}>
+                      {rupiahFmt(laporan.total_hpp)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* LABA KOTOR */}
+                <div style={{ marginBottom: "24px", padding: "16px", background: C.success + "10", borderRadius: "10px", border: `1px solid ${C.success}30` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: "11px", color: C.muted, marginBottom: "4px" }}>LABA KOTOR (Gross Profit)</div>
+                      <div style={{ fontSize: "20px", fontWeight: 700, color: C.success, fontFamily: C.fontDisplay }}>
+                        {rupiahFmt(laporan.laba_kotor)}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: C.success, fontFamily: C.fontMono }}>
+                      {pctFmt(laporan.margin_kotor)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* BIAYA OPERASIONAL */}
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: C.warning, marginBottom: "12px", letterSpacing: "0.05em" }}>
+                    BIAYA OPERASIONAL
+                  </div>
+                  {[
+                    { label: "Fee Shopee (Komisi, Ongkir, Ads)", value: laporan.biaya_fee_shopee },
+                    { label: "Gaji (Admin, Host Live, CS, dll)", value: laporan.biaya_gaji },
+                    { label: "Transport & Delivery", value: laporan.biaya_transport },
+                    { label: "Operasional Lain-lain", value: laporan.biaya_operasional_lain },
+                    { label: "Zakat (2.5% otomatis)", value: laporan.biaya_zakat },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>
+                        {rupiahFmt(item.value)}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 12px", background: C.warning + "10", marginTop: "4px", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.warning }}>TOTAL BIAYA OPERASIONAL</span>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.warning, fontFamily: C.fontMono }}>
+                      {rupiahFmt(laporan.total_biaya_operasional)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* LABA BERSIH */}
+                <div style={{ padding: "20px", background: C.accent + "15", borderRadius: "12px", border: `2px solid ${C.accent}40` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontSize: "12px", color: C.muted, marginBottom: "6px", letterSpacing: "0.08em" }}>LABA BERSIH (Net Profit)</div>
+                      <div style={{ fontSize: "28px", fontWeight: 700, color: C.accent, fontFamily: C.fontDisplay }}>
+                        {rupiahFmt(laporan.laba_bersih)}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "11px", color: C.muted, marginBottom: "4px" }}>Margin</div>
+                      <div style={{ fontSize: "24px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono }}>
+                        {pctFmt(laporan.margin_bersih)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Export Buttons */}
+                <div style={{ marginTop: "24px", display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => window.print()}
+                    style={{
+                      flex: 1,
+                      padding: "12px",
+                      borderRadius: "10px",
+                      background: C.success + "20",
+                      border: `1px solid ${C.success}40`,
+                      color: C.success,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontSize: "14px",
+                    }}
+                  >
+                    🖨️ Print
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: PER PRODUK */}
+            {activeTab === "produk" && (
+              <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+                <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
+                  Profitabilitas per Produk
+                </h3>
+
+                {produkProfit.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px", color: C.muted, fontSize: "13px" }}>
+                    Belum ada data produksi untuk periode ini
+                  </div>
+                ) : (
+                  <div>
+                    {produkProfit.map((p, i) => (
+                      <div key={i} style={{ 
+                        marginBottom: "12px", 
+                        padding: "16px", 
+                        background: "#0f0b1a", 
+                        borderRadius: "10px",
+                        border: `1px solid ${C.border}`,
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                          <div>
+                            <div style={{ fontSize: "14px", fontWeight: 600, color: C.text, marginBottom: "4px" }}>
+                              {p.nama_produk}
+                            </div>
+                            <div style={{ fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>
+                              {p.qty_terjual} pcs diproduksi
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: "16px", fontWeight: 700, color: C.success, fontFamily: C.fontMono }}>
+                              {rupiahFmt(p.profit)}
+                            </div>
+                            <div style={{ fontSize: "12px", color: C.muted }}>
+                              Margin {pctFmt(p.margin)}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", fontSize: "12px" }}>
+                          <div>
+                            <div style={{ color: C.muted, marginBottom: "2px" }}>Omzet Estimasi</div>
+                            <div style={{ color: C.text, fontWeight: 600, fontFamily: C.fontMono }}>
+                              {rupiahFmt(p.omzet)}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ color: C.muted, marginBottom: "2px" }}>HPP</div>
+                            <div style={{ color: C.text, fontWeight: 600, fontFamily: C.fontMono }}>
+                              {rupiahFmt(p.hpp)}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ color: C.muted, marginBottom: "2px" }}>Profit</div>
+                            <div style={{ color: C.success, fontWeight: 700, fontFamily: C.fontMono }}>
+                              {rupiahFmt(p.profit)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB: VISUALISASI */}
+            {activeTab === "trend" && (
+              <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+                <h3 style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
+                  Visualisasi Data
+                </h3>
+
+                <div style={{ marginBottom: "32px" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: C.muted, marginBottom: "16px" }}>
+                    Breakdown Pendapatan
+                  </div>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                      <XAxis dataKey="name" stroke={C.muted} style={{ fontSize: "12px" }} />
+                      <YAxis stroke={C.muted} style={{ fontSize: "12px" }} />
+                      <Tooltip 
+                        contentStyle={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "8px" }}
+                        labelStyle={{ color: C.text }}
+                        formatter={(value: any) => rupiahFmt(value)}
+                      />
+                      <Bar dataKey="value" fill={C.accent} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div style={{ fontSize: "11px", color: C.muted, textAlign: "center", fontStyle: "italic" }}>
+                  📈 Fitur trend chart 6 bulan terakhir coming soon
+                </div>
+              </div>
+            )}
           </>
         )}
 

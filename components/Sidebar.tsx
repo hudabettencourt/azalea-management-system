@@ -11,15 +11,16 @@ type MenuItem = {
   roles?: string[];
 };
 
-const menuItems = [
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/kas", label: "Kas", icon: "💰" },
-  { href: "/pembelian-bahan", label: "Pembelian Bahan", icon: "🧪" },
-  { href: "/pembelian", label: "Pembelian Produk", icon: "📦" },
-  { href: "/produksi", label: "Produksi", icon: "🏭" },
-  { href: "/penjualan", label: "Penjualan", icon: "🛒" },
-  { href: "/laporan", label: "Laporan", icon: "📈" }, // ✅ TAMBAH INI
-  { href: "/admin", label: "Admin", icon: "⚙️" },
+const MENU: MenuItem[] = [
+  { label: "Home",               href: "/",                icon: "🏠" },
+  { label: "Dashboard",          href: "/dashboard",       icon: "◈" },
+  { label: "Kas",                href: "/kas",             icon: "💰" },
+  { label: "Pembelian Reseller", href: "/pembelian",       icon: "🛍" },
+  { label: "Pembelian Bahan",    href: "/pembelian-bahan", icon: "🧪" },
+  { label: "Produksi",           href: "/produksi",        icon: "⚙️" },
+  { label: "Penjualan",          href: "/penjualan",       icon: "🏪" },
+  { label: "Laporan",            href: "/laporan",         icon: "📊" }, // ✅ BARU!
+  { label: "Admin",              href: "/admin",           icon: "🔐", roles: ["owner", "super_admin"] },
 ];
 
 interface SidebarProps {
@@ -65,10 +66,10 @@ export default function Sidebar({ children }: SidebarProps) {
   const sidebarW = collapsed ? "60px" : "220px";
 
   const NavLink = ({ item }: { item: MenuItem }) => {
-  const active =
-    item.href === "/"
-      ? pathname === "/"
-      : pathname === item.href || pathname?.startsWith(item.href + "/");
+    const active =
+      item.href === "/"
+        ? pathname === "/"
+        : pathname === item.href || pathname?.startsWith(item.href + "/");
     return (
       <a
         href={item.href}
@@ -186,22 +187,22 @@ export default function Sidebar({ children }: SidebarProps) {
             justifyContent: collapsed ? "center" : "flex-start",
             gap: "8px",
             width: "100%",
-            padding: collapsed ? "10px 0" : "9px 14px",
-            background: "none",
+            padding: collapsed ? "10px 0" : "8px 12px",
+            background: "transparent",
             border: "none",
             borderRadius: "8px",
-            color: "#f8717160",
-            cursor: "pointer",
+            color: C.muted,
             fontSize: "13px",
-            fontFamily: "'DM Sans', sans-serif",
-            fontWeight: 600,
+            fontWeight: 500,
+            cursor: "pointer",
             transition: "all 0.15s",
+            fontFamily: "'DM Sans', sans-serif",
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "#f8717115"; (e.currentTarget as HTMLElement).style.color = "#f87171"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "none"; (e.currentTarget as HTMLElement).style.color = "#f8717160"; }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.hover}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
         >
           <span style={{ fontSize: "16px" }}>🚪</span>
-          {!collapsed && "Logout"}
+          {!collapsed && <span>Logout</span>}
         </button>
       </div>
     </div>
@@ -211,61 +212,61 @@ export default function Sidebar({ children }: SidebarProps) {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #100c16; }
-
-        /* Mobile hamburger button */
-        .sidebar-mobile-toggle {
-          display: none;
-          position: fixed;
-          top: 16px;
-          left: 16px;
-          z-index: 1100;
-          background: #1a1425;
-          border: 1px solid #2a1f3d;
-          color: #a78bfa;
-          width: 40px;
-          height: 40px;
-          border-radius: 8px;
-          font-size: 18px;
-          cursor: pointer;
-          align-items: center;
-          justify-content: center;
-        }
 
         @media (max-width: 768px) {
-          .sidebar-mobile-toggle { display: flex; }
           .sidebar-desktop { display: none !important; }
+          .sidebar-mobile-button {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            z-index: 999;
+            background: ${C.sidebar};
+            border: 1px solid ${C.border};
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: ${C.text};
+            cursor: pointer;
+            font-size: 18px;
+          }
           .sidebar-mobile-overlay {
-            display: block;
             position: fixed;
             inset: 0;
-            background: rgba(10, 8, 20, 0.8);
+            background: rgba(0,0,0,0.6);
             z-index: 1000;
           }
           .sidebar-mobile-drawer {
             position: fixed;
-            top: 0;
             left: 0;
+            top: 0;
             bottom: 0;
-            width: 220px;
-            background: #120e1a;
-            border-right: 1px solid #2a1f3d;
-            z-index: 1050;
-          }
-          .sidebar-main-content {
-            margin-left: 0 !important;
-            padding-top: 64px;
+            width: 240px;
+            background: ${C.sidebar};
+            z-index: 1001;
+            box-shadow: 4px 0 12px rgba(0,0,0,0.3);
           }
         }
+
+        @media (min-width: 769px) {
+          .sidebar-mobile-button { display: none !important; }
+        }
+
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: ${C.border} transparent;
+        }
+        *::-webkit-scrollbar { width: 6px; }
+        *::-webkit-scrollbar-track { background: transparent; }
+        *::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px; }
+        *::-webkit-scrollbar-thumb:hover { background: ${C.accent}40; }
       `}</style>
 
-      {/* Mobile toggle */}
+      {/* Mobile menu button */}
       <button
-        className="sidebar-mobile-toggle"
-        onClick={() => setMobileOpen(o => !o)}
+        className="sidebar-mobile-button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
       >
-        {mobileOpen ? "✕" : "☰"}
+        ☰
       </button>
 
       {/* Mobile overlay */}

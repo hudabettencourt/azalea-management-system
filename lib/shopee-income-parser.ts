@@ -76,24 +76,76 @@ export function parseShopeeIncomeExcel(file: File): Promise<ShopeeIncomeRow[]> {
         }) as any[][];
         
         // Find header row (row 6 dalam file Shopee)
-        const headerRowIndex = jsonData.findIndex(row => 
-          row[1] === 'No. Pesanan' || row.includes('No. Pesanan')
-        );
+        // Cari row yang ada kolom 'No. Pesanan'
+        let headerRowIndex = -1;
+        
+        for (let i = 0; i < Math.min(20, jsonData.length); i++) {
+          const row = jsonData[i];
+          if (Array.isArray(row)) {
+            // Cek apakah ada kolom 'No. Pesanan' di row ini
+            const hasPesanan = row.some(cell => 
+              cell && String(cell).includes('No. Pesanan')
+            );
+            if (hasPesanan) {
+              headerRowIndex = i;
+              break;
+            }
+          }
+        }
         
         if (headerRowIndex === -1) {
-          throw new Error('Header row tidak ditemukan. Pastikan file adalah Excel Income Shopee yang benar.');
+          throw new Error('Header row tidak ditemukan. Pastikan file adalah Excel Income Shopee yang benar. Cek apakah ada kolom "No. Pesanan" di Excel.');
         }
         
         const headers = jsonData[headerRowIndex];
         const dataRows = jsonData.slice(headerRowIndex + 1);
         
+        console.log('Headers found:', headers);
+        console.log('Data rows count:', dataRows.length);
+        
+        // Helper: Get column value by name (handle variations)
+        const getColIndex = (possibleNames: string[]): number => {
+          for (const name of possibleNames) {
+            const idx = headers.findIndex((h: any) => 
+              h && String(h).toLowerCase().includes(name.toLowerCase())
+            );
+            if (idx >= 0) return idx;
+          }
+          return -1;
+        };
+        
+        // Map column indices
+        const colMap = {
+          noPesanan: getColIndex(['No. Pesanan', 'Pesanan']),
+          noPengajuan: getColIndex(['No. Pengajuan', 'Pengajuan']),
+          usernamePembeli: getColIndex(['Username (Pembeli)', 'Pembeli']),
+          waktuPesanan: getColIndex(['Waktu Pesanan Dibuat', 'Waktu Pesanan']),
+          tanggalRilis: getColIndex(['Tanggal Dana Dilepaskan', 'Dana Dilepaskan']),
+          hargaAsli: getColIndex(['Harga Asli Produk', 'Harga Asli']),
+          totalDiskon: getColIndex(['Total Diskon Produk', 'Total Diskon']),
+          biayaKomisi: getColIndex(['Biaya Komisi AMS', 'Komisi']),
+          biayaAdmin: getColIndex(['Biaya Administrasi', 'Administrasi']),
+          biayaLayanan: getColIndex(['Biaya Layanan', 'Layanan']),
+          biayaProses: getColIndex(['Biaya Proses Pesanan', 'Proses Pesanan']),
+          biayaKampanye: getColIndex(['Biaya Kampanye', 'Kampanye']),
+          biayaHemat: getColIndex(['Biaya Program Hemat', 'Hemat Biaya Kirim', 'Hemat Kirim']),
+          biayaTransaksi: getColIndex(['Biaya Transaksi', 'Transaksi']),
+          totalPenghasilan: getColIndex(['Total Penghasilan', 'Penghasilan']),
+        };
+        
+        console.log('Column mapping:', colMap);
+        
         // Parse each row
         const parsed: ShopeeIncomeRow[] = dataRows
-          .filter(row => row[1] && row[1].length > 5) // Filter rows dengan no pesanan valid
+          .filter(row => {
+            // Filter rows dengan no pesanan valid
+            if (!Array.isArray(row)) return false;
+            const noPesanan = colMap.noPesanan >= 0 ? row[colMap.noPesanan] : null;
+            return noPesanan && String(noPesanan).length > 5;
+          })
           .map(row => {
-            const getCol = (colName: string): any => {
-              const colIndex = headers.indexOf(colName);
-              return colIndex >= 0 ? row[colIndex] : null;
+            const getVal = (colIdx: number): any => {
+              return colIdx >= 0 ? row[colIdx] : null;
             };
             
             const parseNumber = (val: any): number => {
@@ -110,26 +162,26 @@ export function parseShopeeIncomeExcel(file: File): Promise<ShopeeIncomeRow[]> {
             };
             
             // Extract all fee components (convert to positive)
-            const biayaKomisi = parseNumber(getCol('Biaya Komisi AMS'));
-            const biayaAdmin = parseNumber(getCol('Biaya Administrasi'));
-            const biayaLayanan = parseNumber(getCol('Biaya Layanan'));
-            const biayaProses = parseNumber(getCol('Biaya Proses Pesanan'));
-            const biayaKampanye = parseNumber(getCol('Biaya Kampanye'));
-            const biayaHemat = parseNumber(getCol('Biaya Program Hemat Biaya Kirim'));
-            const biayaTransaksi = parseNumber(getCol('Biaya Transaksi'));
+            const biayaKomisi = parseNumber(getVal(colMap.biayaKomisi));
+            const biayaAdmin = parseNumber(getVal(colMap.biayaAdmin));
+            const biayaLayanan = parseNumber(getVal(colMap.biayaLayanan));
+            const biayaProses = parseNumber(getVal(colMap.biayaProses));
+            const biayaKampanye = parseNumber(getVal(colMap.biayaKampanye));
+            const biayaHemat = parseNumber(getVal(colMap.biayaHemat));
+            const biayaTransaksi = parseNumber(getVal(colMap.biayaTransaksi));
             
             const totalFee = biayaKomisi + biayaAdmin + biayaLayanan + 
                            biayaProses + biayaKampanye + biayaHemat + biayaTransaksi;
             
             return {
-              noPesanan: String(getCol('No. Pesanan') || ''),
-              noPengajuan: String(getCol('No. Pengajuan') || ''),
-              usernamePembeli: String(getCol('Username (Pembeli)') || ''),
-              waktuPesananDibuat: String(getCol('Waktu Pesanan Dibuat') || ''),
-              tanggalDanaRilis: String(getCol('Tanggal Dana Dilepaskan') || ''),
+              noPesanan: String(getVal(colMap.noPesanan) || ''),
+              noPengajuan: String(getVal(colMap.noPengajuan) || ''),
+              usernamePembeli: String(getVal(colMap.usernamePembeli) || ''),
+              waktuPesananDibuat: String(getVal(colMap.waktuPesanan) || ''),
+              tanggalDanaRilis: String(getVal(colMap.tanggalRilis) || ''),
               
-              hargaAsliProduk: parseNumber(getCol('Harga Asli Produk')),
-              totalDiskonProduk: parseNumber(getCol('Total Diskon Produk')),
+              hargaAsliProduk: parseNumber(getVal(colMap.hargaAsli)),
+              totalDiskonProduk: parseNumber(getVal(colMap.totalDiskon)),
               
               biayaKomisiAMS: biayaKomisi,
               biayaAdministrasi: biayaAdmin,
@@ -139,10 +191,15 @@ export function parseShopeeIncomeExcel(file: File): Promise<ShopeeIncomeRow[]> {
               biayaHematKirim: biayaHemat,
               biayaTransaksi: biayaTransaksi,
               
-              totalPenghasilan: parseNumber(getCol('Total Penghasilan')),
+              totalPenghasilan: parseNumber(getVal(colMap.totalPenghasilan)),
               totalFee,
             };
           });
+        
+        console.log('Parsed rows:', parsed.length);
+        if (parsed.length > 0) {
+          console.log('Sample row:', parsed[0]);
+        }
         
         resolve(parsed);
       } catch (error) {

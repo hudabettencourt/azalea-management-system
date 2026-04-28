@@ -47,6 +47,13 @@ const C = {
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 
+// ── FIX: Parse angka dari Excel — handle format Indonesia (titik = ribuan) ──
+const parseExcelNumber = (val: any): number => {
+  if (typeof val === "number") return val; // sudah number native, langsung aman
+  const str = String(val || "").trim().replace(/\./g, "").replace(",", ".");
+  return parseFloat(str) || 0;
+};
+
 // Parse timestamp Shopee → ISO string dengan offset WIB +07:00
 // Format Shopee: "2026-04-24 13:58" atau "2026-04-24 13:58:00"
 const parseWIB = (s: string): string => {
@@ -173,9 +180,10 @@ export function ShopeeUploadTab() {
           return {
             sku,
             nama_produk_shopee: String(r["Nama Produk"] || "").slice(0, 100),
-            qty: Number(r["Jumlah"]) || 1,
-            harga_satuan: Number(r["Harga Setelah Diskon"]) || 0,
-            total_pembayaran: Number(r["Total Pembayaran"]) || 0,
+            // ── FIX: pakai parseExcelNumber supaya "186.000" → 186000, bukan 186 ──
+            qty: parseExcelNumber(r["Jumlah"]) || 1,
+            harga_satuan: parseExcelNumber(r["Harga Setelah Diskon"]),
+            total_pembayaran: parseExcelNumber(r["Total Pembayaran"]),
             produkId: produk?.id,
             produkNama: produk?.nama_produk,
             skuDitemukan: !!produk,
@@ -205,8 +213,6 @@ export function ShopeeUploadTab() {
   const unknownSkuOrders = parsedOrders.filter(o => !o.isDuplicate && !o.allSkuFound);
 
   const totalQty = validOrders.reduce((a, o) => a + o.items.reduce((b, i) => b + i.qty, 0), 0);
-  // total_pembayaran per order = sum dari items (ambil dari baris pertama kalau semua sama, atau sum)
-  // Shopee: Total Pembayaran ada di setiap baris tapi itu nilai per baris produk
   const totalOmzet = validOrders.reduce((a, o) =>
     a + o.items.reduce((b, i) => b + i.total_pembayaran, 0), 0);
   const totalBiayaLayanan = validOrders.length * biayaLayanan;
@@ -276,8 +282,8 @@ export function ShopeeUploadTab() {
           no_resi: o.no_resi,
           sku: i.sku,
           qty: i.qty,
-          harga_satuan: i.harga_satuan,
-          total_pembayaran: i.total_pembayaran,
+          harga_satuan: Math.round(i.harga_satuan),
+          total_pembayaran: Math.round(i.total_pembayaran),
           tanggal_pesanan: o.tanggal_pesanan,
         }))
       );
@@ -438,7 +444,6 @@ export function ShopeeUploadTab() {
                   const orderQty = o.items.reduce((a, i) => a + i.qty, 0);
                   const orderTotal = o.items.reduce((a, i) => a + i.total_pembayaran, 0);
 
-                  // Tampilan produk: kalau multi-item, tampilkan sebagai list
                   const produkDisplay = o.items.map((i, ii) => (
                     <div key={ii} style={{ marginBottom: ii < o.items.length - 1 ? 3 : 0 }}>
                       <span style={{ color: i.skuDitemukan ? C.accent : C.red, fontFamily: C.fontMono, fontSize: 10, marginRight: 6 }}>

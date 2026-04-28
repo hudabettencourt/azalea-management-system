@@ -68,120 +68,72 @@ export function parseShopeeIncomeExcel(file: File): Promise<ShopeeIncomeRow[]> {
         const workbook = XLSX.read(data, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         
-        // Convert to JSON (skip header rows)
+        // Convert to JSON - get ALL rows as arrays
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-          header: 1,
+          header: 1, // Return as array of arrays
           defval: null,
-          raw: false, // Parse as string dulu untuk handle format Indo
+          raw: true, // Keep numbers as numbers
         }) as any[][];
         
-        // Find header row (row 6 dalam file Shopee)
-        // Cari row yang ada kolom 'No. Pesanan'
-        let headerRowIndex = -1;
+        console.log('Total rows in Excel:', jsonData.length);
+        console.log('First 10 rows:', jsonData.slice(0, 10));
         
-        for (let i = 0; i < Math.min(20, jsonData.length); i++) {
-          const row = jsonData[i];
-          if (Array.isArray(row)) {
-            // Cek apakah ada kolom 'No. Pesanan' di row ini
-            const hasPesanan = row.some(cell => 
-              cell && String(cell).includes('No. Pesanan')
-            );
-            if (hasPesanan) {
-              headerRowIndex = i;
-              break;
-            }
-          }
-        }
+        // Header is ALWAYS at row index 5 (row 6 in Excel, 0-indexed = 5)
+        const headerRowIndex = 5;
         
-        if (headerRowIndex === -1) {
-          throw new Error('Header row tidak ditemukan. Pastikan file adalah Excel Income Shopee yang benar. Cek apakah ada kolom "No. Pesanan" di Excel.');
+        if (jsonData.length <= headerRowIndex) {
+          throw new Error('File Excel terlalu pendek. Pastikan file adalah Excel Income Shopee yang benar.');
         }
         
         const headers = jsonData[headerRowIndex];
         const dataRows = jsonData.slice(headerRowIndex + 1);
         
-        console.log('Headers found:', headers);
-        console.log('Data rows count:', dataRows.length);
+        console.log('Headers (row 6):', headers);
+        console.log('Data rows:', dataRows.length);
         
-        // Helper: Get column value by name (handle variations)
-        const getColIndex = (possibleNames: string[]): number => {
-          for (const name of possibleNames) {
-            const idx = headers.findIndex((h: any) => 
-              h && String(h).toLowerCase().includes(name.toLowerCase())
-            );
-            if (idx >= 0) return idx;
-          }
-          return -1;
-        };
-        
-        // Map column indices
-        const colMap = {
-          noPesanan: getColIndex(['No. Pesanan', 'Pesanan']),
-          noPengajuan: getColIndex(['No. Pengajuan', 'Pengajuan']),
-          usernamePembeli: getColIndex(['Username (Pembeli)', 'Pembeli']),
-          waktuPesanan: getColIndex(['Waktu Pesanan Dibuat', 'Waktu Pesanan']),
-          tanggalRilis: getColIndex(['Tanggal Dana Dilepaskan', 'Dana Dilepaskan']),
-          hargaAsli: getColIndex(['Harga Asli Produk', 'Harga Asli']),
-          totalDiskon: getColIndex(['Total Diskon Produk', 'Total Diskon']),
-          biayaKomisi: getColIndex(['Biaya Komisi AMS', 'Komisi']),
-          biayaAdmin: getColIndex(['Biaya Administrasi', 'Administrasi']),
-          biayaLayanan: getColIndex(['Biaya Layanan', 'Layanan']),
-          biayaProses: getColIndex(['Biaya Proses Pesanan', 'Proses Pesanan']),
-          biayaKampanye: getColIndex(['Biaya Kampanye', 'Kampanye']),
-          biayaHemat: getColIndex(['Biaya Program Hemat', 'Hemat Biaya Kirim', 'Hemat Kirim']),
-          biayaTransaksi: getColIndex(['Biaya Transaksi', 'Transaksi']),
-          totalPenghasilan: getColIndex(['Total Penghasilan', 'Penghasilan']),
-        };
-        
-        console.log('Column mapping:', colMap);
-        
-        // Parse each row
+        // Parse each row using exact column indices (from analysis)
         const parsed: ShopeeIncomeRow[] = dataRows
           .filter(row => {
-            // Filter rows dengan no pesanan valid
+            // Filter rows dengan no pesanan valid (col 2)
             if (!Array.isArray(row)) return false;
-            const noPesanan = colMap.noPesanan >= 0 ? row[colMap.noPesanan] : null;
+            const noPesanan = row[1]; // Col 2 (0-indexed = 1)
             return noPesanan && String(noPesanan).length > 5;
           })
           .map(row => {
-            const getVal = (colIdx: number): any => {
-              return colIdx >= 0 ? row[colIdx] : null;
-            };
-            
             const parseNumber = (val: any): number => {
               if (!val) return 0;
               if (typeof val === 'number') return Math.abs(val);
               
-              // Handle Indonesian number format: "1.234.567" or "1,234,567"
+              // Handle Indonesian number format
               const cleaned = String(val)
-                .replace(/\./g, '') // Remove thousand separators (titik)
-                .replace(/,/g, '.') // Replace comma to dot for decimal
-                .replace(/[^\d.-]/g, ''); // Remove non-numeric except dot and minus
+                .replace(/\./g, '')
+                .replace(/,/g, '.')
+                .replace(/[^\d.-]/g, '');
               
               return Math.abs(parseFloat(cleaned) || 0);
             };
             
-            // Extract all fee components (convert to positive)
-            const biayaKomisi = parseNumber(getVal(colMap.biayaKomisi));
-            const biayaAdmin = parseNumber(getVal(colMap.biayaAdmin));
-            const biayaLayanan = parseNumber(getVal(colMap.biayaLayanan));
-            const biayaProses = parseNumber(getVal(colMap.biayaProses));
-            const biayaKampanye = parseNumber(getVal(colMap.biayaKampanye));
-            const biayaHemat = parseNumber(getVal(colMap.biayaHemat));
-            const biayaTransaksi = parseNumber(getVal(colMap.biayaTransaksi));
+            // Extract fee components (all negative in Excel, convert to positive)
+            const biayaKomisi = parseNumber(row[22]);      // Col 23
+            const biayaAdmin = parseNumber(row[23]);       // Col 24
+            const biayaLayanan = parseNumber(row[24]);     // Col 25
+            const biayaProses = parseNumber(row[25]);      // Col 26
+            const biayaKampanye = parseNumber(row[29]);    // Col 30
+            const biayaHemat = parseNumber(row[27]);       // Col 28
+            const biayaTransaksi = parseNumber(row[28]);   // Col 29
             
             const totalFee = biayaKomisi + biayaAdmin + biayaLayanan + 
                            biayaProses + biayaKampanye + biayaHemat + biayaTransaksi;
             
             return {
-              noPesanan: String(getVal(colMap.noPesanan) || ''),
-              noPengajuan: String(getVal(colMap.noPengajuan) || ''),
-              usernamePembeli: String(getVal(colMap.usernamePembeli) || ''),
-              waktuPesananDibuat: String(getVal(colMap.waktuPesanan) || ''),
-              tanggalDanaRilis: String(getVal(colMap.tanggalRilis) || ''),
+              noPesanan: String(row[1] || ''),                    // Col 2
+              noPengajuan: String(row[2] || ''),                  // Col 3
+              usernamePembeli: String(row[3] || ''),              // Col 4
+              waktuPesananDibuat: String(row[4] || ''),           // Col 5
+              tanggalDanaRilis: String(row[6] || ''),             // Col 7
               
-              hargaAsliProduk: parseNumber(getVal(colMap.hargaAsli)),
-              totalDiskonProduk: parseNumber(getVal(colMap.totalDiskon)),
+              hargaAsliProduk: parseNumber(row[7]),               // Col 8
+              totalDiskonProduk: parseNumber(row[8]),             // Col 9
               
               biayaKomisiAMS: biayaKomisi,
               biayaAdministrasi: biayaAdmin,
@@ -191,14 +143,14 @@ export function parseShopeeIncomeExcel(file: File): Promise<ShopeeIncomeRow[]> {
               biayaHematKirim: biayaHemat,
               biayaTransaksi: biayaTransaksi,
               
-              totalPenghasilan: parseNumber(getVal(colMap.totalPenghasilan)),
+              totalPenghasilan: parseNumber(row[32]),             // Col 33
               totalFee,
             };
           });
         
         console.log('Parsed rows:', parsed.length);
         if (parsed.length > 0) {
-          console.log('Sample row:', parsed[0]);
+          console.log('Sample parsed:', parsed[0]);
         }
         
         resolve(parsed);

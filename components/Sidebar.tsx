@@ -4,28 +4,63 @@ import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type MenuItem = {
-  label: string;
-  href: string;
-  icon: string;
-  roles?: string[];
+type MenuGroup = {
+  group: string;
+  items: { label: string; href: string; icon: string; roles?: string[] }[];
 };
 
-const MENU: MenuItem[] = [
-  { label: "Home",               href: "/",                icon: "🏠" },
-  { label: "Dashboard",          href: "/dashboard",       icon: "◈" },
-  { label: "Kas",                href: "/kas",             icon: "💰" },
-  { label: "Pembelian Reseller", href: "/pembelian",       icon: "🛍" },
-  { label: "Pembelian Bahan",    href: "/pembelian-bahan", icon: "🧪" },
-  { label: "Produksi",           href: "/produksi",        icon: "⚙️" },
-  { label: "Penjualan",          href: "/penjualan",       icon: "🏪" },
-  { label: "Laporan",            href: "/laporan",         icon: "📊" }, // ✅ BARU!
-  { label: "Admin",              href: "/admin",           icon: "🔐", roles: ["owner", "super_admin"] },
+const MENU_GROUPS: MenuGroup[] = [
+  {
+    group: "",
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: "◈" },
+    ],
+  },
+  {
+    group: "Transaksi",
+    items: [
+      { label: "Penjualan",     href: "/penjualan",       icon: "🛍️" },
+      { label: "Pembelian Bahan",   href: "/pembelian-bahan", icon: "🧪" },
+      { label: "Pembelian Reseller",href: "/pembelian",        icon: "📦" },
+      { label: "Kas",           href: "/kas",             icon: "💰" },
+    ],
+  },
+  {
+    group: "Operasional",
+    items: [
+      { label: "Produksi",      href: "/produksi",        icon: "⚙️" },
+      { label: "Penggajian",    href: "/penggajian",      icon: "👥" },
+    ],
+  },
+  {
+    group: "Laporan",
+    items: [
+      { label: "Laporan",       href: "/laporan",         icon: "📊" },
+    ],
+  },
+  {
+    group: "Pengaturan",
+    items: [
+      { label: "Admin",         href: "/admin",           icon: "🔐", roles: ["owner", "super_admin"] },
+    ],
+  },
 ];
 
 interface SidebarProps {
   children: React.ReactNode;
 }
+
+const C = {
+  bg: "#100c16",
+  sidebar: "#120e1a",
+  border: "#2a1f3d",
+  text: "#e2d9f3",
+  muted: "#7c6d8a",
+  dim: "#3d3050",
+  accent: "#a78bfa",
+  hover: "#1e1830",
+  activeB: "#a78bfa30",
+};
 
 export default function Sidebar({ children }: SidebarProps) {
   const pathname = usePathname();
@@ -49,27 +84,15 @@ export default function Sidebar({ children }: SidebarProps) {
     router.push("/login");
   };
 
-  const visibleMenu = MENU.filter(m => !m.roles || (role && m.roles.includes(role)));
+  const NavItem = ({ item }: { item: MenuGroup["items"][0] }) => {
+    // Sembunyikan menu yang ada role restriction
+    if (item.roles && (!role || !item.roles.includes(role))) return null;
 
-  const C = {
-    bg: "#100c16",
-    sidebar: "#120e1a",
-    border: "#2a1f3d",
-    text: "#e2d9f3",
-    muted: "#7c6d8a",
-    dim: "#3d3050",
-    accent: "#a78bfa",
-    hover: "#1e1830",
-    activeB: "#a78bfa30",
-  };
-
-  const sidebarW = collapsed ? "60px" : "220px";
-
-  const NavLink = ({ item }: { item: MenuItem }) => {
     const active =
-      item.href === "/"
-        ? pathname === "/"
+      item.href === "/dashboard"
+        ? pathname === "/dashboard"
         : pathname === item.href || pathname?.startsWith(item.href + "/");
+
     return (
       <a
         href={item.href}
@@ -79,7 +102,7 @@ export default function Sidebar({ children }: SidebarProps) {
           alignItems: "center",
           gap: collapsed ? "0" : "10px",
           justifyContent: collapsed ? "center" : "flex-start",
-          padding: collapsed ? "12px 0" : "10px 14px",
+          padding: collapsed ? "11px 0" : "9px 12px",
           borderRadius: "8px",
           textDecoration: "none",
           background: active ? C.activeB : "transparent",
@@ -95,25 +118,21 @@ export default function Sidebar({ children }: SidebarProps) {
         onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = C.hover; }}
         onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
       >
-        <span style={{ fontSize: "16px", flexShrink: 0 }}>{item.icon}</span>
+        <span style={{ fontSize: "15px", flexShrink: 0 }}>{item.icon}</span>
         {!collapsed && <span>{item.label}</span>}
       </a>
     );
   };
 
   const SidebarContent = () => (
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-      padding: "16px 8px",
-    }}>
-      {/* Logo + collapse */}
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "16px 8px" }}>
+
+      {/* Logo + collapse button */}
       <div style={{
         display: "flex",
         alignItems: "center",
         justifyContent: collapsed ? "center" : "space-between",
-        padding: "4px 8px 16px",
+        padding: "4px 6px 16px",
         borderBottom: `1px solid ${C.border}`,
         marginBottom: "12px",
       }}>
@@ -140,26 +159,43 @@ export default function Sidebar({ children }: SidebarProps) {
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "2px" }}>
-        {visibleMenu.map(item => <NavLink key={item.href} item={item} />)}
+      {/* Navigation with groups */}
+      <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px", overflowY: "auto" }}>
+        {MENU_GROUPS.map((group, gi) => (
+          <div key={gi} style={{ marginBottom: "4px" }}>
+            {/* Group label — hanya tampil kalau tidak collapsed dan ada nama group */}
+            {!collapsed && group.group && (
+              <div style={{
+                fontSize: "9px",
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: C.dim,
+                padding: "8px 12px 4px",
+                fontFamily: "'DM Mono', monospace",
+              }}>
+                {group.group}
+              </div>
+            )}
+            {/* Divider kalau collapsed */}
+            {collapsed && gi > 0 && (
+              <div style={{ height: "1px", background: C.border, margin: "6px 8px" }} />
+            )}
+            {group.items.map(item => (
+              <NavItem key={item.href} item={item} />
+            ))}
+          </div>
+        ))}
       </nav>
 
       {/* User info + logout */}
-      <div style={{
-        borderTop: `1px solid ${C.border}`,
-        paddingTop: "12px",
-        marginTop: "8px",
-      }}>
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: "12px", marginTop: "8px" }}>
         {!collapsed && userEmail && (
           <div style={{
-            fontSize: "11px",
-            color: C.muted,
+            fontSize: "11px", color: C.muted,
             padding: "0 8px 8px",
             fontFamily: "'DM Mono', monospace",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
             {userEmail}
             {role && (
@@ -201,7 +237,7 @@ export default function Sidebar({ children }: SidebarProps) {
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = C.hover}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
         >
-          <span style={{ fontSize: "16px" }}>🚪</span>
+          <span style={{ fontSize: "15px" }}>🚪</span>
           {!collapsed && <span>Logout</span>}
         </button>
       </div>
@@ -216,44 +252,25 @@ export default function Sidebar({ children }: SidebarProps) {
         @media (max-width: 768px) {
           .sidebar-desktop { display: none !important; }
           .sidebar-mobile-button {
-            position: fixed;
-            top: 16px;
-            left: 16px;
-            z-index: 999;
-            background: ${C.sidebar};
-            border: 1px solid ${C.border};
-            border-radius: 8px;
-            padding: 8px 12px;
-            color: ${C.text};
-            cursor: pointer;
-            font-size: 18px;
+            position: fixed; top: 16px; left: 16px; z-index: 999;
+            background: ${C.sidebar}; border: 1px solid ${C.border};
+            border-radius: 8px; padding: 8px 12px;
+            color: ${C.text}; cursor: pointer; font-size: 18px;
           }
           .sidebar-mobile-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 1000;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6); z-index: 1000;
           }
           .sidebar-mobile-drawer {
-            position: fixed;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 240px;
-            background: ${C.sidebar};
-            z-index: 1001;
-            box-shadow: 4px 0 12px rgba(0,0,0,0.3);
+            position: fixed; left: 0; top: 0; bottom: 0;
+            width: 240px; background: ${C.sidebar};
+            z-index: 1001; box-shadow: 4px 0 12px rgba(0,0,0,0.3);
           }
         }
-
         @media (min-width: 769px) {
           .sidebar-mobile-button { display: none !important; }
         }
-
-        * {
-          scrollbar-width: thin;
-          scrollbar-color: ${C.border} transparent;
-        }
+        * { scrollbar-width: thin; scrollbar-color: ${C.border} transparent; }
         *::-webkit-scrollbar { width: 6px; }
         *::-webkit-scrollbar-track { background: transparent; }
         *::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 3px; }
@@ -261,21 +278,15 @@ export default function Sidebar({ children }: SidebarProps) {
       `}</style>
 
       {/* Mobile menu button */}
-      <button
-        className="sidebar-mobile-button"
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open menu"
-      >
+      <button className="sidebar-mobile-button" onClick={() => setMobileOpen(true)} aria-label="Open menu">
         ☰
       </button>
 
-      {/* Mobile overlay */}
+      {/* Mobile overlay + drawer */}
       {mobileOpen && (
         <>
           <div className="sidebar-mobile-overlay" onClick={() => setMobileOpen(false)} />
-          <div className="sidebar-mobile-drawer">
-            <SidebarContent />
-          </div>
+          <div className="sidebar-mobile-drawer"><SidebarContent /></div>
         </>
       )}
 
@@ -284,8 +295,8 @@ export default function Sidebar({ children }: SidebarProps) {
         <div
           className="sidebar-desktop"
           style={{
-            width: sidebarW,
-            minWidth: sidebarW,
+            width: collapsed ? "60px" : "210px",
+            minWidth: collapsed ? "60px" : "210px",
             background: C.sidebar,
             borderRight: `1px solid ${C.border}`,
             position: "sticky",
@@ -301,14 +312,7 @@ export default function Sidebar({ children }: SidebarProps) {
         </div>
 
         {/* Main content */}
-        <div
-          className="sidebar-main-content"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflowX: "hidden",
-          }}
-        >
+        <div style={{ flex: 1, minWidth: 0, overflowX: "hidden" }}>
           {children}
         </div>
       </div>

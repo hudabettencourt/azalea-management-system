@@ -12,7 +12,7 @@ import {
 // ── Types ──
 type KasRow = { tipe: string; nominal: number; kategori: string; created_at: string };
 type StokBarang = { id: number; nama_produk: string; jumlah_stok: number; harga_jual: number; satuan: string };
-type ProduksiBatch = { hpp_total: number; created_at: string };
+type ProduksiBatch = { total_hpp: number; created_at: string };
 type GajiRow = { nominal: number; tipe_beban: string; tanggal: string };
 type ReturRow = { nominal: number; created_at: string };
 
@@ -101,7 +101,7 @@ export default function HomePage() {
         supabase.from("stok_barang").select("id, nama_produk, jumlah_stok, harga_jual, satuan").order("jumlah_stok"),
         supabase.from("hutang_supplier_bahan").select("nominal").eq("status", "Belum Lunas"),
         supabase.from("piutang").select("nominal").eq("status", "Belum Lunas"),
-        supabase.from("produksi_batch").select("hpp_total, created_at"),
+        supabase.from("produksi_batch").select("total_hpp, created_at"),
         supabase.from("gaji_harian").select("nominal, tipe_beban, tanggal"),
         supabase.from("retur_shopee").select("nominal, created_at"),
         supabase.auth.getUser(),
@@ -125,7 +125,7 @@ export default function HomePage() {
       const produksiBulan = (resProduksi.data || []).filter((p: ProduksiBatch) =>
         p.created_at >= bulanMulai
       );
-      const hppBulan = produksiBulan.reduce((a: number, p: ProduksiBatch) => a + (p.hpp_total || 0), 0);
+      const hppBulan = produksiBulan.reduce((a: number, p: ProduksiBatch) => a + (p.total_hpp || 0), 0);
       const gabiBulanHPP = (resGaji.data || [])
         .filter((g: GajiRow) => g.tanggal >= hariIni.slice(0, 7) && g.tipe_beban === "HPP")
         .reduce((a: number, g: GajiRow) => a + g.nominal, 0);
@@ -159,7 +159,7 @@ export default function HomePage() {
         const beban = kasB.filter(k => k.tipe === "Keluar").reduce((a, k) => a + k.nominal, 0);
         const hpp = (resProduksi.data || [])
           .filter((p: ProduksiBatch) => p.created_at?.slice(0, 7) === mulai)
-          .reduce((a: number, p: ProduksiBatch) => a + (p.hpp_total || 0), 0);
+          .reduce((a: number, p: ProduksiBatch) => a + (p.total_hpp || 0), 0);
         const gajiHpp = (resGaji.data || [])
           .filter((g: GajiRow) => g.tanggal?.slice(0, 7) === mulai && g.tipe_beban === "HPP")
           .reduce((a: number, g: GajiRow) => a + g.nominal, 0);
@@ -180,7 +180,7 @@ export default function HomePage() {
         const pendapatan = kasB.filter(k => k.tipe === "Masuk").reduce((a, k) => a + k.nominal, 0);
         const hpp = (resProduksi.data || [])
           .filter((p: ProduksiBatch) => p.created_at?.slice(0, 7) === mulai)
-          .reduce((a: number, p: ProduksiBatch) => a + (p.hpp_total || 0), 0);
+          .reduce((a: number, p: ProduksiBatch) => a + (p.total_hpp || 0), 0);
         const gajiHpp = (resGaji.data || [])
           .filter((g: GajiRow) => g.tanggal?.slice(0, 7) === mulai && g.tipe_beban === "HPP")
           .reduce((a: number, g: GajiRow) => a + g.nominal, 0);

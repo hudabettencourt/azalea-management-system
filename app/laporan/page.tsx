@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 type LaporanData = {
   omzet_shopee: number;
@@ -34,9 +35,22 @@ type ProdukProfit = {
   margin: number;
 };
 
+type ChartDataPoint = {
+  tanggal: string;
+  omzet: number;
+  laba: number;
+  beban: number;
+};
+
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
+const rupiahShort = (n: number) => {
+  const val = Math.round(n || 0);
+  if (val >= 1000000) return `${(val / 1000000).toFixed(1)}jt`;
+  if (val >= 1000) return `${(val / 1000).toFixed(0)}rb`;
+  return val.toString();
+};
 const pctFmt = (n: number) => `${n.toFixed(1)}%`;
 
 const C = {
@@ -62,6 +76,7 @@ export default function LaporanPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [laporan, setLaporan] = useState<LaporanData | null>(null);
   const [produkProfit, setProdukProfit] = useState<ProdukProfit[]>([]);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [activeTab, setActiveTab] = useState<"summary" | "produk">("summary");
   
   const [filterMode, setFilterMode] = useState<"bulan" | "custom">("bulan");
@@ -113,6 +128,203 @@ export default function LaporanPage() {
       };
     }
   }, [filterMode, bulanTerpilih, tanggalMulai, tanggalSelesai]);
+
+  const fetchChartData = useCallback(async () => {
+    try {
+      // Generate date range
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      
+      // Tentukan interval: jika > 31 hari, group per minggu. Jika <= 31 hari, group per hari
+      const groupByWeek = daysDiff > 31;
+      
+      const dataPoints: ChartDataPoint[] = [];
+      
+      if (groupByWeek) {
+        // Group by week
+        const weekMap: Record<string, { omzet: number; laba: number; beban: number }> = {};
+        
+        // Fetch all data
+        const { data: shopeeData } = await supabase
+          .from("penjualan_shopee")
+          .select("total_nominal, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: offlineData } = await supabase
+          .from("kas")
+          .select("nominal, created_at")
+          .eq("tipe", "Masuk")
+          .eq("kategori", "Offline")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: returData } = await supabase
+          .from("retur_shopee")
+          .select("nominal, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: produksiData } = await supabase
+          .from("produksi_batch")
+          .select("total_hpp, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: kasKeluarData } = await supabase
+          .from("kas")
+          .select("nominal, created_at")
+          .eq("tipe", "Keluar")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        // Helper function to get week key
+        const getWeekKey = (dateStr: string) => {
+          const d = new Date(dateStr);
+          const weekStart = new Date(d);
+          weekStart.setDate(d.getDate() - d.getDay()); // Start of week (Sunday)
+          return weekStart.toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+        };
+        
+        // Process data
+        (shopeeData || []).forEach(item => {
+          const weekKey = getWeekKey(item.created_at);
+          if (!weekMap[weekKey]) weekMap[weekKey] = { omzet: 0, laba: 0, beban: 0 };
+          weekMap[weekKey].omzet += item.total_nominal || 0;
+        });
+        
+        (offlineData || []).forEach(item => {
+          const weekKey = getWeekKey(item.created_at);
+          if (!weekMap[weekKey]) weekMap[weekKey] = { omzet: 0, laba: 0, beban: 0 };
+          weekMap[weekKey].omzet += item.nominal || 0;
+        });
+        
+        (returData || []).forEach(item => {
+          const weekKey = getWeekKey(item.created_at);
+          if (!weekMap[weekKey]) weekMap[weekKey] = { omzet: 0, laba: 0, beban: 0 };
+          weekMap[weekKey].omzet -= item.nominal || 0;
+        });
+        
+        (produksiData || []).forEach(item => {
+          const weekKey = getWeekKey(item.created_at);
+          if (!weekMap[weekKey]) weekMap[weekKey] = { omzet: 0, laba: 0, beban: 0 };
+          weekMap[weekKey].beban += item.total_hpp || 0;
+        });
+        
+        (kasKeluarData || []).forEach(item => {
+          const weekKey = getWeekKey(item.created_at);
+          if (!weekMap[weekKey]) weekMap[weekKey] = { omzet: 0, laba: 0, beban: 0 };
+          weekMap[weekKey].beban += item.nominal || 0;
+        });
+        
+        // Calculate laba and create data points
+        Object.entries(weekMap).forEach(([weekKey, data]) => {
+          dataPoints.push({
+            tanggal: weekKey,
+            omzet: data.omzet,
+            laba: data.omzet - data.beban,
+            beban: data.beban,
+          });
+        });
+        
+      } else {
+        // Group by day
+        const dayMap: Record<string, { omzet: number; laba: number; beban: number }> = {};
+        
+        // Fetch all data
+        const { data: shopeeData } = await supabase
+          .from("penjualan_shopee")
+          .select("total_nominal, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: offlineData } = await supabase
+          .from("kas")
+          .select("nominal, created_at")
+          .eq("tipe", "Masuk")
+          .eq("kategori", "Offline")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: returData } = await supabase
+          .from("retur_shopee")
+          .select("nominal, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: produksiData } = await supabase
+          .from("produksi_batch")
+          .select("total_hpp, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        const { data: kasKeluarData } = await supabase
+          .from("kas")
+          .select("nominal, created_at")
+          .eq("tipe", "Keluar")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+        
+        // Helper function to get day key
+        const getDayKey = (dateStr: string) => {
+          const d = new Date(dateStr);
+          return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+        };
+        
+        // Process data
+        (shopeeData || []).forEach(item => {
+          const dayKey = getDayKey(item.created_at);
+          if (!dayMap[dayKey]) dayMap[dayKey] = { omzet: 0, laba: 0, beban: 0 };
+          dayMap[dayKey].omzet += item.total_nominal || 0;
+        });
+        
+        (offlineData || []).forEach(item => {
+          const dayKey = getDayKey(item.created_at);
+          if (!dayMap[dayKey]) dayMap[dayKey] = { omzet: 0, laba: 0, beban: 0 };
+          dayMap[dayKey].omzet += item.nominal || 0;
+        });
+        
+        (returData || []).forEach(item => {
+          const dayKey = getDayKey(item.created_at);
+          if (!dayMap[dayKey]) dayMap[dayKey] = { omzet: 0, laba: 0, beban: 0 };
+          dayMap[dayKey].omzet -= item.nominal || 0;
+        });
+        
+        (produksiData || []).forEach(item => {
+          const dayKey = getDayKey(item.created_at);
+          if (!dayMap[dayKey]) dayMap[dayKey] = { omzet: 0, laba: 0, beban: 0 };
+          dayMap[dayKey].beban += item.total_hpp || 0;
+        });
+        
+        (kasKeluarData || []).forEach(item => {
+          const dayKey = getDayKey(item.created_at);
+          if (!dayMap[dayKey]) dayMap[dayKey] = { omzet: 0, laba: 0, beban: 0 };
+          dayMap[dayKey].beban += item.nominal || 0;
+        });
+        
+        // Calculate laba and create data points
+        Object.entries(dayMap).forEach(([dayKey, data]) => {
+          dataPoints.push({
+            tanggal: dayKey,
+            omzet: data.omzet,
+            laba: data.omzet - data.beban,
+            beban: data.beban,
+          });
+        });
+      }
+      
+      setChartData(dataPoints.sort((a, b) => {
+        // Sort by date
+        const dateA = new Date(a.tanggal);
+        const dateB = new Date(b.tanggal);
+        return dateA.getTime() - dateB.getTime();
+      }));
+      
+    } catch (err: any) {
+      console.error("Error fetching chart data:", err);
+    }
+  }, [startDate, endDate]);
 
   const fetchLaporan = useCallback(async () => {
     setLoading(true);
@@ -263,12 +475,15 @@ export default function LaporanPage() {
         margin_bersih,
       });
 
+      // Fetch chart data
+      await fetchChartData();
+
     } catch (err: any) {
       showToast(err.message || "Gagal memuat laporan", "error");
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, fetchChartData]);
 
   useEffect(() => {
     fetchLaporan();
@@ -298,6 +513,36 @@ export default function LaporanPage() {
     fontFamily: C.fontSans,
     transition: "all 0.15s",
   });
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div style={{
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          padding: "12px 16px",
+          borderRadius: "8px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+        }}>
+          <div style={{ fontSize: "12px", color: C.muted, marginBottom: "8px", fontFamily: C.fontMono }}>
+            {payload[0].payload.tanggal}
+          </div>
+          {payload.map((entry: any, index: number) => (
+            <div key={index} style={{ 
+              fontSize: "12px", 
+              color: entry.color, 
+              marginBottom: "4px",
+              fontFamily: C.fontMono,
+              fontWeight: 600,
+            }}>
+              {entry.name}: {rupiahShort(entry.value)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
 
   if (loading) {
     return (
@@ -420,7 +665,6 @@ export default function LaporanPage() {
 
         {laporan && (
           <>
-            {/* ✅ FIX BUG 1: Ganti rupiahShort jadi rupiahFmt untuk angka lengkap */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px", marginBottom: "24px" }}>
               {[
                 { label: "Omzet", value: laporan.total_pendapatan, color: C.blue, pct: null },
@@ -433,7 +677,6 @@ export default function LaporanPage() {
                   <div style={{ fontSize: "10px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "8px" }}>
                     {s.label}
                   </div>
-                  {/* ✅ FIX: Pakai rupiahFmt bukan rupiahShort */}
                   <div style={{ fontSize: "13px", fontWeight: 700, color: s.color, fontFamily: C.fontMono, marginBottom: "4px", wordBreak: "break-word", lineHeight: 1.3 }}>
                     {rupiahFmt(s.value)}
                   </div>
@@ -445,6 +688,104 @@ export default function LaporanPage() {
                 </div>
               ))}
             </div>
+
+            {/* 📊 CHART SECTION */}
+            {chartData.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "24px" }}>
+                {/* Line Chart - Trend Omzet & Laba */}
+                <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+                  <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: "16px", color: C.text, fontWeight: 400 }}>
+                    📈 Omzet & Laba
+                  </h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                      <XAxis 
+                        dataKey="tanggal" 
+                        stroke={C.muted} 
+                        style={{ fontSize: 11, fontFamily: C.fontMono }}
+                      />
+                      <YAxis 
+                        stroke={C.muted} 
+                        style={{ fontSize: 11, fontFamily: C.fontMono }}
+                        tickFormatter={(value) => rupiahShort(value)}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend 
+                        wrapperStyle={{ fontSize: 12, fontFamily: C.fontSans }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="omzet" 
+                        stroke={C.blue} 
+                        strokeWidth={2}
+                        name="Omzet"
+                        dot={{ fill: C.blue, r: 3 }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="laba" 
+                        stroke={C.success} 
+                        strokeWidth={2}
+                        name="Laba"
+                        dot={{ fill: C.success, r: 3 }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="beban" 
+                        stroke={C.danger} 
+                        strokeWidth={2}
+                        name="Beban"
+                        dot={{ fill: C.danger, r: 3 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Bar Chart - Laba Rugi Breakdown */}
+                <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+                  <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: "16px", color: C.text, fontWeight: 400 }}>
+                    📊 Laba Rugi
+                  </h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={[
+                      { kategori: "Pendapatan", nilai: laporan.total_pendapatan },
+                      { kategori: "HPP", nilai: -laporan.total_hpp },
+                      { kategori: "Biaya Ops", nilai: -laporan.total_biaya_operasional },
+                      { kategori: "Laba Bersih", nilai: laporan.laba_bersih },
+                    ]}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                      <XAxis 
+                        dataKey="kategori" 
+                        stroke={C.muted} 
+                        style={{ fontSize: 11, fontFamily: C.fontMono }}
+                      />
+                      <YAxis 
+                        stroke={C.muted} 
+                        style={{ fontSize: 11, fontFamily: C.fontMono }}
+                        tickFormatter={(value) => rupiahShort(value)}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="nilai" fill={C.accent}>
+                        {[
+                          { kategori: "Pendapatan", nilai: laporan.total_pendapatan },
+                          { kategori: "HPP", nilai: -laporan.total_hpp },
+                          { kategori: "Biaya Ops", nilai: -laporan.total_biaya_operasional },
+                          { kategori: "Laba Bersih", nilai: laporan.laba_bersih },
+                        ].map((entry, index) => {
+                          let color = C.accent;
+                          if (entry.kategori === "Pendapatan") color = C.blue;
+                          if (entry.kategori === "HPP") color = C.danger;
+                          if (entry.kategori === "Biaya Ops") color = C.warning;
+                          if (entry.kategori === "Laba Bersih") color = C.success;
+                          return <Bar key={`cell-${index}`} dataKey="nilai" fill={color} />;
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
               <button onClick={() => setActiveTab("summary")} style={tabBtn(activeTab === "summary", C.accent)}>

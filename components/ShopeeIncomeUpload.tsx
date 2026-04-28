@@ -3,25 +3,18 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import {
-  parseShopeeIncomeExcel,
-  getPeriodeFromIncome,
-  calculateFeeSummary,
-  validateIncomeData,
-  type ShopeeIncomeRow,
-  type FeeUploadResult,
-} from "@/lib/shopee-income-parser";
+import { parseShopeeIncome, getPeriode, getSummary, type ShopeeIncomeRow } from "@/lib/parse-shopee-income";
 
 interface Props {
   tokoId: number;
   tokoPlatform: string;
-  onSuccess?: (result: FeeUploadResult) => void;
+  onSuccess?: (result: any) => void;
 }
 
 export default function ShopeeIncomeUpload({ tokoId, tokoPlatform, onSuccess }: Props) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<ShopeeIncomeRow[] | null>(null);
-  const [summary, setSummary] = useState<FeeUploadResult['summary'] | null>(null);
+  const [summary, setSummary] = useState<any>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
 
@@ -36,25 +29,13 @@ export default function ShopeeIncomeUpload({ tokoId, tokoPlatform, onSuccess }: 
     setSummary(null);
 
     try {
-      console.log('=== DEBUG START ===');
-console.log('File name:', selectedFile.name);
-console.log('File size:', selectedFile.size);
-
-const parsed = await parseShopeeIncomeExcel(selectedFile);
-
-console.log('=== PARSED RESULT ===');
-console.log('Total parsed:', parsed.length);
-console.log('First row:', parsed[0]);
-console.log('=== DEBUG END ===');
+      const parsed = await parseShopeeIncome(selectedFile);
       
-      // Validate
-      const validationErrors = validateIncomeData(parsed);
-      if (validationErrors.length > 0) {
-        setErrors(validationErrors);
-      }
+      console.log('✅ Parsed result:', parsed.length, 'rows');
+      console.log('Sample:', parsed[0]);
       
       // Calculate summary
-      const sum = calculateFeeSummary(parsed);
+      const sum = getSummary(parsed);
       setSummary(sum);
       setPreview(parsed);
       
@@ -71,7 +52,7 @@ console.log('=== DEBUG END ===');
     setErrors([]);
 
     try {
-      const periode = getPeriodeFromIncome(preview);
+      const periode = getPeriode(preview);
       
       // 1. Insert ke fee_platform
       const { data: feeData, error: feeError } = await supabase
@@ -80,13 +61,6 @@ console.log('=== DEBUG END ===');
           toko_id: tokoId,
           periode_start: periode.start,
           periode_end: periode.end,
-          biaya_komisi: summary.breakdown.biayaKomisi,
-          biaya_administrasi: summary.breakdown.biayaAdministrasi,
-          biaya_layanan: summary.breakdown.biayaLayanan,
-          biaya_proses_pesanan: summary.breakdown.biayaProsesPesanan,
-          biaya_kampanye: summary.breakdown.biayaKampanye,
-          biaya_hemat_kirim: summary.breakdown.biayaHematKirim,
-          biaya_transaksi: summary.breakdown.biayaTransaksi,
           total_fee: summary.totalFee,
           total_penjualan_gross: summary.totalGrossAmount,
           file_excel: file?.name || '',
@@ -276,22 +250,6 @@ console.log('=== DEBUG END ===');
                 </div>
               </div>
             </div>
-
-            {/* Fee Breakdown */}
-            <details style={{ marginTop: 12, cursor: 'pointer' }}>
-              <summary style={{ color: '#a78bfa', fontSize: 12, fontWeight: 600 }}>
-                Detail Breakdown Fee
-              </summary>
-              <div style={{ marginTop: 8, fontSize: 12, color: '#c4b8e8' }}>
-                <div>Komisi AMS: Rp {summary.breakdown.biayaKomisi.toLocaleString('id-ID')}</div>
-                <div>Administrasi: Rp {summary.breakdown.biayaAdministrasi.toLocaleString('id-ID')}</div>
-                <div>Layanan: Rp {summary.breakdown.biayaLayanan.toLocaleString('id-ID')}</div>
-                <div>Proses Pesanan: Rp {summary.breakdown.biayaProsesPesanan.toLocaleString('id-ID')}</div>
-                <div>Kampanye: Rp {summary.breakdown.biayaKampanye.toLocaleString('id-ID')}</div>
-                <div>Hemat Kirim: Rp {summary.breakdown.biayaHematKirim.toLocaleString('id-ID')}</div>
-                <div>Transaksi: Rp {summary.breakdown.biayaTransaksi.toLocaleString('id-ID')}</div>
-              </div>
-            </details>
           </div>
 
           {/* Upload Button */}

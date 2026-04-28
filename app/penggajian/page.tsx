@@ -111,7 +111,7 @@ export default function PenggajianPage() {
   const fetchData = useCallback(async () => {
     try {
       const [resKaryawan, resGaji] = await Promise.all([
-        supabase.from("karyawan").select("*").ilike("status", "aktif").order("tipe").order("nama"),
+        supabase.from("karyawan").select("*").order("tipe").order("nama"),
         supabase.from("gaji_harian")
           .select("*, karyawan(nama, tipe)")
           .order("tanggal", { ascending: false })

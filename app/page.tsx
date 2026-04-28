@@ -96,8 +96,8 @@ export default function HomePage() {
         resUser,
       ] = await Promise.all([
         supabase.from("kas").select("tipe, nominal, kategori, created_at"),
-        supabase.from("kas").select("tipe, nominal, kategori").eq("tipe", "Masuk").gte("created_at", hariIni),
-        supabase.from("kas").select("tipe, nominal, kategori").gte("created_at", bulanMulai),
+        supabase.from("kas").select("tipe, nominal, kategori, created_at").eq("tipe", "Masuk").gte("created_at", hariIni),
+        supabase.from("kas").select("tipe, nominal, kategori, created_at").gte("created_at", bulanMulai),
         supabase.from("stok_barang").select("id, nama_produk, jumlah_stok, harga_jual, satuan").order("jumlah_stok"),
         supabase.from("hutang_supplier_bahan").select("nominal").eq("status", "Belum Lunas"),
         supabase.from("piutang").select("nominal").eq("status", "Belum Lunas"),

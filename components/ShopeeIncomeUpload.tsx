@@ -36,7 +36,16 @@ export default function ShopeeIncomeUpload({ tokoId, tokoPlatform, onSuccess }: 
     setSummary(null);
 
     try {
-      const parsed = await parseShopeeIncomeExcel(selectedFile);
+      console.log('=== DEBUG START ===');
+console.log('File name:', selectedFile.name);
+console.log('File size:', selectedFile.size);
+
+const parsed = await parseShopeeIncomeExcel(selectedFile);
+
+console.log('=== PARSED RESULT ===');
+console.log('Total parsed:', parsed.length);
+console.log('First row:', parsed[0]);
+console.log('=== DEBUG END ===');
       
       // Validate
       const validationErrors = validateIncomeData(parsed);

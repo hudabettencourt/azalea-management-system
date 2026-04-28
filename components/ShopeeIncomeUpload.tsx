@@ -101,10 +101,20 @@ export default function ShopeeIncomeUpload({ tokoId, tokoPlatform, onSuccess }: 
           .maybeSingle();
 
         if (detailData?.penjualan_online_id) {
+          // Get current fee_platform value
+          const { data: currentData } = await supabase
+            .from('penjualan_online')
+            .select('fee_platform')
+            .eq('id', detailData.penjualan_online_id)
+            .single();
+
+          const currentFee = currentData?.fee_platform || 0;
+
+          // Update with incremented value
           const { error: updateError } = await supabase
             .from('penjualan_online')
             .update({
-              fee_platform: supabase.raw(`fee_platform + ${row.totalFee}`),
+              fee_platform: currentFee + row.totalFee,
               net_amount: row.totalPenghasilan,
             })
             .eq('id', detailData.penjualan_online_id);

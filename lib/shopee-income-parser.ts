@@ -79,25 +79,41 @@ export function parseShopeeIncomeExcel(file: File): Promise<ShopeeIncomeRow[]> {
         
         const parsed: ShopeeIncomeRow[] = dataRows
           .filter(row => row && row[1] && String(row[1]).length > 5)
-          .map(row => ({
-            noPesanan: String(row[1] || ''),
-            noPengajuan: String(row[2] || ''),
-            usernamePembeli: String(row[3] || ''),
-            waktuPesananDibuat: String(row[4] || ''),
-            tanggalDanaRilis: String(row[6] || ''),
-            hargaAsliProduk: parseNumber(row[7]),
-            totalDiskonProduk: parseNumber(row[8]),
-            biayaKomisiAMS: parseNumber(row[22]),
-            biayaAdministrasi: parseNumber(row[23]),
-            biayaLayanan: parseNumber(row[24]),
-            biayaProsesPesanan: parseNumber(row[25]),
-            biayaKampanye: parseNumber(row[29]),
-            biayaHematKirim: parseNumber(row[27]),
-            biayaTransaksi: parseNumber(row[28]),
-            totalPenghasilan: parseNumber(row[32]),
-            totalFee: parseNumber(row[22]) + parseNumber(row[23]) + parseNumber(row[24]) + 
-                     parseNumber(row[25]) + parseNumber(row[29]) + parseNumber(row[27]) + parseNumber(row[28]),
-          }));
+          .map(row => {
+            // Fee columns: W-AE (index 22-30) - SEMUA fee Shopee
+            const biayaKomisi = parseNumber(row[22]);        // W
+            const biayaAdmin = parseNumber(row[23]);         // X
+            const biayaLayanan = parseNumber(row[24]);       // Y
+            const biayaProses = parseNumber(row[25]);        // Z
+            const premi = parseNumber(row[26]);              // AA
+            const biayaHemat = parseNumber(row[27]);         // AB
+            const biayaTransaksi = parseNumber(row[28]);     // AC
+            const biayaKampanye = parseNumber(row[29]);      // AD
+            const beaMasukPPN = parseNumber(row[30]);        // AE
+            
+            // Total fee = sum ALL columns W-AE
+            const totalFee = biayaKomisi + biayaAdmin + biayaLayanan + biayaProses + 
+                           premi + biayaHemat + biayaTransaksi + biayaKampanye + beaMasukPPN;
+            
+            return {
+              noPesanan: String(row[1] || ''),
+              noPengajuan: String(row[2] || ''),
+              usernamePembeli: String(row[3] || ''),
+              waktuPesananDibuat: String(row[4] || ''),
+              tanggalDanaRilis: String(row[6] || ''),
+              hargaAsliProduk: parseNumber(row[7]),
+              totalDiskonProduk: parseNumber(row[8]),
+              biayaKomisiAMS: biayaKomisi,
+              biayaAdministrasi: biayaAdmin,
+              biayaLayanan: biayaLayanan,
+              biayaProsesPesanan: biayaProses,
+              biayaKampanye: biayaKampanye,
+              biayaHematKirim: biayaHemat,
+              biayaTransaksi: biayaTransaksi,
+              totalPenghasilan: parseNumber(row[32]),
+              totalFee,
+            };
+          });
         
         resolve(parsed);
       } catch (error) {

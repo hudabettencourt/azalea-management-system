@@ -23,6 +23,7 @@ const MENU_GROUPS: MenuGroup[] = [
       { label: "Pembelian Bahan",   href: "/pembelian-bahan", icon: "🧪" },
       { label: "Pembelian Reseller",href: "/pembelian",        icon: "📦" },
       { label: "Kas",           href: "/kas",             icon: "💰" },
+      { label: "Fee Platform",     href: "/fee-platform",       icon: "💰" }
     ],
   },
   {

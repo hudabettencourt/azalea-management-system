@@ -128,8 +128,10 @@ export default function PenjualanPage() {
         supabase.from("pencairan_shopee").select("*, toko_shopee(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("piutang").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
       ]);
-
+      console.log("TOKO DATA:", resToko); // ← TAMBAH INI
       setToko(resToko.data || []);
+      
+
       setProduk(resProduk.data || []);
 
       const penjualanData = resPenjualan.data || [];

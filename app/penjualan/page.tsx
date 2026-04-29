@@ -120,7 +120,7 @@ export default function PenjualanPage() {
   const fetchData = useCallback(async () => {
     try {
       const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline] = await Promise.all([
-        supabase.from("toko_shopee").select("*").eq("aktif", true).order("id"),
+        supabase.from("toko_online").select("*").eq("aktif", true).order("id"),
         supabase.from("stok_barang").select("*").order("nama_produk"),
         // FIX: ambil total_ditarik juga, dan semua status (bukan hanya Belum Ditarik)
         supabase.from("penjualan_shopee").select("toko_id, total_nominal, total_ditarik, status"),

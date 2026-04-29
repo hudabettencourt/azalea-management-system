@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { parseShopeeIncomeExcel } from "@/lib/parse-shopee-income";
+import { parseShopeeIncome } from "@/lib/parse-shopee-income";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, AlertCircle, CheckCircle2, TrendingUp, Percent } from "lucide-react";

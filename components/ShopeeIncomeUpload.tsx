@@ -20,7 +20,7 @@ interface PreviewData {
   total_fee: number;
 }
 
-export function ShopeeIncomeUpload() {
+export default function ShopeeIncomeUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

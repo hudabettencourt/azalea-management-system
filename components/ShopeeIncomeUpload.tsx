@@ -46,21 +46,18 @@ export default function ShopeeIncomeUpload() {
       const arrayBuffer = await selectedFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      const parsed = parseShopeeIncomeExcel(buffer);
+      const parsed = parseShopeeIncome(buffer);
 
       if (parsed.length === 0) {
         setError("Tidak ada data valid yang ditemukan dalam file Excel");
         return;
       }
 
-      // Check for zero fees
       const zeroFeeCount = parsed.filter(row => row.total_fee === 0).length;
       if (zeroFeeCount > 0) {
-        setError(`❌ CRITICAL: ${zeroFeeCount} transaksi memiliki total fee = 0! Parser tidak membaca kolom fee dengan benar.`);
-        console.error("Zero fee rows detected:", parsed.filter(row => row.total_fee === 0));
+        setError(`❌ CRITICAL: ${zeroFeeCount} transaksi memiliki total fee = 0!`);
       }
 
-      // Group by order_id and sum amounts
       const orderMap = new Map<string, { gross_amount: number; total_fee: number }>();
 
       parsed.forEach(row => {
@@ -82,13 +79,8 @@ export default function ShopeeIncomeUpload() {
         total_fee: data.total_fee
       }));
 
-      // ✅ FIXED: Removed FeeUploadResult type
       const result = {
-        orders: validRows.map(row => ({
-          order_id: row.order_id,
-          gross_amount: row.gross_amount,
-          total_fee: row.total_fee
-        })),
+        orders: validRows,
         total_transactions: validRows.length,
         total_gross: validRows.reduce((sum, r) => sum + r.gross_amount, 0),
         total_fee: validRows.reduce((sum, r) => sum + r.total_fee, 0)
@@ -155,7 +147,6 @@ export default function ShopeeIncomeUpload() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* File Input */}
         <div>
           <input
             type="file"
@@ -172,7 +163,6 @@ export default function ShopeeIncomeUpload() {
           />
         </div>
 
-        {/* Error Alert */}
         {error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -180,7 +170,6 @@ export default function ShopeeIncomeUpload() {
           </Alert>
         )}
 
-        {/* Success Alert */}
         {success && (
           <Alert className="border-green-500/50 bg-green-500/10">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -190,7 +179,6 @@ export default function ShopeeIncomeUpload() {
           </Alert>
         )}
 
-        {/* Preview Data */}
         {previewData && !success && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

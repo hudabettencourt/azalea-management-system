@@ -1,279 +1,252 @@
-// components/ShopeeIncomeUpload.tsx
 "use client";
 
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { parseShopeeIncome, getPeriode, getSummary, type ShopeeIncomeRow } from "@/lib/parse-shopee-income";
+import { parseShopeeIncomeExcel } from "@/lib/parse-shopee-income";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Upload, AlertCircle, CheckCircle2, TrendingUp, Percent } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
-interface Props {
-  tokoId: number;
-  tokoPlatform: string;
-  onSuccess?: (result: any) => void;
+interface ParsedOrder {
+  order_id: string;
+  gross_amount: number;
+  total_fee: number;
 }
 
-export default function ShopeeIncomeUpload({ tokoId, tokoPlatform, onSuccess }: Props) {
-  const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<ShopeeIncomeRow[] | null>(null);
-  const [summary, setSummary] = useState<any>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [file, setFile] = useState<File | null>(null);
+interface PreviewData {
+  orders: ParsedOrder[];
+  total_transactions: number;
+  total_gross: number;
+  total_fee: number;
+}
 
-  // Step 1: Parse Excel dan preview
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+export function ShopeeIncomeUpload() {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    setFile(selectedFile);
-    setErrors([]);
-    setPreview(null);
-    setSummary(null);
-
-    try {
-      const parsed = await parseShopeeIncome(selectedFile);
-      
-      console.log('✅ Parsed result:', parsed.length, 'rows');
-      console.log('Sample:', parsed[0]);
-      
-      // Calculate summary
-      const sum = getSummary(parsed);
-      setSummary(sum);
-      setPreview(parsed);
-      
-    } catch (error: any) {
-      setErrors([error.message || 'Error parsing Excel']);
+    if (!selectedFile.name.endsWith(".xlsx") && !selectedFile.name.endsWith(".xls")) {
+      setError("File harus berformat Excel (.xlsx atau .xls)");
+      return;
     }
-  };
 
-  // Step 2: Upload ke database
-  const handleUpload = async () => {
-    if (!preview || !summary) return;
-
-    setUploading(true);
-    setErrors([]);
+    setFile(selectedFile);
+    setError(null);
+    setPreviewData(null);
+    setSuccess(false);
 
     try {
-      const periode = getPeriode(preview);
-      
-      // 1. Insert ke fee_platform
-      const { data: feeData, error: feeError } = await supabase
-        .from('fee_platform')
-        .insert({
-          toko_id: tokoId,
-          periode_start: periode.start,
-          periode_end: periode.end,
-          total_fee: summary.totalFee,
-          total_penjualan_gross: summary.totalGrossAmount,
-          file_excel: file?.name || '',
-          catatan: `Upload otomatis - ${summary.totalTransaksi} transaksi`,
-        })
-        .select()
-        .single();
+      setLoading(true);
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-      if (feeError) throw feeError;
+      const parsed = parseShopeeIncomeExcel(buffer);
 
-      // 2. Update penjualan_online dengan fee per transaksi
-      let updatedCount = 0;
-      const updateErrors: string[] = [];
-
-      for (const row of preview) {
-        // Match by no_pesanan (bisa ada di detail_penjualan_online)
-        const { data: detailData } = await supabase
-          .from('detail_penjualan_online')
-          .select('penjualan_online_id')
-          .eq('no_pesanan', row.noPesanan)
-          .maybeSingle();
-
-        if (detailData?.penjualan_online_id) {
-          // Get current fee_platform value
-          const { data: currentData } = await supabase
-            .from('penjualan_online')
-            .select('fee_platform')
-            .eq('id', detailData.penjualan_online_id)
-            .single();
-
-          const currentFee = currentData?.fee_platform || 0;
-
-          // Update with incremented value
-          const { error: updateError } = await supabase
-            .from('penjualan_online')
-            .update({
-              fee_platform: currentFee + row.totalFee,
-              net_amount: row.totalPenghasilan,
-            })
-            .eq('id', detailData.penjualan_online_id);
-
-          if (updateError) {
-            updateErrors.push(`Error update ${row.noPesanan}: ${updateError.message}`);
-          } else {
-            updatedCount++;
-          }
-        }
+      if (parsed.length === 0) {
+        setError("Tidak ada data valid yang ditemukan dalam file Excel");
+        return;
       }
 
-      // 3. Catat fee ke kas (beban operasional)
-      const { error: kasError } = await supabase.from('kas').insert({
-        tipe: 'Keluar',
-        kategori: `Fee Platform - ${tokoPlatform}`,
-        nominal: summary.totalFee,
-        keterangan: `Fee ${tokoPlatform} periode ${periode.start} s/d ${periode.end} (${summary.totalTransaksi} transaksi)`,
-        created_at: new Date().toISOString(),
+      // Check for zero fees
+      const zeroFeeCount = parsed.filter(row => row.total_fee === 0).length;
+      if (zeroFeeCount > 0) {
+        setError(`❌ CRITICAL: ${zeroFeeCount} transaksi memiliki total fee = 0! Parser tidak membaca kolom fee dengan benar.`);
+        console.error("Zero fee rows detected:", parsed.filter(row => row.total_fee === 0));
+      }
+
+      // Group by order_id and sum amounts
+      const orderMap = new Map<string, { gross_amount: number; total_fee: number }>();
+
+      parsed.forEach(row => {
+        const existing = orderMap.get(row.order_id);
+        if (existing) {
+          existing.gross_amount += row.gross_amount;
+          existing.total_fee += row.total_fee;
+        } else {
+          orderMap.set(row.order_id, {
+            gross_amount: row.gross_amount,
+            total_fee: row.total_fee
+          });
+        }
       });
 
-      if (kasError) throw kasError;
+      const validRows = Array.from(orderMap.entries()).map(([order_id, data]) => ({
+        order_id,
+        gross_amount: data.gross_amount,
+        total_fee: data.total_fee
+      }));
 
-      // Result
-      const result: FeeUploadResult = {
-        success: true,
-        periode,
-        summary,
-        transaksiUpdated: updatedCount,
-        errors: updateErrors.length > 0 ? updateErrors : undefined,
+      // ✅ FIXED: Removed FeeUploadResult type
+      const result = {
+        orders: validRows.map(row => ({
+          order_id: row.order_id,
+          gross_amount: row.gross_amount,
+          total_fee: row.total_fee
+        })),
+        total_transactions: validRows.length,
+        total_gross: validRows.reduce((sum, r) => sum + r.gross_amount, 0),
+        total_fee: validRows.reduce((sum, r) => sum + r.total_fee, 0)
       };
 
-      if (onSuccess) onSuccess(result);
-      
-      // Reset form
-      setFile(null);
-      setPreview(null);
-      setSummary(null);
-      
-      alert(`✅ Upload berhasil!\n\n` +
-        `Fee ${tokoPlatform}: Rp ${summary.totalFee.toLocaleString('id-ID')}\n` +
-        `Transaksi diupdate: ${updatedCount}/${summary.totalTransaksi}\n` +
-        `Periode: ${periode.start} s/d ${periode.end}`
-      );
+      setPreviewData(result);
 
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      setErrors([error.message || 'Error saat upload']);
+    } catch (err) {
+      console.error("Parse error:", err);
+      setError(err instanceof Error ? err.message : "Gagal memproses file Excel");
     } finally {
-      setUploading(false);
+      setLoading(false);
     }
   };
 
-  return (
-    <div style={{ 
-      background: '#13101e', 
-      border: '1px solid #2d2248', 
-      borderRadius: 16, 
-      padding: 24 
-    }}>
-      <h3 style={{ 
-        fontFamily: "'DM Serif Display', serif", 
-        fontSize: 18, 
-        color: '#f5f0ff', 
-        marginBottom: 16 
-      }}>
-        Upload Excel Income (Fee Mingguan)
-      </h3>
+  const handleUpload = async () => {
+    if (!previewData) return;
 
-      {/* File Input */}
-      <div style={{ marginBottom: 20 }}>
-        <label style={{
-          display: 'inline-block',
-          padding: '12px 24px',
-          background: '#a78bfa20',
-          border: '2px dashed #a78bfa',
-          borderRadius: 12,
-          color: '#a78bfa',
-          cursor: 'pointer',
-          fontWeight: 600,
-          fontSize: 14,
-        }}>
-          📤 Pilih File Excel Income
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/fee-platform/upload-shopee-income", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(previewData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Gagal upload data");
+      }
+
+      setSuccess(true);
+      setFile(null);
+      setPreviewData(null);
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+
+    } catch (err) {
+      console.error("Upload error:", err);
+      setError(err instanceof Error ? err.message : "Gagal upload data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const feePercentage = previewData
+    ? ((previewData.total_fee / previewData.total_gross) * 100).toFixed(2)
+    : "0.00";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Upload className="h-5 w-5" />
+          Upload Shopee Income Report
+        </CardTitle>
+        <CardDescription>
+          Upload file Excel "Penghasilan Saya" dari Shopee Seller Center
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* File Input */}
+        <div>
           <input
             type="file"
             accept=".xlsx,.xls"
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-            disabled={uploading}
+            onChange={handleFileChange}
+            disabled={loading}
+            className="block w-full text-sm text-gray-400
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-md file:border-0
+              file:text-sm file:font-semibold
+              file:bg-purple-500/10 file:text-purple-400
+              hover:file:bg-purple-500/20
+              file:cursor-pointer cursor-pointer"
           />
-        </label>
-        {file && (
-          <div style={{ marginTop: 8, fontSize: 12, color: '#7a6d90' }}>
-            File: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(0)} KB)
+        </div>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Success Alert */}
+        {success && (
+          <Alert className="border-green-500/50 bg-green-500/10">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <AlertDescription className="text-green-500">
+              ✅ Data berhasil disimpan! Halaman akan refresh otomatis...
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Preview Data */}
+        {previewData && !success && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="bg-[#0d0a14] border-purple-500/20">
+                <CardContent className="pt-6">
+                  <div className="text-sm text-gray-400">Total Transaksi</div>
+                  <div className="text-2xl font-bold text-purple-400">
+                    {previewData.total_transactions}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-[#0d0a14] border-purple-500/20">
+                <CardContent className="pt-6">
+                  <div className="text-sm text-gray-400 flex items-center gap-1">
+                    <TrendingUp className="h-3 w-3" />
+                    Gross Amount
+                  </div>
+                  <div className="text-2xl font-bold text-green-400">
+                    Rp {previewData.total_gross.toLocaleString("id-ID")}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-[#0d0a14] border-purple-500/20">
+                <CardContent className="pt-6">
+                  <div className="text-sm text-gray-400">Total Fee</div>
+                  <div className="text-2xl font-bold text-red-400">
+                    Rp {previewData.total_fee.toLocaleString("id-ID")}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-[#0d0a14] border-purple-500/20">
+                <CardContent className="pt-6">
+                  <div className="text-sm text-gray-400 flex items-center gap-1">
+                    <Percent className="h-3 w-3" />
+                    Fee Percentage
+                  </div>
+                  <div className="text-2xl font-bold text-yellow-400">
+                    {feePercentage}%
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Button
+              onClick={handleUpload}
+              disabled={loading}
+              className="w-full bg-purple-600 hover:bg-purple-700"
+            >
+              {loading ? "Menyimpan..." : "💾 Simpan ke Database"}
+            </Button>
           </div>
         )}
-      </div>
-
-      {/* Errors */}
-      {errors.length > 0 && (
-        <div style={{
-          background: '#f8717120',
-          border: '1px solid #f87171',
-          borderRadius: 8,
-          padding: 12,
-          marginBottom: 16,
-        }}>
-          <div style={{ color: '#f87171', fontWeight: 700, marginBottom: 4 }}>
-            ⚠ Error:
-          </div>
-          {errors.map((err, i) => (
-            <div key={i} style={{ color: '#f87171', fontSize: 13 }}>• {err}</div>
-          ))}
-        </div>
-      )}
-
-      {/* Preview Summary */}
-      {summary && preview && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{
-            background: '#34d39920',
-            border: '1px solid #34d399',
-            borderRadius: 12,
-            padding: 16,
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#34d399', marginBottom: 12 }}>
-              ✓ Preview Data:
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 13 }}>
-              <div>
-                <div style={{ color: '#7a6d90' }}>Total Transaksi:</div>
-                <div style={{ color: '#ede8ff', fontWeight: 700 }}>{summary.totalTransaksi} order</div>
-              </div>
-              <div>
-                <div style={{ color: '#7a6d90' }}>Gross Amount:</div>
-                <div style={{ color: '#ede8ff', fontWeight: 700 }}>
-                  Rp {summary.totalGrossAmount.toLocaleString('id-ID')}
-                </div>
-              </div>
-              <div>
-                <div style={{ color: '#7a6d90' }}>Total Fee:</div>
-                <div style={{ color: '#f87171', fontWeight: 700 }}>
-                  Rp {summary.totalFee.toLocaleString('id-ID')}
-                </div>
-              </div>
-              <div>
-                <div style={{ color: '#7a6d90' }}>Fee %:</div>
-                <div style={{ color: '#fbbf24', fontWeight: 700 }}>
-                  {summary.feePercentage.toFixed(2)}%
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Upload Button */}
-          <button
-            onClick={handleUpload}
-            disabled={uploading || errors.length > 0}
-            style={{
-              marginTop: 16,
-              width: '100%',
-              padding: '14px 24px',
-              background: uploading ? '#7a6d90' : '#a78bfa',
-              color: '#0d0a14',
-              border: 'none',
-              borderRadius: 12,
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: uploading ? 'not-allowed' : 'pointer',
-              opacity: errors.length > 0 ? 0.5 : 1,
-            }}
-          >
-            {uploading ? '⏳ Uploading...' : '✅ Upload & Update Database'}
-          </button>
-        </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -20,7 +20,15 @@ interface PreviewData {
   total_fee: number;
 }
 
-export default function ShopeeIncomeUpload() {
+// ✅ Props interface
+interface ShopeeIncomeUploadProps {
+  tokoId: number;
+  tokoPlatform: string;
+  onSuccess: () => void;
+}
+
+// ✅ Component with props
+export default function ShopeeIncomeUpload({ tokoId, tokoPlatform, onSuccess }: ShopeeIncomeUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,10 +111,14 @@ export default function ShopeeIncomeUpload() {
       setLoading(true);
       setError(null);
 
+      // ✅ Include tokoId in the request
       const response = await fetch("/api/fee-platform/upload-shopee-income", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(previewData)
+        body: JSON.stringify({
+          ...previewData,
+          tokoId // ✅ Send tokoId to API
+        })
       });
 
       const data = await response.json();
@@ -120,7 +132,7 @@ export default function ShopeeIncomeUpload() {
       setPreviewData(null);
 
       setTimeout(() => {
-        window.location.reload();
+        onSuccess(); // ✅ Call parent callback instead of reload
       }, 2000);
 
     } catch (err) {
@@ -140,7 +152,7 @@ export default function ShopeeIncomeUpload() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Upload className="h-5 w-5" />
-          Upload Shopee Income Report
+          Upload Shopee Income Report - {tokoPlatform}
         </CardTitle>
         <CardDescription>
           Upload file Excel "Penghasilan Saya" dari Shopee Seller Center

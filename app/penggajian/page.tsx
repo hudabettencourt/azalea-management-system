@@ -218,15 +218,11 @@ export default function PenggajianPage() {
   const tipeOptions = ["Operator Produksi", "Packing", "Pencetak Siomay", "Packing Online", "Host Live", "Admin Shopee", "Owner"];
 
   const inp: React.CSSProperties = {
-  width: "100%", padding: "10px 14px", marginBottom: 8,
-  background: "rgba(255,255,255,0.04)", border: `1.5px solid ${C.border}`,
-  borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13,
-  boxSizing: "border-box",        // ← tambah ini
-  outline: "none",
-  appearance: "auto",             // ← tambah ini (penting untuk <select>!)
-  WebkitAppearance: "auto",       // ← tambah ini (Safari/Chrome)
-  cursor: "pointer",
-};
+    width: "100%", padding: "10px 14px", marginBottom: 8,
+    background: "rgba(255,255,255,0.04)", border: `1.5px solid ${C.border}`,
+    borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13,
+    boxSizing: "border-box", outline: "none", cursor: "pointer",
+  };
 
   if (loading) return (
     <Sidebar>
@@ -246,6 +242,7 @@ export default function PenggajianPage() {
         input:focus, select:focus { border-color: ${C.accent}80 !important; outline: none; }
         input::placeholder { color: ${C.dim} !important; }
         select option { background: #1a1020; color: ${C.text}; }
+        select { appearance: auto; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }

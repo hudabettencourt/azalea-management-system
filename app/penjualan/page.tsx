@@ -116,22 +116,19 @@ export default function PenjualanPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ── FIX 1: fetchData — ambil total_ditarik dari penjualan_shopee ──
+  // ✅ FIXED: Query dari toko_online, penjualan_online, retur_online, pencairan_online
   const fetchData = useCallback(async () => {
     try {
       const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline] = await Promise.all([
         supabase.from("toko_online").select("*").eq("aktif", true).order("id"),
         supabase.from("stok_barang").select("*").order("nama_produk"),
-        // FIX: ambil total_ditarik juga, dan semua status (bukan hanya Belum Ditarik)
-        supabase.from("penjualan_shopee").select("toko_id, total_nominal, total_ditarik, status"),
-        supabase.from("retur_shopee").select("*, stok_barang(nama_produk), toko_shopee(nama)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("pencairan_shopee").select("*, toko_shopee(nama)").order("created_at", { ascending: false }).limit(50),
+        supabase.from("penjualan_online").select("toko_id, total_nominal, total_ditarik, status"),
+        supabase.from("retur_online").select("*, stok_barang(nama_produk), toko_online(nama)").order("created_at", { ascending: false }).limit(50),
+        supabase.from("pencairan_online").select("*, toko_online(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("piutang").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
       ]);
-      console.log("TOKO DATA:", resToko); // ← TAMBAH INI
-      setToko(resToko.data || []);
-      
 
+      setToko(resToko.data || []);
       setProduk(resProduk.data || []);
 
       const penjualanData = resPenjualan.data || [];
@@ -139,25 +136,19 @@ export default function PenjualanPage() {
       const pencairanData = resPencairan.data || [];
       const tokoList = resToko.data || [];
 
-      // FIX 1: hitung sisa piutang = total_nominal - total_ditarik per record,
-      // lalu kurangi retur. Tidak pakai pencairan_shopee karena sudah ada di total_ditarik.
       const piutangPerToko: PiutangShopee[] = tokoList.map((t: Toko) => {
         const penjualanToko = penjualanData.filter((p: any) => p.toko_id === t.id);
 
-        // Total omzet kotor dari semua upload
         const totalPiutang = penjualanToko.reduce((a: number, p: any) =>
           a + Math.round(p.total_nominal || 0), 0);
 
-        // Total yang sudah ditarik (dari field total_ditarik di penjualan_shopee)
         const totalDitarik = penjualanToko.reduce((a: number, p: any) =>
           a + Math.round(p.total_ditarik || 0), 0);
 
-        // Total retur/pembatalan untuk toko ini
         const totalRetur = returData
           .filter((r: any) => r.toko_id === t.id)
           .reduce((a: number, r: any) => a + Math.round(r.nominal || 0), 0);
 
-        // total_cair = sum dari pencairan_shopee (untuk tampilan riwayat saja)
         const totalCair = pencairanData
           .filter((p: any) => p.toko_id === t.id)
           .reduce((a: number, p: any) => a + Math.round(p.nominal_cair || 0), 0);
@@ -175,8 +166,8 @@ export default function PenjualanPage() {
       });
 
       setPiutangShopee(piutangPerToko);
-      setReturList(returData.map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk, nama_toko: r.toko_shopee?.nama })));
-      setPencairanList(pencairanData.map((p: any) => ({ ...p, nama_toko: p.toko_shopee?.nama })));
+      setReturList(returData.map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk, nama_toko: r.toko_online?.nama })));
+      setPencairanList(pencairanData.map((p: any) => ({ ...p, nama_toko: r.toko_online?.nama })));
       setPiutangOffline(resPiutangOffline.data || []);
     } catch (err: any) {
       showToast(err.message || "Gagal memuat data", "error");
@@ -187,7 +178,7 @@ export default function PenjualanPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Action: Retur/Pembatalan ──
+  // ✅ FIXED: retur_online
   const prosesRetur = async () => {
     if (!returTokoId || !returProdukId || !returQty) return showToast("Lengkapi semua field!", "error");
     const qty = parseInt(returQty);
@@ -196,7 +187,7 @@ export default function PenjualanPage() {
     const nominal = Math.round(p.harga_jual * qty);
 
     setSubmitting("retur");
-    const { error } = await supabase.from("retur_shopee").insert([{
+    const { error } = await supabase.from("retur_online").insert([{
       toko_id: parseInt(returTokoId),
       produk_id: parseInt(returProdukId),
       qty,
@@ -209,7 +200,6 @@ export default function PenjualanPage() {
 
     if (returStokKembali) {
       await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok + qty }).eq("id", p.id);
-      // FIX 2: mutasi_stok pakai stok_barang_id & qty (bukan produk_id & jumlah)
       await supabase.from("mutasi_stok").insert([{
         stok_barang_id: p.id,
         tipe: "Masuk",
@@ -224,8 +214,7 @@ export default function PenjualanPage() {
     setSubmitting(null);
   };
 
-  // ── Action: Pencairan Dana ──
-  // FIX 3: tambah Math.round(), update total_ditarik di penjualan_shopee
+  // ✅ FIXED: pencairan_online & penjualan_online
   const prosesPencairan = async () => {
     if (!cairTokoId || !cairNominal) return showToast("Lengkapi semua field!", "error");
     const nominalCair = toAngka(cairNominal);
@@ -240,8 +229,7 @@ export default function PenjualanPage() {
 
     setSubmitting("cair");
     try {
-      // Insert ke pencairan_shopee (semua nilai sudah integer)
-      const { error: errCair } = await supabase.from("pencairan_shopee").insert([{
+      const { error: errCair } = await supabase.from("pencairan_online").insert([{
         toko_id: parseInt(cairTokoId),
         nominal_cair: nominalCair,
         nominal_piutang: nominalPiutang,
@@ -249,16 +237,13 @@ export default function PenjualanPage() {
       }]);
       if (errCair) throw new Error("Gagal catat pencairan: " + errCair.message);
 
-      // FIX 3: Update total_ditarik di semua penjualan_shopee toko ini yang belum lunas
-      // Ambil dulu record yang belum lunas, lalu update total_ditarik-nya
       const { data: penjualanBelumLunas } = await supabase
-        .from("penjualan_shopee")
+        .from("penjualan_online")
         .select("id, total_nominal, total_ditarik")
         .eq("toko_id", parseInt(cairTokoId))
         .neq("status", "Lunas")
         .order("created_at", { ascending: true });
 
-      // Distribusikan nominal cair ke record penjualan dari yang terlama
       let sisaCair = nominalCair;
       for (const pj of (penjualanBelumLunas || [])) {
         if (sisaCair <= 0) break;
@@ -269,7 +254,7 @@ export default function PenjualanPage() {
         const totalDitarikBaru = Math.round((pj.total_ditarik || 0) + ditarikSekarang);
         const sudahLunas = totalDitarikBaru >= Math.round(pj.total_nominal || 0);
 
-        await supabase.from("penjualan_shopee").update({
+        await supabase.from("penjualan_online").update({
           total_ditarik: totalDitarikBaru,
           status: sudahLunas ? "Lunas" : "Sebagian",
         }).eq("id", pj.id);
@@ -277,7 +262,6 @@ export default function PenjualanPage() {
         sisaCair -= ditarikSekarang;
       }
 
-      // Catat kas masuk
       await supabase.from("kas").insert([{
         tipe: "Masuk",
         kategori: "Shopee",
@@ -285,7 +269,6 @@ export default function PenjualanPage() {
         keterangan: `Pencairan Shopee - ${tokoData.toko_nama}`,
       }]);
 
-      // Catat fee sebagai kas keluar kalau ada selisih
       if (selisih > 0) {
         await supabase.from("kas").insert([{
           tipe: "Keluar",
@@ -305,7 +288,6 @@ export default function PenjualanPage() {
     }
   };
 
-  // ── Action: Penjualan Offline ──
   const prosesOffline = async () => {
     if (keranjang.length === 0) return showToast("Keranjang kosong!", "error");
     if (offlineMetode === "Piutang" && !offlineNamaPelanggan.trim()) return showToast("Isi nama pelanggan!", "error");
@@ -316,7 +298,6 @@ export default function PenjualanPage() {
       const p = produk.find(x => x.id === item.produk_id);
       if (!p) continue;
       await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - item.qty }).eq("id", p.id);
-      // FIX 2: mutasi_stok pakai stok_barang_id & qty
       await supabase.from("mutasi_stok").insert([{
         stok_barang_id: p.id,
         tipe: "Keluar",
@@ -339,7 +320,6 @@ export default function PenjualanPage() {
     setSubmitting(null);
   };
 
-  // ── Action: Lunas Piutang Offline ──
   const lunaskanPiutang = async (pt: Piutang) => {
     const { error } = await supabase.from("piutang").update({ status: "Lunas" }).eq("id", pt.id);
     if (error) { showToast("Gagal update piutang", "error"); return; }
@@ -386,7 +366,6 @@ export default function PenjualanPage() {
 
       <div style={{ background: C.bg, minHeight: "100vh", padding: "32px 28px", fontFamily: C.fontSans, color: C.text }}>
 
-        {/* Header */}
         <div style={{ marginBottom: 28, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: 28, color: "#f0eaff", fontWeight: 400 }}>Penjualan</h1>
@@ -397,7 +376,6 @@ export default function PenjualanPage() {
           </a>
         </div>
 
-        {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
           {[
             { label: "Piutang Shopee", value: rupiahFmt(totalPiutangShopee), color: C.yellow, icon: "🛍", sub: `${piutangShopee.filter(p => p.sisa_piutang > 0).length} toko aktif` },
@@ -415,7 +393,6 @@ export default function PenjualanPage() {
           ))}
         </div>
 
-        {/* Tab Utama */}
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           {[{ id: "shopee", label: "🛍 Shopee" }, { id: "offline", label: "🏪 Offline" }].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{
@@ -428,7 +405,6 @@ export default function PenjualanPage() {
           ))}
         </div>
 
-        {/* ══ TAB SHOPEE ══ */}
         {activeTab === "shopee" && (
           <div style={{ animation: "fadeUp 0.25s ease" }}>
             <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.card, padding: 4, borderRadius: 10, width: "fit-content", border: `1px solid ${C.border}` }}>
@@ -450,7 +426,6 @@ export default function PenjualanPage() {
 
             {activeShopeeTab === "input" && <ShopeeUploadTab />}
 
-            {/* ── Piutang per Toko ── */}
             {activeShopeeTab === "piutang" && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                 {piutangShopee.map(p => (
@@ -478,7 +453,6 @@ export default function PenjualanPage() {
               </div>
             )}
 
-            {/* ── Retur / Batal ── */}
             {activeShopeeTab === "retur" && (
               <div style={{ display: "grid", gridTemplateColumns: "400px 1fr", gap: 20 }}>
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
@@ -533,7 +507,6 @@ export default function PenjualanPage() {
               </div>
             )}
 
-            {/* ── Pencairan Dana ── */}
             {activeShopeeTab === "pencairan" && (
               <div style={{ display: "grid", gridTemplateColumns: "400px 1fr", gap: 20 }}>
                 <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
@@ -603,7 +576,6 @@ export default function PenjualanPage() {
           </div>
         )}
 
-        {/* ══ TAB OFFLINE ══ */}
         {activeTab === "offline" && (
           <div style={{ animation: "fadeUp 0.25s ease", display: "grid", gridTemplateColumns: "420px 1fr", gap: 20 }}>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>

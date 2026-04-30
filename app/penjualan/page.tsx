@@ -167,7 +167,7 @@ export default function PenjualanPage() {
 
       setPiutangShopee(piutangPerToko);
       setReturList(returData.map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk, nama_toko: r.toko_online?.nama })));
-      setPencairanList(pencairanData.map((p: any) => ({ ...p, nama_toko: r.toko_online?.nama })));
+      setPencairanList(pencairanData.map((p: any) => ({ ...p, nama_toko: p.toko_online?.nama })));
       setPiutangOffline(resPiutangOffline.data || []);
     } catch (err: any) {
       showToast(err.message || "Gagal memuat data", "error");

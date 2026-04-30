@@ -218,11 +218,15 @@ export default function PenggajianPage() {
   const tipeOptions = ["Operator Produksi", "Packing", "Pencetak Siomay", "Packing Online", "Host Live", "Admin Shopee", "Owner"];
 
   const inp: React.CSSProperties = {
-    width: "100%", padding: "10px 14px", marginBottom: 8,
-    background: "rgba(255,255,255,0.04)", border: `1.5px solid ${C.border}`,
-    borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13,
-    boxSizing: "border-box", outline: "none",
-  };
+  width: "100%", padding: "10px 14px", marginBottom: 8,
+  background: "rgba(255,255,255,0.04)", border: `1.5px solid ${C.border}`,
+  borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13,
+  boxSizing: "border-box",        // ← tambah ini
+  outline: "none",
+  appearance: "auto",             // ← tambah ini (penting untuk <select>!)
+  WebkitAppearance: "auto",       // ← tambah ini (Safari/Chrome)
+  cursor: "pointer",
+};
 
   if (loading) return (
     <Sidebar>

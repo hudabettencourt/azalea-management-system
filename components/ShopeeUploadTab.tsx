@@ -94,7 +94,7 @@ export function ShopeeUploadTab() {
     if (initialized) return;
     setInitialized(true);
     const [resToko, resStok, resConfig] = await Promise.all([
-      supabase.from("toko_shopee").select("id, nama").eq("aktif", true).order("nama"),
+      supabase.from("toko_online").select("id, nama").eq("aktif", true).order("nama"),
       supabase.from("stok_barang").select("id, nama_produk, jumlah_stok, sku").order("nama_produk"),
       supabase.from("shopee_config").select("key, value"),
     ]);
@@ -167,7 +167,7 @@ export function ShopeeUploadTab() {
       // Cek duplikat by no_pesanan ke penjualan_shopee
       const noPesananList = Array.from(groupMap.keys());
       const { data: existing } = await supabase
-        .from("detail_penjualan_shopee")
+        .from("detail_penjualan_online")
         .select("no_pesanan")
         .in("no_pesanan", noPesananList);
       const existingSet = new Set((existing || []).map((x: any) => x.no_pesanan));
@@ -226,7 +226,7 @@ export function ShopeeUploadTab() {
       // Double-check duplikat sebelum insert
       const noPesananList = validOrders.map(o => o.no_pesanan);
       const { data: existingCheck } = await supabase
-        .from("detail_penjualan_shopee")
+        .from("detail_penjualan_online")
         .select("no_pesanan")
         .in("no_pesanan", noPesananList);
       const alreadySaved = new Set((existingCheck || []).map((x: any) => x.no_pesanan));
@@ -260,7 +260,7 @@ export function ShopeeUploadTab() {
 
       // Insert header penjualan_shopee (ini juga jadi piutang)
       const { data: penjualanData, error: errHeader } = await supabase
-        .from("penjualan_shopee")
+        .from("penjualan_online")
         .insert([{
           toko_id: parseInt(tokoId),
           total_item: totalItemFinal,
@@ -289,7 +289,7 @@ export function ShopeeUploadTab() {
       );
 
       const { error: errDetail } = await supabase
-        .from("detail_penjualan_shopee")
+        .from("detail_penjualan_online")
         .insert(detailRows);
       if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
 

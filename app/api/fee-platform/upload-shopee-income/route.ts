@@ -15,78 +15,95 @@ interface UploadRequest {
   total_fee: number;
 }
 
+const parseOrderDate = (order_id: string): Date | null => {
+  // Format Summary: "SUMMARY_2026-04-13_2026-04-19"
+  if (order_id.startsWith("SUMMARY_")) {
+    const parts = order_id.split("_");
+    // parts[1] = "2026-04-13"
+    if (parts[1]) {
+      const d = new Date(parts[1]);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  }
+
+  // Format pesanan Shopee: "260414SGF6A560" → YYMMDD
+  const dateStr = order_id.substring(0, 6);
+  const year  = 2000 + parseInt(dateStr.substring(0, 2));
+  const month = parseInt(dateStr.substring(2, 4)) - 1;
+  const day   = parseInt(dateStr.substring(4, 6));
+  const d = new Date(year, month, day);
+  return isNaN(d.getTime()) ? new Date() : d;
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body: UploadRequest = await request.json();
-    
     const { tokoId, orders, total_gross, total_fee } = body;
 
     if (!tokoId || !orders || orders.length === 0) {
-      return NextResponse.json(
-        { error: 'Data tidak valid' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Data tidak valid' }, { status: 400 });
     }
 
-    // Calculate periode from orders
-    const dates = orders.map(o => {
-      // Extract date from order_id if possible, or use current date
-      // Format order_id biasanya: 241121xxxxx (YYMMDD...)
-      const dateStr = o.order_id.substring(0, 6);
-      const year = 2000 + parseInt(dateStr.substring(0, 2));
-      const month = parseInt(dateStr.substring(2, 4)) - 1;
-      const day = parseInt(dateStr.substring(4, 6));
-      return new Date(year, month, day);
-    });
+    // Parse tanggal dari order_id
+    const dates = orders
+      .map(o => parseOrderDate(o.order_id))
+      .filter((d): d is Date => d !== null);
 
-    const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-    const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+    const today = new Date();
+    const minDate = dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))) : today;
+    const maxDate = dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : today;
 
-    // Calculate fee breakdown (simplified - distribute proportionally)
-    // In real scenario, you'd get this from Excel columns
-    const biaya_komisi = total_fee * 0.40; // 40% komisi
-    const biaya_administrasi = total_fee * 0.20; // 20% admin
-    const biaya_layanan = total_fee * 0.30; // 30% layanan
-    const biaya_proses_pesanan = total_fee * 0.10; // 10% proses
+    // Untuk format Summary, ambil periode dari order_id langsung
+    let periodeStart = minDate.toISOString().split('T')[0];
+    let periodeEnd   = maxDate.toISOString().split('T')[0];
 
-    const persentase_fee = (total_fee / total_gross) * 100;
+    if (orders.length === 1 && orders[0].order_id.startsWith("SUMMARY_")) {
+      const parts = orders[0].order_id.split("_");
+      if (parts[1]) periodeStart = parts[1];
+      if (parts[2]) periodeEnd   = parts[2];
+    }
 
-    // Insert to fee_platform table
+    const persentase_fee = total_gross > 0 ? (total_fee / total_gross) * 100 : 0;
+
+    // Fee breakdown proporsional (fallback — idealnya dari Excel langsung)
+    const biaya_komisi          = Math.round(total_fee * 0.40);
+    const biaya_administrasi    = Math.round(total_fee * 0.20);
+    const biaya_layanan         = Math.round(total_fee * 0.30);
+    const biaya_proses_pesanan  = Math.round(total_fee * 0.10);
+
     const { data, error } = await supabase
       .from('fee_platform')
       .insert({
         toko_id: tokoId,
-        periode_start: minDate.toISOString().split('T')[0],
-        periode_end: maxDate.toISOString().split('T')[0],
+        periode_start: periodeStart,
+        periode_end: periodeEnd,
         total_penjualan_gross: total_gross,
         total_fee: total_fee,
         persentase_fee: persentase_fee,
-        biaya_komisi: biaya_komisi,
-        biaya_administrasi: biaya_administrasi,
-        biaya_layanan: biaya_layanan,
-        biaya_proses_pesanan: biaya_proses_pesanan
+        biaya_komisi,
+        biaya_administrasi,
+        biaya_layanan,
+        biaya_proses_pesanan,
       })
       .select();
 
     if (error) {
       console.error('Supabase error:', error);
       return NextResponse.json(
-        { error: 'Gagal menyimpan data ke database: ' + error.message },
+        { error: 'Gagal menyimpan: ' + error.message },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: `Berhasil menyimpan ${orders.length} transaksi`,
-      data: data
+      message: `Berhasil menyimpan data fee periode ${periodeStart} s/d ${periodeEnd}`,
+      data,
     });
 
   } catch (error) {
     console.error('API error:', error);
-    return NextResponse.json(
-      { error: 'Terjadi kesalahan server' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }

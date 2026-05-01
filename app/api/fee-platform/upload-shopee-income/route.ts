@@ -59,9 +59,8 @@ export async function POST(request: NextRequest) {
     let periodeEnd   = maxDate.toISOString().split('T')[0];
 
     if (orders.length === 1 && orders[0].order_id.startsWith("SUMMARY_")) {
-      const parts = orders[0].order_id.split("_");
-      if (parts[1]) periodeStart = parts[1];
-      if (parts[2]) periodeEnd   = parts[2];
+      const match = orders[0].order_id.match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/);
+      if (match) { periodeStart = match[1]; periodeEnd = match[2]; }
     }
 
 

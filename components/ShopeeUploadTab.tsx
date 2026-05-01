@@ -276,7 +276,7 @@ export function ShopeeUploadTab() {
       // Insert detail per baris produk per pesanan
       const detailRows = finalOrders.flatMap(o =>
         o.items.map(i => ({
-          penjualan_shopee_id: penjualanData.id,
+          penjualan_online_id: penjualanData.id,
           stok_barang_id: i.produkId,
           no_pesanan: o.no_pesanan,
           no_resi: o.no_resi,

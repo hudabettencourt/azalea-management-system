@@ -6,6 +6,63 @@ export interface ShopeeIncomeRow {
   total_fee: number;
 }
 
+// ── Helper: konversi berbagai format tanggal ke YYYY-MM-DD ──
+function parseTanggal(val: any): string {
+  if (!val) return "unknown";
+  const str = String(val).trim();
+  if (!str) return "unknown";
+
+  // Format Excel serial number
+  if (typeof val === "number") {
+    const date = XLSX.SSF.parse_date_code(val);
+    if (date) {
+      const y = date.y;
+      const m = String(date.m).padStart(2, "0");
+      const d = String(date.d).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+
+  // Format YYYY-MM-DD (sudah benar)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // Format DD/MM/YYYY atau D/M/YYYY
+  const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    const d = String(dmy[1]).padStart(2, "0");
+    const m = String(dmy[2]).padStart(2, "0");
+    return `${dmy[3]}-${m}-${d}`;
+  }
+
+  // Format DD-MM-YYYY
+  const dmyDash = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dmyDash) {
+    const d = String(dmyDash[1]).padStart(2, "0");
+    const m = String(dmyDash[2]).padStart(2, "0");
+    return `${dmyDash[3]}-${m}-${d}`;
+  }
+
+  // Format "13 Apr 2026" atau "13 April 2026"
+  const bulanMap: Record<string, string> = {
+    jan: "01", feb: "02", mar: "03", apr: "04", mei: "05", may: "05",
+    jun: "06", jul: "07", agu: "08", aug: "08", sep: "09", okt: "10",
+    oct: "10", nov: "11", des: "12", dec: "12",
+    januari: "01", februari: "02", maret: "03", april: "04",
+    juni: "06", juli: "07", agustus: "08", september: "09",
+    oktober: "10", november: "11", desember: "12",
+  };
+  const wordy = str.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (wordy) {
+    const d = String(wordy[1]).padStart(2, "0");
+    const mKey = wordy[2].toLowerCase();
+    const m = bulanMap[mKey] || "01";
+    return `${wordy[3]}-${m}-${d}`;
+  }
+
+  console.warn("⚠️ Format tanggal tidak dikenali:", str);
+  return "unknown";
+}
+
 export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -65,23 +122,52 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
   }
 
   // ── FORMAT SUMMARY (vertikal — "Laporan Penghasilan") ──
-  // Baca nilai berdasarkan nama label di col 0 atau col 1
   console.log(`✅ Format SUMMARY — baca nilai per label`);
 
-  const labelMap: Record<string, number> = {};
+  // Log semua baris untuk debug tanggal
+  for (let i = 0; i < Math.min(rawData.length, 20); i++) {
+    const row = rawData[i] as any[];
+    const label0 = String(row[0] || "").trim();
+    const label1 = String(row[1] || "").trim();
+    if (label0 || label1) {
+      console.log(`Row ${i}: [0]="${label0}" [1]="${label1}" [2]="${row[2]}"`);
+    }
+  }
+
+  const labelMap: Record<string, any> = {}; // simpan raw value untuk tanggal
   for (let i = 0; i < rawData.length; i++) {
     const row = rawData[i] as any[];
     // Col 1 = label, col 2 = nilai
-    const label = String(row[1] || "").trim();
-    const nilai  = parseNumber(row[2]);
-    if (label) labelMap[label] = nilai;
-    // Col 0 = label alternatif, col 1 = nilai
+    const label1 = String(row[1] || "").trim();
+    if (label1) labelMap[label1] = row[2]; // simpan raw (bisa number/string)
+    // Col 0 = label alternatif
     const label0 = String(row[0] || "").trim();
-    const nilai1  = parseNumber(row[1]);
-    if (label0 && !labelMap[label0]) labelMap[label0] = nilai1;
+    if (label0 && labelMap[label0] === undefined) labelMap[label0] = row[1];
   }
 
-  const gross_amount = Math.abs(labelMap["Harga Asli Produk"] || 0);
+  // Cek berbagai kemungkinan label tanggal (case-insensitive)
+  const findLabel = (keys: string[]): any => {
+    for (const key of keys) {
+      // exact match dulu
+      if (labelMap[key] !== undefined) return labelMap[key];
+      // case-insensitive
+      const found = Object.keys(labelMap).find(k => k.toLowerCase() === key.toLowerCase());
+      if (found) return labelMap[found];
+    }
+    return undefined;
+  };
+
+  const dariRaw = findLabel(["Dari", "dari", "Periode Dari", "Tanggal Mulai"]);
+  const keRaw   = findLabel(["Ke", "ke", "ke ", "Sampai", "Periode Ke", "Tanggal Selesai"]);
+
+  console.log(`📅 Dari raw: "${dariRaw}", Ke raw: "${keRaw}"`);
+
+  const dari = parseTanggal(dariRaw);
+  const ke   = parseTanggal(keRaw);
+
+  console.log(`📅 Dari parsed: "${dari}", Ke parsed: "${ke}"`);
+
+  const gross_amount = Math.abs(parseNumber(findLabel(["Harga Asli Produk"]) ?? 0));
   const feeLabels = [
     "Biaya Komisi AMS", "Biaya Administrasi", "Biaya Layanan",
     "Biaya Proses Pesanan", "Biaya Program Hemat Biaya Kirim",
@@ -90,7 +176,8 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
   ];
   let total_fee = 0;
   for (const label of feeLabels) {
-    total_fee += Math.abs(labelMap[label] || 0);
+    const val = findLabel([label]);
+    total_fee += Math.abs(parseNumber(val ?? 0));
   }
 
   console.log(`💰 Gross: ${gross_amount}, Fee: ${total_fee}`);
@@ -100,10 +187,9 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
     return [];
   }
 
-  // Format summary = 1 record agregat, pakai periode sebagai order_id
-  const dari  = String(labelMap["Dari"] || "").trim() || "unknown";
-  const ke    = String(labelMap["ke"] || "").trim() || "unknown";
-  const order_id = `SUMMARY_${dari}_${ke}`.replace(/\s/g, "");
+  // Format: SUMMARY_YYYY-MM-DD_YYYY-MM-DD (route.ts akan regex match ini)
+  const order_id = `SUMMARY_${dari}_${ke}`;
+  console.log(`🆔 order_id: ${order_id}`);
 
   return [{ order_id, gross_amount, total_fee }];
 }

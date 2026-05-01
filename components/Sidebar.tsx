@@ -72,13 +72,18 @@ export default function Sidebar({ children }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) return;
-      setUserEmail(data.user.email ?? null);
-      const r = data.user.user_metadata?.role ?? data.user.app_metadata?.role ?? "staff";
-      setRole(r);
-    });
-  }, []);
+  supabase.auth.getUser().then(async ({ data }) => {
+    if (!data.user) return;
+    setUserEmail(data.user.email ?? null);
+    // ✅ Ambil role dari tabel profiles (bukan user_metadata)
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+    setRole(profile?.role ?? "staff");
+  });
+}, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

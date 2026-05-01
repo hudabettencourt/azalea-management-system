@@ -44,13 +44,13 @@ export default function DashboardPage() {
     try {
       const now = new Date();
       const bulanMulai = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const hariIni = now.toLocaleDateString("sv", { timeZone: "Asia/Jakarta" }); // YYYY-MM-DD
+      const hariIni = now.toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
 
       const [
         resKas, resKasBulan, resRecentTrx,
         resStok, resHutang,
         resPenjualan, resRetur, resPencairan,
-        resPiutangOffline, resGaji,
+        resPiutangOffline, resGaji, resFee,
       ] = await Promise.all([
         supabase.from("kas").select("tipe, nominal"),
         supabase.from("kas").select("tipe, nominal").gte("created_at", bulanMulai),
@@ -58,14 +58,16 @@ export default function DashboardPage() {
         supabase.from("bahan_baku").select("id, nama, stok, satuan, kategori")
           .or("aktif.eq.true,aktif.is.null").lte("stok", 5).order("stok"),
         supabase.from("hutang_supplier_bahan").select("nominal").eq("status", "Belum Lunas"),
-        // Piutang Shopee: ambil total_nominal & total_ditarik
-        supabase.from("penjualan_shopee").select("total_nominal, total_ditarik"),
-        supabase.from("retur_shopee").select("nominal"),
-        supabase.from("pencairan_shopee").select("nominal_cair"),
-        // Piutang Offline
+        // ✅ FIXED: penjualan_online
+        supabase.from("penjualan_online").select("total_nominal, total_ditarik"),
+        // ✅ FIXED: retur_online
+        supabase.from("retur_online").select("nominal"),
+        // ✅ FIXED: pencairan_online
+        supabase.from("pencairan_online").select("nominal_cair"),
         supabase.from("piutang").select("nominal").eq("status", "Belum Lunas"),
-        // Gaji hari ini (kalau tabel gaji_harian sudah ada)
         supabase.from("gaji_harian").select("nominal").eq("tanggal", hariIni),
+        // ✅ Fee platform sebagai pengurang piutang
+        supabase.from("fee_platform").select("toko_id, total_fee"),
       ]);
 
       // ── Kas ──
@@ -80,16 +82,15 @@ export default function DashboardPage() {
       setStokAlert(resStok.data || []);
       setHutangTotal((resHutang.data || []).reduce((a, h) => a + h.nominal, 0));
 
-      // ── Piutang Shopee = total_nominal - total_ditarik - retur ──
+      // ── Piutang Shopee = total_nominal - total_ditarik - retur - fee ──
       const totalNominal = (resPenjualan.data || []).reduce((a, p) => a + (p.total_nominal || 0), 0);
       const totalDitarik = (resPenjualan.data || []).reduce((a, p) => a + (p.total_ditarik || 0), 0);
       const totalRetur = (resRetur.data || []).reduce((a, r) => a + (r.nominal || 0), 0);
-      setPiutangShopee(Math.max(totalNominal - totalDitarik - totalRetur, 0));
+      // ✅ Kurangi fee platform
+      const totalFee = (resFee.data || []).reduce((a, f) => a + (f.total_fee || 0), 0);
+      setPiutangShopee(Math.max(totalNominal - totalDitarik - totalRetur - totalFee, 0));
 
-      // ── Piutang Offline ──
       setPiutangOffline((resPiutangOffline.data || []).reduce((a, p) => a + p.nominal, 0));
-
-      // ── Gaji hari ini ──
       setGajiHariIni((resGaji.data || []).reduce((a, g) => a + g.nominal, 0));
 
     } catch (err) {

@@ -88,7 +88,6 @@ export default function HomePage() {
       const hariIni = now.toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
       const bulanMulai = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      // Ambil semua data sekaligus
       const [
         resKasAll, resKasHariIni, resKasBulan,
         resStok, resHutang, resPiutang,
@@ -103,7 +102,8 @@ export default function HomePage() {
         supabase.from("piutang").select("nominal").eq("status", "Belum Lunas"),
         supabase.from("produksi_batch").select("total_hpp, created_at"),
         supabase.from("gaji_harian").select("nominal, tipe_beban, tanggal"),
-        supabase.from("retur_shopee").select("nominal, created_at"),
+        // ✅ FIXED: retur_online (was retur_shopee)
+        supabase.from("retur_online").select("nominal, created_at"),
         supabase.auth.getUser(),
       ]);
 
@@ -153,7 +153,7 @@ export default function HomePage() {
       const bulanChart: any[] = [];
       for (let i = 11; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const mulai = d.toISOString().slice(0, 7); // YYYY-MM
+        const mulai = d.toISOString().slice(0, 7);
         const kasB = kasAll.filter(k => k.created_at?.slice(0, 7) === mulai);
         const omzet = kasB.filter(k => k.tipe === "Masuk").reduce((a, k) => a + k.nominal, 0);
         const beban = kasB.filter(k => k.tipe === "Keluar").reduce((a, k) => a + k.nominal, 0);
@@ -171,7 +171,7 @@ export default function HomePage() {
       }
       setChartBulanan(bulanChart);
 
-      // ── Chart L/R per bulan (6 bulan terakhir, lebih detail) ──
+      // ── Chart L/R per bulan (6 bulan terakhir) ──
       const lrChart: any[] = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -209,7 +209,6 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchData();
-    // Update jam setiap menit
     const updateJam = () => {
       setJamSekarang(new Date().toLocaleTimeString("id-ID", {
         hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta",
@@ -248,50 +247,19 @@ export default function HomePage() {
         * { box-sizing: border-box; margin: 0; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.cardBorder}; border-radius: 2px; }
-
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-
-        .stat-card {
-          animation: fadeUp 0.4s ease both;
-          transition: transform 0.2s ease, border-color 0.2s ease;
-        }
-        .stat-card:hover {
-          transform: translateY(-2px);
-        }
-        .quick-link {
-          transition: all 0.15s ease;
-        }
-        .quick-link:hover {
-          transform: translateY(-2px);
-        }
-        .stok-card {
-          transition: all 0.15s ease;
-        }
-        .stok-card:hover {
-          border-color: ${C.accent}60 !important;
-        }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .stat-card { animation: fadeUp 0.4s ease both; transition: transform 0.2s ease, border-color 0.2s ease; }
+        .stat-card:hover { transform: translateY(-2px); }
+        .quick-link { transition: all 0.15s ease; }
+        .quick-link:hover { transform: translateY(-2px); }
+        .stok-card { transition: all 0.15s ease; }
+        .stok-card:hover { border-color: ${C.accent}60 !important; }
       `}</style>
 
-      <div style={{
-        background: C.bg,
-        minHeight: "100vh",
-        padding: "32px 28px",
-        fontFamily: C.fontSans,
-        color: C.text,
-      }}>
+      <div style={{ background: C.bg, minHeight: "100vh", padding: "32px 28px", fontFamily: C.fontSans, color: C.text }}>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div style={{ marginBottom: 32, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginBottom: 6, letterSpacing: "0.08em" }}>
@@ -306,18 +274,8 @@ export default function HomePage() {
             </p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <a href="/laporan" style={{
-              padding: "9px 18px", borderRadius: 9,
-              background: C.accentGlow, border: `1px solid ${C.accent}40`,
-              color: C.accent, fontWeight: 700, fontSize: 13,
-              textDecoration: "none", fontFamily: C.fontSans,
-            }}>📊 Laporan</a>
-            <a href="/dashboard" style={{
-              padding: "9px 18px", borderRadius: 9,
-              background: "rgba(255,255,255,0.04)", border: `1px solid ${C.cardBorderStrong}`,
-              color: C.muted, fontWeight: 600, fontSize: 13,
-              textDecoration: "none", fontFamily: C.fontSans,
-            }}>Dashboard →</a>
+            <a href="/laporan" style={{ padding: "9px 18px", borderRadius: 9, background: C.accentGlow, border: `1px solid ${C.accent}40`, color: C.accent, fontWeight: 700, fontSize: 13, textDecoration: "none", fontFamily: C.fontSans }}>📊 Laporan</a>
+            <a href="/dashboard" style={{ padding: "9px 18px", borderRadius: 9, background: "rgba(255,255,255,0.04)", border: `1px solid ${C.cardBorderStrong}`, color: C.muted, fontWeight: 600, fontSize: 13, textDecoration: "none", fontFamily: C.fontSans }}>Dashboard →</a>
           </div>
         </div>
 
@@ -328,7 +286,7 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {/* ── Stats Row 1 ── */}
+            {/* Stats */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 20 }}>
               {[
                 { label: "Saldo Kas", value: rupiahFmt(saldo), sub: "Total kas bersih", color: C.accent, icon: "◈", delay: "0ms" },
@@ -339,40 +297,19 @@ export default function HomePage() {
                 { label: "Hutang Supplier", value: rupiahShort(hutangTotal), sub: "Belum dibayar", color: C.orange, icon: "⚠", delay: "300ms" },
                 { label: "Gaji Hari Ini", value: rupiahFmt(gajiHariIni), sub: "Total dibayarkan", color: C.purple, icon: "👥", delay: "360ms" },
               ].map((s, i) => (
-                <div key={i} className="stat-card" style={{
-                  background: C.card,
-                  border: `1px solid ${C.cardBorder}`,
-                  borderRadius: 16,
-                  padding: "20px 22px",
-                  position: "relative",
-                  overflow: "hidden",
-                  animationDelay: s.delay,
-                }}>
-                  {/* Glow corner */}
-                  <div style={{
-                    position: "absolute", top: 0, right: 0,
-                    width: 80, height: 80,
-                    background: `radial-gradient(circle at top right, ${s.color}18, transparent 70%)`,
-                    borderRadius: "0 16px 0 0",
-                  }} />
+                <div key={i} className="stat-card" style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 16, padding: "20px 22px", position: "relative", overflow: "hidden", animationDelay: s.delay }}>
+                  <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, background: `radial-gradient(circle at top right, ${s.color}18, transparent 70%)`, borderRadius: "0 16px 0 0" }} />
                   <div style={{ fontSize: 20, marginBottom: 10, color: s.color }}>{s.icon}</div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
-                    {s.label}
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: "#f5f0ff", fontFamily: C.fontDisplay, marginBottom: 4 }}>
-                    {s.value}
-                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>{s.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#f5f0ff", fontFamily: C.fontDisplay, marginBottom: 4 }}>{s.value}</div>
                   <div style={{ fontSize: 11, color: C.dim }}>{s.sub}</div>
-                  {/* Bottom accent line */}
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${s.color}60, transparent)`, borderRadius: "0 0 16px 16px" }} />
                 </div>
               ))}
             </div>
 
-            {/* ── Charts Row ── */}
+            {/* Charts */}
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, marginBottom: 20 }}>
-
-              {/* Chart Omzet 12 bulan */}
               <div style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 16, padding: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div>
@@ -408,7 +345,6 @@ export default function HomePage() {
                 </ResponsiveContainer>
               </div>
 
-              {/* Chart L/R 6 bulan */}
               <div style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 16, padding: 24 }}>
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ fontFamily: C.fontDisplay, fontSize: 16, color: "#f5f0ff", fontWeight: 400 }}>Laba Rugi</div>
@@ -428,7 +364,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* ── Stok Monitor ── */}
+            {/* Stok Monitor */}
             <div style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 16, padding: 24, marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div>
@@ -437,31 +373,16 @@ export default function HomePage() {
                     {stokBarang.length} produk · {stokKritis.length > 0 ? <span style={{ color: C.red }}>{stokKritis.length} kritis</span> : <span style={{ color: C.green }}>semua aman</span>}
                   </div>
                 </div>
-                <a href="/produksi" style={{
-                  fontSize: 12, color: C.accent, fontFamily: C.fontMono,
-                  textDecoration: "none", fontWeight: 700,
-                  padding: "6px 12px", background: C.accentGlow, borderRadius: 6,
-                  border: `1px solid ${C.accent}30`,
-                }}>+ Input Produksi →</a>
+                <a href="/produksi" style={{ fontSize: 12, color: C.accent, fontFamily: C.fontMono, textDecoration: "none", fontWeight: 700, padding: "6px 12px", background: C.accentGlow, borderRadius: 6, border: `1px solid ${C.accent}30` }}>+ Input Produksi →</a>
               </div>
-
-              {/* Stok kritis dulu */}
               {stokKritis.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.red, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
-                    ⚠ Stok Kritis
-                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.red, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>⚠ Stok Kritis</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
                     {stokKritis.map(s => (
-                      <div key={s.id} className="stok-card" style={{
-                        background: `${C.red}10`,
-                        border: `1px solid ${C.red}30`,
-                        borderRadius: 12, padding: "14px 16px",
-                      }}>
+                      <div key={s.id} className="stok-card" style={{ background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 12, padding: "14px 16px" }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginBottom: 6 }}>{s.nama_produk}</div>
-                        <div style={{ fontSize: 22, fontWeight: 800, color: s.jumlah_stok <= 0 ? C.red : C.yellow, fontFamily: C.fontDisplay }}>
-                          {s.jumlah_stok}
-                        </div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: s.jumlah_stok <= 0 ? C.red : C.yellow, fontFamily: C.fontDisplay }}>{s.jumlah_stok}</div>
                         <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{s.satuan} tersisa</div>
                         <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontFamily: C.fontMono }}>{rupiahFmt(s.harga_jual)}</div>
                       </div>
@@ -469,25 +390,13 @@ export default function HomePage() {
                   </div>
                 </div>
               )}
-
-              {/* Stok sehat */}
               <div>
-                {stokKritis.length > 0 && (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.green, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
-                    ✓ Stok Aman
-                  </div>
-                )}
+                {stokKritis.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: C.green, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>✓ Stok Aman</div>}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
                   {stokSehat.map(s => (
-                    <div key={s.id} className="stok-card" style={{
-                      background: "rgba(255,255,255,0.02)",
-                      border: `1px solid ${C.cardBorderStrong}`,
-                      borderRadius: 12, padding: "14px 16px",
-                    }}>
+                    <div key={s.id} className="stok-card" style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.cardBorderStrong}`, borderRadius: 12, padding: "14px 16px" }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, marginBottom: 6 }}>{s.nama_produk}</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: C.green, fontFamily: C.fontDisplay }}>
-                        {s.jumlah_stok}
-                      </div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: C.green, fontFamily: C.fontDisplay }}>{s.jumlah_stok}</div>
                       <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{s.satuan} tersisa</div>
                       <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontFamily: C.fontMono }}>{rupiahFmt(s.harga_jual)}</div>
                     </div>
@@ -496,24 +405,12 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* ── Quick Actions ── */}
+            {/* Quick Actions */}
             <div style={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 16, padding: 24 }}>
-              <div style={{ fontFamily: C.fontDisplay, fontSize: 16, color: "#f5f0ff", fontWeight: 400, marginBottom: 16 }}>
-                Aksi Cepat
-              </div>
+              <div style={{ fontFamily: C.fontDisplay, fontSize: 16, color: "#f5f0ff", fontWeight: 400, marginBottom: 16 }}>Aksi Cepat</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 {quickLinks.map((link, i) => (
-                  <a key={i} href={link.href} className="quick-link" style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "14px 16px",
-                    background: link.color + "10",
-                    border: `1px solid ${link.color}25`,
-                    borderRadius: 12,
-                    color: link.color,
-                    fontWeight: 700, fontSize: 13,
-                    textDecoration: "none",
-                    fontFamily: C.fontSans,
-                  }}>
+                  <a key={i} href={link.href} className="quick-link" style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", background: link.color + "10", border: `1px solid ${link.color}25`, borderRadius: 12, color: link.color, fontWeight: 700, fontSize: 13, textDecoration: "none", fontFamily: C.fontSans }}>
                     <span style={{ fontSize: 18 }}>{link.icon}</span>
                     <span>{link.label}</span>
                   </a>

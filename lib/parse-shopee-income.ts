@@ -124,23 +124,11 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
   // ── FORMAT SUMMARY (vertikal — "Laporan Penghasilan") ──
   console.log(`✅ Format SUMMARY — baca nilai per label`);
 
-  // Log semua baris untuk debug tanggal
-  for (let i = 0; i < Math.min(rawData.length, 20); i++) {
-    const row = rawData[i] as any[];
-    const label0 = String(row[0] || "").trim();
-    const label1 = String(row[1] || "").trim();
-    if (label0 || label1) {
-      console.log(`Row ${i}: [0]="${label0}" [1]="${label1}" [2]="${row[2]}"`);
-    }
-  }
-
-  const labelMap: Record<string, any> = {}; // simpan raw value untuk tanggal
+  const labelMap: Record<string, any> = {};
   for (let i = 0; i < rawData.length; i++) {
     const row = rawData[i] as any[];
-    // Col 1 = label, col 2 = nilai
     const label1 = String(row[1] || "").trim();
-    if (label1) labelMap[label1] = row[2]; // simpan raw (bisa number/string)
-    // Col 0 = label alternatif
+    if (label1) labelMap[label1] = row[2];
     const label0 = String(row[0] || "").trim();
     if (label0 && labelMap[label0] === undefined) labelMap[label0] = row[1];
   }
@@ -148,9 +136,7 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
   // Cek berbagai kemungkinan label tanggal (case-insensitive)
   const findLabel = (keys: string[]): any => {
     for (const key of keys) {
-      // exact match dulu
       if (labelMap[key] !== undefined) return labelMap[key];
-      // case-insensitive
       const found = Object.keys(labelMap).find(k => k.toLowerCase() === key.toLowerCase());
       if (found) return labelMap[found];
     }
@@ -160,12 +146,8 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
   const dariRaw = findLabel(["Dari", "dari", "Periode Dari", "Tanggal Mulai"]);
   const keRaw   = findLabel(["Ke", "ke", "ke ", "Sampai", "Periode Ke", "Tanggal Selesai"]);
 
-  console.log(`📅 Dari raw: "${dariRaw}", Ke raw: "${keRaw}"`);
-
   const dari = parseTanggal(dariRaw);
   const ke   = parseTanggal(keRaw);
-
-  console.log(`📅 Dari parsed: "${dari}", Ke parsed: "${ke}"`);
 
   const gross_amount = Math.abs(parseNumber(findLabel(["Harga Asli Produk"]) ?? 0));
   const feeLabels = [
@@ -187,9 +169,7 @@ export function parseShopeeIncome(buffer: Buffer): ShopeeIncomeRow[] {
     return [];
   }
 
-  // Format: SUMMARY_YYYY-MM-DD_YYYY-MM-DD (route.ts akan regex match ini)
   const order_id = `SUMMARY_${dari}_${ke}`;
-  console.log(`🆔 order_id: ${order_id}`);
 
   return [{ order_id, gross_amount, total_fee }];
 }

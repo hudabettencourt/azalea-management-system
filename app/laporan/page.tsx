@@ -187,8 +187,11 @@ export default function LaporanPage() {
   const fetchLaporan = useCallback(async () => {
     setLoading(true);
     try {
-      const startDateStr = startDate.slice(0, 10);
-      const endDateStr = endDate.slice(0, 10);
+      // Fix timezone WIB untuk filter fee_platform
+const startDateStr = new Date(new Date(startDate).getTime() + 7 * 60 * 60 * 1000)
+  .toISOString().slice(0, 10);
+const endDateStr = new Date(new Date(endDate).getTime() + 7 * 60 * 60 * 1000)
+  .toISOString().slice(0, 10);
 
       const [shopeeRes, offlineRes, returRes, produksiRes, feeRes, gajiRes, transportRes, opsRes, zakatRes, gajiHarianRes] = await Promise.all([
         // ✅ penjualan_online
@@ -198,7 +201,10 @@ export default function LaporanPage() {
         supabase.from("retur_online").select("nominal").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("produksi_batch").select("total_hpp, gaji_operator, nama_produk, qty_produksi").gte("created_at", startDate).lte("created_at", endDate),
         // ✅ Fee dari fee_platform (bukan kas) — sebagai pengurang pendapatan
-        supabase.from("fee_platform").select("total_fee"),
+        supabase.from("fee_platform")
+  .select("total_fee")
+  .gte("periode_end", startDateStr)
+  .lte("periode_start", endDateStr),
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").eq("kategori", "Gaji").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").eq("kategori", "Transport").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").in("kategori", ["Operasional", "Lain-lain"]).gte("created_at", startDate).lte("created_at", endDate),

@@ -9,6 +9,7 @@ type LaporanData = {
   omzet_shopee: number;
   omzet_offline: number;
   retur_pembatalan: number;
+  fee_platform: number;
   total_pendapatan: number;
   hpp_bahan: number;
   hpp_gaji_operator: number;
@@ -16,7 +17,6 @@ type LaporanData = {
   total_hpp: number;
   laba_kotor: number;
   margin_kotor: number;
-  biaya_fee_shopee: number;
   biaya_gaji: number;
   biaya_transport: number;
   biaya_operasional_lain: number;
@@ -66,6 +66,7 @@ const C = {
   danger: "#f87171",
   warning: "#fbbf24",
   blue: "#60a5fa",
+  orange: "#fb923c",
   fontDisplay: "'DM Serif Display', serif",
   fontMono: "'DM Mono', monospace",
   fontSans: "'DM Sans', sans-serif",
@@ -123,7 +124,6 @@ export default function LaporanPage() {
     }
   }, [filterMode, bulanTerpilih, tanggalMulai, tanggalSelesai]);
 
-  // Update periode label for print
   useEffect(() => {
     if (filterMode === "bulan") {
       const found = daftarBulan.find(b => b.key === bulanTerpilih);
@@ -187,20 +187,24 @@ export default function LaporanPage() {
   const fetchLaporan = useCallback(async () => {
     setLoading(true);
     try {
+      const startDateStr = startDate.slice(0, 10);
+      const endDateStr = endDate.slice(0, 10);
+
       const [shopeeRes, offlineRes, returRes, produksiRes, feeRes, gajiRes, transportRes, opsRes, zakatRes, gajiHarianRes] = await Promise.all([
-        // ✅ MIGRATED: penjualan_online (was penjualan_shopee)
+        // ✅ penjualan_online
         supabase.from("penjualan_online").select("total_nominal").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal").eq("tipe", "Masuk").eq("kategori", "Offline").gte("created_at", startDate).lte("created_at", endDate),
-        // ✅ MIGRATED: retur_online (was retur_shopee)
+        // ✅ retur_online
         supabase.from("retur_online").select("nominal").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("produksi_batch").select("total_hpp, gaji_operator, nama_produk, qty_produksi").gte("created_at", startDate).lte("created_at", endDate),
-        supabase.from("kas").select("nominal").eq("tipe", "Keluar").eq("kategori", "Fee Shopee").gte("created_at", startDate).lte("created_at", endDate),
+        // ✅ Fee dari fee_platform (bukan kas) — sebagai pengurang pendapatan
+        supabase.from("fee_platform").select("total_fee").gte("periode_end", startDateStr).lte("periode_start", endDateStr),
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").eq("kategori", "Gaji").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").eq("kategori", "Transport").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").in("kategori", ["Operasional", "Lain-lain"]).gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("data_zakat").select("zakat_keluar").gte("created_at", startDate).lte("created_at", endDate),
         // ✅ Gaji operasional dari gaji_harian (tipe_beban: Operasional)
-        supabase.from("gaji_harian").select("nominal").eq("tipe_beban", "Operasional").gte("tanggal", startDate.slice(0, 10)).lte("tanggal", endDate.slice(0, 10)),
+        supabase.from("gaji_harian").select("nominal").eq("tipe_beban", "Operasional").gte("tanggal", startDateStr).lte("tanggal", endDateStr),
       ]);
 
       const sum = (data: any[], field = "nominal") => (data || []).reduce((s, r) => s + (r[field] || 0), 0);
@@ -208,6 +212,8 @@ export default function LaporanPage() {
       const omzet_shopee = sum(shopeeRes.data || [], "total_nominal");
       const omzet_offline = sum(offlineRes.data || []);
       const retur_pembatalan = sum(returRes.data || []);
+      // ✅ Fee platform sebagai pengurang pendapatan
+      const fee_platform = sum(feeRes.data || [], "total_fee");
 
       let hpp_bahan = 0;
       let hpp_gaji_operator = 0;
@@ -232,7 +238,6 @@ export default function LaporanPage() {
 
       setProdukProfit(produkProfitList);
 
-      const biaya_fee_shopee = sum(feeRes.data || []);
       const biaya_gaji_kas = sum(gajiRes.data || []);
       const biaya_gaji_harian = sum(gajiHarianRes.data || []);
       const biaya_gaji = biaya_gaji_kas + biaya_gaji_harian;
@@ -241,19 +246,21 @@ export default function LaporanPage() {
       const biaya_zakat = sum(zakatRes.data || [], "zakat_keluar");
 
       const hpp_gaji_packing = 0;
-      const total_pendapatan = omzet_shopee + omzet_offline - retur_pembatalan;
+      // ✅ total_pendapatan = gross - retur - fee_platform
+      const total_pendapatan = omzet_shopee + omzet_offline - retur_pembatalan - fee_platform;
       const total_hpp = hpp_bahan + hpp_gaji_operator + hpp_gaji_packing;
       const laba_kotor = total_pendapatan - total_hpp;
       const margin_kotor = total_pendapatan > 0 ? (laba_kotor / total_pendapatan) * 100 : 0;
-      const total_biaya_operasional = biaya_fee_shopee + biaya_gaji + biaya_transport + biaya_operasional_lain + biaya_zakat;
+      // ✅ Fee tidak lagi masuk biaya operasional
+      const total_biaya_operasional = biaya_gaji + biaya_transport + biaya_operasional_lain + biaya_zakat;
       const laba_bersih = laba_kotor - total_biaya_operasional;
       const margin_bersih = total_pendapatan > 0 ? (laba_bersih / total_pendapatan) * 100 : 0;
 
       setLaporan({
-        omzet_shopee, omzet_offline, retur_pembatalan, total_pendapatan,
+        omzet_shopee, omzet_offline, retur_pembatalan, fee_platform, total_pendapatan,
         hpp_bahan, hpp_gaji_operator, hpp_gaji_packing, total_hpp,
         laba_kotor, margin_kotor,
-        biaya_fee_shopee, biaya_gaji, biaya_transport, biaya_operasional_lain, biaya_zakat,
+        biaya_gaji, biaya_transport, biaya_operasional_lain, biaya_zakat,
         total_biaya_operasional, laba_bersih, margin_bersih,
       });
 
@@ -331,133 +338,32 @@ export default function LaporanPage() {
         ::-webkit-scrollbar-thumb { background: #2a1f3d; border-radius: 2px; }
 
         @media print {
-          @page {
-            size: A4 portrait;
-            margin: 15mm 12mm;
-          }
-
-          /* Sembunyikan semua yang tidak perlu */
-          nav, aside, .sidebar, [data-sidebar],
-          button, .no-print { display: none !important; }
-
-          /* Reset background & warna */
-          * {
-            background: white !important;
-            color: black !important;
-            box-shadow: none !important;
-            border-color: #ddd !important;
-            font-family: 'DM Sans', Arial, sans-serif !important;
-          }
-
+          @page { size: A4 portrait; margin: 15mm 12mm; }
+          nav, aside, .sidebar, [data-sidebar], button, .no-print { display: none !important; }
+          * { background: white !important; color: black !important; box-shadow: none !important; border-color: #ddd !important; font-family: 'DM Sans', Arial, sans-serif !important; }
           body, html { background: white !important; }
-
-          /* Container */
-          .print-container {
-            max-width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-
-          /* Header print */
+          .print-container { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
           .print-header { display: block !important; margin-bottom: 16px; }
-
-          /* Summary cards - 5 kolom */
-          .summary-cards {
-            display: grid !important;
-            grid-template-columns: repeat(5, 1fr) !important;
-            gap: 8px !important;
-            margin-bottom: 16px !important;
-            page-break-inside: avoid;
-          }
-          .summary-card {
-            border: 1px solid #ddd !important;
-            border-radius: 6px !important;
-            padding: 10px 8px !important;
-            border-left-width: 3px !important;
-          }
-          .summary-card .card-label {
-            font-size: 8px !important;
-            text-transform: uppercase;
-            color: #666 !important;
-            margin-bottom: 4px;
-          }
-          .summary-card .card-value {
-            font-size: 11px !important;
-            font-weight: 700 !important;
-            word-break: break-word;
-          }
-          .summary-card .card-pct {
-            font-size: 10px !important;
-            color: #666 !important;
-          }
-
-          /* Sembunyikan chart saat print */
+          .summary-cards { display: grid !important; grid-template-columns: repeat(5, 1fr) !important; gap: 8px !important; margin-bottom: 16px !important; page-break-inside: avoid; }
+          .summary-card { border: 1px solid #ddd !important; border-radius: 6px !important; padding: 10px 8px !important; border-left-width: 3px !important; }
+          .summary-card .card-label { font-size: 8px !important; text-transform: uppercase; color: #666 !important; margin-bottom: 4px; }
+          .summary-card .card-value { font-size: 11px !important; font-weight: 700 !important; word-break: break-word; }
+          .summary-card .card-pct { font-size: 10px !important; color: #666 !important; }
           .chart-section { display: none !important; }
-
-          /* Tab buttons tersembunyi */
           .tab-buttons { display: none !important; }
-
-          /* Tabel breakdown */
-          .breakdown-section {
-            page-break-inside: avoid;
-            margin-bottom: 16px;
-          }
-          .breakdown-title {
-            font-size: 11px !important;
-            font-weight: 700 !important;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-            padding-bottom: 4px;
-            border-bottom: 2px solid #333 !important;
-          }
-          .breakdown-row {
-            display: flex !important;
-            justify-content: space-between !important;
-            padding: 5px 8px !important;
-            border-bottom: 1px solid #eee !important;
-            font-size: 11px !important;
-          }
-          .breakdown-total {
-            display: flex !important;
-            justify-content: space-between !important;
-            padding: 7px 8px !important;
-            font-weight: 700 !important;
-            font-size: 12px !important;
-            border-top: 2px solid #333 !important;
-            margin-top: 2px;
-          }
-          .laba-kotor-box, .laba-bersih-box {
-            display: flex !important;
-            justify-content: space-between !important;
-            padding: 10px 12px !important;
-            border: 2px solid #333 !important;
-            border-radius: 6px !important;
-            margin: 12px 0 !important;
-            page-break-inside: avoid;
-          }
-          .laba-kotor-box .laba-value,
-          .laba-bersih-box .laba-value {
-            font-size: 16px !important;
-            font-weight: 700 !important;
-          }
+          .breakdown-section { page-break-inside: avoid; margin-bottom: 16px; }
+          .breakdown-title { font-size: 11px !important; font-weight: 700 !important; text-transform: uppercase; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 2px solid #333 !important; }
+          .breakdown-row { display: flex !important; justify-content: space-between !important; padding: 5px 8px !important; border-bottom: 1px solid #eee !important; font-size: 11px !important; }
+          .breakdown-total { display: flex !important; justify-content: space-between !important; padding: 7px 8px !important; font-weight: 700 !important; font-size: 12px !important; border-top: 2px solid #333 !important; margin-top: 2px; }
+          .laba-kotor-box, .laba-bersih-box { display: flex !important; justify-content: space-between !important; padding: 10px 12px !important; border: 2px solid #333 !important; border-radius: 6px !important; margin: 12px 0 !important; page-break-inside: avoid; }
+          .laba-kotor-box .laba-value, .laba-bersih-box .laba-value { font-size: 16px !important; font-weight: 700 !important; }
           .laba-bersih-box .laba-value { font-size: 18px !important; }
-
-          /* Print button tersembunyi */
           .print-btn { display: none !important; }
         }
       `}</style>
 
       {toast && (
-        <div style={{
-          position: "fixed", top: 24, right: 24, zIndex: 9999,
-          background: "#1a1020",
-          border: `1px solid ${toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue}44`,
-          color: toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue,
-          padding: "14px 18px", borderRadius: "10px",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-          display: "flex", alignItems: "center", gap: 10,
-          fontFamily: C.fontMono, fontWeight: 600, fontSize: 13, maxWidth: 380,
-        }} className="no-print">
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: "#1a1020", border: `1px solid ${toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue}44`, color: toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue, padding: "14px 18px", borderRadius: "10px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", display: "flex", alignItems: "center", gap: 10, fontFamily: C.fontMono, fontWeight: 600, fontSize: 13, maxWidth: 380 }} className="no-print">
           <span style={{ flex: 1 }}>{toast.msg}</span>
           <button onClick={() => setToast(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16, opacity: 0.6 }}>×</button>
         </div>
@@ -494,13 +400,7 @@ export default function LaporanPage() {
           <div style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: "12px" }}>FILTER PERIODE</div>
           <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
             {["bulan", "custom"].map(mode => (
-              <button key={mode} onClick={() => setFilterMode(mode as any)} style={{
-                flex: 1, padding: "10px", borderRadius: "8px",
-                border: `1px solid ${filterMode === mode ? C.accent + "60" : C.border}`,
-                background: filterMode === mode ? C.accent + "20" : "transparent",
-                color: filterMode === mode ? C.accent : C.muted,
-                fontWeight: 600, cursor: "pointer", fontSize: "13px",
-              }}>
+              <button key={mode} onClick={() => setFilterMode(mode as any)} style={{ flex: 1, padding: "10px", borderRadius: "8px", border: `1px solid ${filterMode === mode ? C.accent + "60" : C.border}`, background: filterMode === mode ? C.accent + "20" : "transparent", color: filterMode === mode ? C.accent : C.muted, fontWeight: 600, cursor: "pointer", fontSize: "13px" }}>
                 {mode === "bulan" ? "Per Bulan" : "Custom Range"}
               </button>
             ))}
@@ -528,7 +428,7 @@ export default function LaporanPage() {
             {/* Summary Cards */}
             <div className="summary-cards" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "14px", marginBottom: "24px" }}>
               {[
-                { label: "Omzet", value: laporan.total_pendapatan, color: C.blue, pct: null },
+                { label: "Omzet Netto", value: laporan.total_pendapatan, color: C.blue, pct: null },
                 { label: "HPP", value: laporan.total_hpp, color: C.danger, pct: null },
                 { label: "Laba Kotor", value: laporan.laba_kotor, color: C.success, pct: laporan.margin_kotor },
                 { label: "Biaya Ops", value: laporan.total_biaya_operasional, color: C.warning, pct: null },
@@ -542,7 +442,7 @@ export default function LaporanPage() {
               ))}
             </div>
 
-            {/* Charts — screen only */}
+            {/* Charts */}
             {chartData.length > 0 && (
               <div className="chart-section" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "24px" }}>
                 <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
@@ -585,7 +485,6 @@ export default function LaporanPage() {
               <button onClick={() => setActiveTab("produk")} style={tabBtn(activeTab === "produk", C.success)}>📦 Per Produk</button>
             </div>
 
-            {/* Summary Tab — juga tampil saat print */}
             {(activeTab === "summary") && (
               <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
                 <h3 className="no-print" style={{ margin: "0 0 20px", fontFamily: C.fontDisplay, fontSize: "18px", color: C.text, fontWeight: 400 }}>
@@ -596,19 +495,20 @@ export default function LaporanPage() {
                 <div className="breakdown-section" style={{ marginBottom: "24px" }}>
                   <div className="breakdown-title" style={{ fontSize: "13px", fontWeight: 700, color: C.blue, marginBottom: "12px", letterSpacing: "0.05em" }}>PENDAPATAN</div>
                   {[
-                    { label: "Penjualan Online (Shopee, dll)", value: laporan.omzet_shopee },
-                    { label: "Penjualan Offline", value: laporan.omzet_offline },
-                    { label: "Retur / Pembatalan", value: -laporan.retur_pembatalan, isNegative: true },
+                    { label: "Penjualan Online (Shopee, dll)", value: laporan.omzet_shopee, isNegative: false },
+                    { label: "Penjualan Offline", value: laporan.omzet_offline, isNegative: false },
+                    { label: "Retur / Pembatalan", value: laporan.retur_pembatalan, isNegative: true },
+                    { label: "Fee Platform (Komisi, Ongkir, Ads)", value: laporan.fee_platform, isNegative: true },
                   ].map((item, i) => (
                     <div key={i} className="breakdown-row" style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-                      <span style={{ fontSize: "13px", color: C.textMid }}>{item.label}</span>
-                      <span style={{ fontSize: "13px", fontWeight: 600, color: item.isNegative ? C.danger : C.text, fontFamily: C.fontMono }}>
-                        {item.isNegative && laporan.retur_pembatalan > 0 ? `(${rupiahFmt(laporan.retur_pembatalan)})` : rupiahFmt(Math.abs(item.value))}
+                      <span style={{ fontSize: "13px", color: item.isNegative ? C.orange : C.textMid }}>{item.label}</span>
+                      <span style={{ fontSize: "13px", fontWeight: 600, color: item.isNegative ? C.orange : C.text, fontFamily: C.fontMono }}>
+                        {item.isNegative && item.value > 0 ? `(${rupiahFmt(item.value)})` : rupiahFmt(item.value)}
                       </span>
                     </div>
                   ))}
                   <div className="breakdown-total" style={{ display: "flex", justifyContent: "space-between", padding: "12px", background: C.blue + "10", marginTop: "4px", borderRadius: "8px" }}>
-                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue }}>TOTAL PENDAPATAN</span>
+                    <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue }}>TOTAL PENDAPATAN NETTO</span>
                     <span style={{ fontSize: "14px", fontWeight: 700, color: C.blue, fontFamily: C.fontMono }}>{rupiahFmt(laporan.total_pendapatan)}</span>
                   </div>
                 </div>
@@ -645,7 +545,6 @@ export default function LaporanPage() {
                 <div className="breakdown-section" style={{ marginBottom: "24px" }}>
                   <div className="breakdown-title" style={{ fontSize: "13px", fontWeight: 700, color: C.warning, marginBottom: "12px" }}>BIAYA OPERASIONAL</div>
                   {[
-                    { label: "Fee Platform (Komisi, Ongkir, Ads)", value: laporan.biaya_fee_shopee },
                     { label: "Gaji (Admin, Host Live, CS, dll)", value: laporan.biaya_gaji },
                     { label: "Transport & Delivery", value: laporan.biaya_transport },
                     { label: "Operasional Lain-lain", value: laporan.biaya_operasional_lain },
@@ -674,11 +573,7 @@ export default function LaporanPage() {
                   </div>
                 </div>
 
-                <button className="print-btn" onClick={() => window.print()} style={{
-                  width: "100%", marginTop: "24px", padding: "12px", borderRadius: "10px",
-                  background: C.success + "20", border: `1px solid ${C.success}40`,
-                  color: C.success, fontWeight: 700, cursor: "pointer", fontSize: "14px",
-                }}>
+                <button className="print-btn" onClick={() => window.print()} style={{ width: "100%", marginTop: "24px", padding: "12px", borderRadius: "10px", background: C.success + "20", border: `1px solid ${C.success}40`, color: C.success, fontWeight: 700, cursor: "pointer", fontSize: "14px" }}>
                   🖨️ Print Laporan
                 </button>
               </div>

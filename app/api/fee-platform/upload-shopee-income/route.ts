@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+// ✅ Gunakan service role key untuk bypass RLS di server-side
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 interface Order {
   order_id: string;
@@ -15,27 +21,6 @@ interface UploadRequest {
   total_fee: number;
 }
 
-const parseOrderDate = (order_id: string): Date | null => {
-  // Format Summary: "SUMMARY_2026-04-13_2026-04-19"
-  if (order_id.startsWith("SUMMARY_")) {
-    const parts = order_id.split("_");
-    // parts[1] = "2026-04-13"
-    if (parts[1]) {
-      const d = new Date(parts[1]);
-      if (!isNaN(d.getTime())) return d;
-    }
-    return new Date();
-  }
-
-  // Format pesanan Shopee: "260414SGF6A560" → YYMMDD
-  const dateStr = order_id.substring(0, 6);
-  const year  = 2000 + parseInt(dateStr.substring(0, 2));
-  const month = parseInt(dateStr.substring(2, 4)) - 1;
-  const day   = parseInt(dateStr.substring(4, 6));
-  const d = new Date(year, month, day);
-  return isNaN(d.getTime()) ? new Date() : d;
-};
-
 export async function POST(request: NextRequest) {
   try {
     const body: UploadRequest = await request.json();
@@ -45,32 +30,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Data tidak valid' }, { status: 400 });
     }
 
-    // Parse tanggal dari order_id
-    const dates = orders
-      .map(o => parseOrderDate(o.order_id))
-      .filter((d): d is Date => d !== null);
-
-    const today = new Date();
-    const minDate = dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))) : today;
-    const maxDate = dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : today;
-
-    // Untuk format Summary, ambil periode dari order_id langsung
-    let periodeStart = minDate.toISOString().split('T')[0];
-    let periodeEnd   = maxDate.toISOString().split('T')[0];
+    // Parse periode dari order_id
+    let periodeStart = new Date().toISOString().split('T')[0];
+    let periodeEnd   = new Date().toISOString().split('T')[0];
 
     if (orders.length === 1 && orders[0].order_id.startsWith("SUMMARY_")) {
+      // Format: "SUMMARY_2026-04-13_2026-04-19"
       const match = orders[0].order_id.match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})/);
-      if (match) { periodeStart = match[1]; periodeEnd = match[2]; }
+      if (match) {
+        periodeStart = match[1];
+        periodeEnd   = match[2];
+      }
+    } else {
+      // Format per pesanan: "260414SGF6A560" → YYMMDD
+      const dates = orders.map(o => {
+        const ds = o.order_id.substring(0, 6);
+        const y = 2000 + parseInt(ds.substring(0, 2));
+        const m = parseInt(ds.substring(2, 4)) - 1;
+        const d = parseInt(ds.substring(4, 6));
+        const dt = new Date(y, m, d);
+        return isNaN(dt.getTime()) ? new Date() : dt;
+      });
+      const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+      periodeStart = minDate.toISOString().split('T')[0];
+      periodeEnd   = maxDate.toISOString().split('T')[0];
     }
 
+    // Fee breakdown proporsional
+    const biaya_komisi         = Math.round(total_fee * 0.40);
+    const biaya_administrasi   = Math.round(total_fee * 0.20);
+    const biaya_layanan        = Math.round(total_fee * 0.30);
+    const biaya_proses_pesanan = Math.round(total_fee * 0.10);
 
-    // Fee breakdown proporsional (fallback — idealnya dari Excel langsung)
-    const biaya_komisi          = Math.round(total_fee * 0.40);
-    const biaya_administrasi    = Math.round(total_fee * 0.20);
-    const biaya_layanan         = Math.round(total_fee * 0.30);
-    const biaya_proses_pesanan  = Math.round(total_fee * 0.10);
-
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('fee_platform')
       .insert({
         toko_id: tokoId,
@@ -78,7 +71,6 @@ export async function POST(request: NextRequest) {
         periode_end: periodeEnd,
         total_penjualan_gross: total_gross,
         total_fee: total_fee,
-        // persentase_fee: generated column, dihitung otomatis DB
         biaya_komisi,
         biaya_administrasi,
         biaya_layanan,
@@ -88,10 +80,7 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Supabase error:', error);
-      return NextResponse.json(
-        { error: 'Gagal menyimpan: ' + error.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Gagal menyimpan: ' + error.message }, { status: 500 });
     }
 
     return NextResponse.json({

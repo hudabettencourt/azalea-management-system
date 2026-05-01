@@ -8,7 +8,7 @@ import { ShopeeUploadTab } from "@/components/ShopeeUploadTab";
 // ── Types ──
 type Toko = { id: number; nama: string; aktif: boolean };
 type Produk = { id: number; nama_produk: string; jumlah_stok: number; harga_jual: number; satuan: string };
-type PiutangShopee = { toko_id: number; toko_nama: string; total_piutang: number; total_retur: number; total_cair: number; sisa_piutang: number };
+type PiutangShopee = { toko_id: number; toko_nama: string; total_piutang: number; total_retur: number; total_fee: number; total_cair: number; sisa_piutang: number };
 type ReturShopee = { id: number; toko_id: number; produk_id: number; qty: number; nominal: number; tipe: string; stok_kembali: boolean; created_at: string; nama_produk?: string; nama_toko?: string };
 type PencairanShopee = { id: number; toko_id: number; nominal_cair: number; nominal_piutang: number; selisih: number; created_at: string; nama_toko?: string };
 type Piutang = { id: number; nama_pelanggan: string; nominal: number; keterangan: string; status: string };
@@ -117,15 +117,18 @@ export default function PenjualanPage() {
   };
 
   // ✅ FIXED: Query dari toko_online, penjualan_online, retur_online, pencairan_online
+  // ✅ FIXED: Tambah fee_platform sebagai pengurang piutang
   const fetchData = useCallback(async () => {
     try {
-      const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline] = await Promise.all([
+      const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline, resFee] = await Promise.all([
         supabase.from("toko_online").select("*").eq("aktif", true).order("id"),
         supabase.from("stok_barang").select("*").order("nama_produk"),
         supabase.from("penjualan_online").select("toko_id, total_nominal, total_ditarik, status"),
         supabase.from("retur_online").select("*, stok_barang(nama_produk), toko_online(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("pencairan_online").select("*, toko_online(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("piutang").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
+        // ✅ Fee platform mengurangi piutang (fee sudah dipotong Shopee sebelum dana bisa ditarik)
+        supabase.from("fee_platform").select("toko_id, total_fee"),
       ]);
 
       setToko(resToko.data || []);
@@ -134,6 +137,7 @@ export default function PenjualanPage() {
       const penjualanData = resPenjualan.data || [];
       const returData = resRetur.data || [];
       const pencairanData = resPencairan.data || [];
+      const feeData = resFee.data || [];
       const tokoList = resToko.data || [];
 
       const piutangPerToko: PiutangShopee[] = tokoList.map((t: Toko) => {
@@ -149,17 +153,24 @@ export default function PenjualanPage() {
           .filter((r: any) => r.toko_id === t.id)
           .reduce((a: number, r: any) => a + Math.round(r.nominal || 0), 0);
 
+        // ✅ Fee platform sebagai pengurang piutang (bukan kas keluar)
+        const totalFee = feeData
+          .filter((f: any) => f.toko_id === t.id)
+          .reduce((a: number, f: any) => a + Math.round(f.total_fee || 0), 0);
+
         const totalCair = pencairanData
           .filter((p: any) => p.toko_id === t.id)
           .reduce((a: number, p: any) => a + Math.round(p.nominal_cair || 0), 0);
 
-        const sisaPiutang = totalPiutang - totalDitarik - totalRetur;
+        // ✅ sisa_piutang sekarang dikurangi fee
+        const sisaPiutang = totalPiutang - totalDitarik - totalRetur - totalFee;
 
         return {
           toko_id: t.id,
           toko_nama: t.nama,
           total_piutang: totalPiutang,
           total_retur: totalRetur,
+          total_fee: totalFee,
           total_cair: totalCair,
           sisa_piutang: Math.max(sisaPiutang, 0),
         };
@@ -215,6 +226,7 @@ export default function PenjualanPage() {
   };
 
   // ✅ FIXED: pencairan_online & penjualan_online
+  // ✅ FIXED: Hapus insert kas "Fee Shopee" — fee sudah ditangani via fee_platform
   const prosesPencairan = async () => {
     if (!cairTokoId || !cairNominal) return showToast("Lengkapi semua field!", "error");
     const nominalCair = toAngka(cairNominal);
@@ -262,6 +274,8 @@ export default function PenjualanPage() {
         sisaCair -= ditarikSekarang;
       }
 
+      // ✅ Hanya insert kas masuk — tidak ada kas keluar Fee Shopee
+      // Fee sudah dipotong Shopee sebelum dana bisa ditarik (dicatat via fee_platform)
       await supabase.from("kas").insert([{
         tipe: "Masuk",
         kategori: "Shopee",
@@ -269,16 +283,7 @@ export default function PenjualanPage() {
         keterangan: `Pencairan Shopee - ${tokoData.toko_nama}`,
       }]);
 
-      if (selisih > 0) {
-        await supabase.from("kas").insert([{
-          tipe: "Keluar",
-          kategori: "Fee Shopee",
-          nominal: selisih,
-          keterangan: `Fee/Potongan Shopee - ${tokoData.toko_nama}`,
-        }]);
-      }
-
-      showToast(`Pencairan ${tokoData.toko_nama} berhasil! Dana: ${rupiahFmt(nominalCair)}${selisih > 0 ? `, Fee: ${rupiahFmt(selisih)}` : ""}`);
+      showToast(`Pencairan ${tokoData.toko_nama} berhasil! Dana: ${rupiahFmt(nominalCair)}`);
       setCairTokoId(""); setCairNominal("");
       fetchData();
     } catch (err: any) {
@@ -437,6 +442,7 @@ export default function PenjualanPage() {
                     {[
                       { label: "Total Orderan", val: p.total_piutang, color: C.text },
                       { label: "Retur/Batal", val: p.total_retur, color: C.red },
+                      { label: "Fee Platform", val: p.total_fee, color: C.orange },
                       { label: "Sudah Cair", val: p.total_cair, color: C.green },
                     ].map(row => (
                       <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -526,27 +532,6 @@ export default function PenjualanPage() {
                     </div>
                   )}
                   <input type="text" value={cairNominal} onChange={e => setCairNominal(formatIDR(e.target.value))} placeholder="Nominal dana yang cair (Rp)" style={inputStyle} />
-                  {cairTokoId && cairNominal && (
-                    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
-                      {(() => {
-                        const piutang = piutangShopee.find(p => p.toko_id === parseInt(cairTokoId))?.sisa_piutang || 0;
-                        const cair = toAngka(cairNominal);
-                        const selisih = Math.round(piutang - cair);
-                        return (
-                          <>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                              <span style={{ fontSize: 12, color: C.muted }}>Dana masuk kas</span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(cair)}</span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ fontSize: 12, color: C.muted }}>Fee/Potongan Shopee</span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: selisih > 0 ? C.red : C.green, fontFamily: C.fontMono }}>{rupiahFmt(Math.max(selisih, 0))}</span>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
                   <button onClick={prosesPencairan} disabled={submitting === "cair"} style={{ width: "100%", padding: "12px", border: "none", borderRadius: 8, background: submitting === "cair" ? C.dim : `linear-gradient(135deg, #065f46, ${C.green})`, color: "#fff", fontWeight: 700, cursor: submitting === "cair" ? "not-allowed" : "pointer", fontFamily: C.fontMono, fontSize: 13 }}>
                     {submitting === "cair" ? "Memproses..." : "💰 Catat Pencairan Dana"}
                   </button>
@@ -564,7 +549,6 @@ export default function PenjualanPage() {
                           </div>
                           <div style={{ display: "flex", gap: 16 }}>
                             <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>Piutang: {rupiahFmt(p.nominal_piutang)}</span>
-                            <span style={{ fontSize: 11, color: C.red, fontFamily: C.fontMono }}>Fee: {rupiahFmt(p.selisih)}</span>
                             <span style={{ fontSize: 11, color: C.dim, fontFamily: C.fontMono }}>{tanggalFmt(p.created_at)}</span>
                           </div>
                         </div>

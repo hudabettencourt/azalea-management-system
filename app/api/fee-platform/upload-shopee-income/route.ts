@@ -64,7 +64,6 @@ export async function POST(request: NextRequest) {
       if (parts[2]) periodeEnd   = parts[2];
     }
 
-    const persentase_fee = total_gross > 0 ? (total_fee / total_gross) * 100 : 0;
 
     // Fee breakdown proporsional (fallback — idealnya dari Excel langsung)
     const biaya_komisi          = Math.round(total_fee * 0.40);
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
         periode_end: periodeEnd,
         total_penjualan_gross: total_gross,
         total_fee: total_fee,
-        persentase_fee: persentase_fee,
+        // persentase_fee: generated column, dihitung otomatis DB
         biaya_komisi,
         biaya_administrasi,
         biaya_layanan,

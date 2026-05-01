@@ -8,6 +8,7 @@ type Profile = { id: string; email: string; nama: string; role: string; created_
 type Produk = { id: number; nama_produk: string; sku: string | null; jumlah_stok: number; harga_jual: number; satuan: string };
 type Toko = { id: number; nama: string; platform: string; aktif: boolean; created_at: string };
 type Supplier = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
+type Pelanggan = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const T = {
@@ -48,10 +49,24 @@ const toAngka = (str: string) => parseInt(str.replace(/\./g, "")) || 0;
 type ProdukForm = { nama_produk: string; sku: string; harga_jual: string; jumlah_stok: string; satuan: string };
 type TokoForm = { nama: string; platform: string; aktif: boolean };
 type SupplierForm = { nama: string; telepon: string; alamat: string; catatan: string };
+type PelangganForm = { nama: string; telepon: string; alamat: string; catatan: string };
 const emptyProdukForm = (): ProdukForm => ({ nama_produk: "", sku: "", harga_jual: "", jumlah_stok: "0", satuan: "pcs" });
 const emptyTokoForm = (): TokoForm => ({ nama: "", platform: "Shopee", aktif: true });
 const emptySupplierForm = (): SupplierForm => ({ nama: "", telepon: "", alamat: "", catatan: "" });
-type Section = "users" | "produk" | "toko" | "supplier";
+const emptyPelangganForm = (): PelangganForm => ({ nama: "", telepon: "", alamat: "", catatan: "" });
+type Section = "users" | "produk" | "toko" | "supplier" | "pelanggan";
+
+import Sidebar from "@/components/Sidebar";
+
+const Label = ({ children }: { children: React.ReactNode }) => (
+  <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.2, fontWeight: 700, marginBottom: 5, textTransform: "uppercase" as const }}>{children}</div>
+);
+const BtnPrimary = ({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: React.ReactNode }) => (
+  <button onClick={onClick} disabled={disabled} style={{ padding: "9px 20px", background: disabled ? T.textDim : `linear-gradient(135deg, #c94f68, ${T.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 13, fontFamily: T.fontMono, opacity: disabled ? 0.6 : 1 }}>{children}</button>
+);
+const BtnSecondary = ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) => (
+  <button onClick={onClick} style={{ padding: "9px 16px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>{children}</button>
+);
 
 export default function AdminPage() {
   const { profile: currentUser, isOwner, loading: roleLoading } = useRole();
@@ -59,6 +74,7 @@ export default function AdminPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ── USERS ──
   const [users, setUsers] = useState<Profile[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState("");
@@ -66,6 +82,7 @@ export default function AdminPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  // ── PRODUK ──
   const [produkList, setProdukList] = useState<Produk[]>([]);
   const [produkLoading, setProdukLoading] = useState(false);
   const [searchProduk, setSearchProduk] = useState("");
@@ -78,6 +95,7 @@ export default function AdminPage() {
   const [confirmDeleteProdukId, setConfirmDeleteProdukId] = useState<number | null>(null);
   const [deletingProdukId, setDeletingProdukId] = useState<number | null>(null);
 
+  // ── TOKO ──
   const [tokoList, setTokoList] = useState<Toko[]>([]);
   const [tokoLoading, setTokoLoading] = useState(false);
   const [showTambahToko, setShowTambahToko] = useState(false);
@@ -89,6 +107,7 @@ export default function AdminPage() {
   const [confirmDeleteTokoId, setConfirmDeleteTokoId] = useState<number | null>(null);
   const [deletingTokoId, setDeletingTokoId] = useState<number | null>(null);
 
+  // ── SUPPLIER ──
   const [supplierList, setSupplierList] = useState<Supplier[]>([]);
   const [supplierLoading, setSupplierLoading] = useState(false);
   const [searchSupplier, setSearchSupplier] = useState("");
@@ -101,11 +120,25 @@ export default function AdminPage() {
   const [confirmDeleteSupplierId, setConfirmDeleteSupplierId] = useState<number | null>(null);
   const [deletingSupplierId, setDeletingSupplierId] = useState<number | null>(null);
 
+  // ── PELANGGAN OFFLINE ──
+  const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
+  const [pelangganLoading, setPelangganLoading] = useState(false);
+  const [searchPelanggan, setSearchPelanggan] = useState("");
+  const [showTambahPelanggan, setShowTambahPelanggan] = useState(false);
+  const [tambahPelanggan, setTambahPelanggan] = useState<PelangganForm>(emptyPelangganForm());
+  const [savingPelanggan, setSavingPelanggan] = useState(false);
+  const [editingPelangganId, setEditingPelangganId] = useState<number | null>(null);
+  const [editPelangganForm, setEditPelangganForm] = useState<PelangganForm>(emptyPelangganForm());
+  const [savingEditPelanggan, setSavingEditPelanggan] = useState(false);
+  const [confirmDeletePelangganId, setConfirmDeletePelangganId] = useState<number | null>(null);
+  const [deletingPelangganId, setDeletingPelangganId] = useState<number | null>(null);
+
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
 
+  // ── FETCH FUNCTIONS ──
   const fetchUsers = useCallback(async () => {
     const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
     if (error) showToast("Gagal load users: " + error.message, "error");
@@ -137,11 +170,21 @@ export default function AdminPage() {
     setSupplierLoading(false);
   }, []);
 
+  const fetchPelanggan = useCallback(async () => {
+    setPelangganLoading(true);
+    const { data, error } = await supabase.from("pelanggan_offline").select("*").order("nama");
+    if (error) showToast("Gagal load pelanggan: " + error.message, "error");
+    else setPelangganList(data || []);
+    setPelangganLoading(false);
+  }, []);
+
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { if (activeSection === "produk") fetchProduk(); }, [activeSection, fetchProduk]);
   useEffect(() => { if (activeSection === "toko") fetchToko(); }, [activeSection, fetchToko]);
   useEffect(() => { if (activeSection === "supplier") fetchSupplier(); }, [activeSection, fetchSupplier]);
+  useEffect(() => { if (activeSection === "pelanggan") fetchPelanggan(); }, [activeSection, fetchPelanggan]);
 
+  // ── USER CRUD ──
   const saveUser = async (id: string) => {
     if (!editRole) return showToast("Pilih role!", "error");
     if (!editNama.trim()) return showToast("Isi nama!", "error");
@@ -157,6 +200,7 @@ export default function AdminPage() {
     setSavingId(null);
   };
 
+  // ── PRODUK CRUD ──
   const handleTambahProduk = async () => {
     if (!tambahProduk.nama_produk.trim()) return showToast("Nama produk wajib diisi!", "error");
     if (!tambahProduk.harga_jual) return showToast("Harga jual wajib diisi!", "error");
@@ -184,6 +228,7 @@ export default function AdminPage() {
     setDeletingProdukId(null);
   };
 
+  // ── TOKO CRUD ──
   const handleTambahToko = async () => {
     if (!tambahToko.nama.trim()) return showToast("Nama toko wajib diisi!", "error");
     setSavingToko(true);
@@ -216,6 +261,7 @@ export default function AdminPage() {
     else { showToast(`Toko ${!aktif ? "diaktifkan" : "dinonaktifkan"}`); fetchToko(); }
   };
 
+  // ── SUPPLIER CRUD ──
   const handleTambahSupplier = async () => {
     if (!tambahSupplier.nama.trim()) return showToast("Nama supplier wajib diisi!", "error");
     setSavingSupplier(true);
@@ -242,9 +288,38 @@ export default function AdminPage() {
     setDeletingSupplierId(null);
   };
 
+  // ── PELANGGAN CRUD ──
+  const handleTambahPelanggan = async () => {
+    if (!tambahPelanggan.nama.trim()) return showToast("Nama pelanggan wajib diisi!", "error");
+    setSavingPelanggan(true);
+    const { error } = await supabase.from("pelanggan_offline").insert([{ nama: tambahPelanggan.nama.trim(), telepon: tambahPelanggan.telepon.trim() || null, alamat: tambahPelanggan.alamat.trim() || null, catatan: tambahPelanggan.catatan.trim() || null }]);
+    if (error) showToast("Gagal tambah pelanggan: " + error.message, "error");
+    else { showToast(`✓ Pelanggan "${tambahPelanggan.nama}" ditambahkan!`); setTambahPelanggan(emptyPelangganForm()); setShowTambahPelanggan(false); fetchPelanggan(); }
+    setSavingPelanggan(false);
+  };
+
+  const saveEditPelanggan = async (id: number) => {
+    if (!editPelangganForm.nama.trim()) return showToast("Nama pelanggan wajib diisi!", "error");
+    setSavingEditPelanggan(true);
+    const { error } = await supabase.from("pelanggan_offline").update({ nama: editPelangganForm.nama.trim(), telepon: editPelangganForm.telepon.trim() || null, alamat: editPelangganForm.alamat.trim() || null, catatan: editPelangganForm.catatan.trim() || null }).eq("id", id);
+    if (error) showToast("Gagal update pelanggan: " + error.message, "error");
+    else { showToast(`✓ Pelanggan berhasil diupdate!`); setEditingPelangganId(null); fetchPelanggan(); }
+    setSavingEditPelanggan(false);
+  };
+
+  const hapusPelanggan = async (id: number, nama: string) => {
+    setDeletingPelangganId(id);
+    const { error } = await supabase.from("pelanggan_offline").delete().eq("id", id);
+    if (error) showToast("Gagal hapus pelanggan: " + error.message, "error");
+    else { showToast(`🗑 Pelanggan "${nama}" dihapus`); setConfirmDeletePelangganId(null); fetchPelanggan(); }
+    setDeletingPelangganId(null);
+  };
+
+  // ── FILTERED LISTS ──
   const produkFiltered = produkList.filter(p => searchProduk === "" || p.nama_produk?.toLowerCase().includes(searchProduk.toLowerCase()) || (p.sku || "").toLowerCase().includes(searchProduk.toLowerCase()));
   const supplierFiltered = supplierList.filter(s => searchSupplier === "" || s.nama?.toLowerCase().includes(searchSupplier.toLowerCase()) || (s.telepon || "").includes(searchSupplier));
   const usersFiltered = users.filter(u => search === "" || u.nama?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()) || u.role?.toLowerCase().includes(search.toLowerCase()));
+  const pelangganFiltered = pelangganList.filter(p => searchPelanggan === "" || p.nama?.toLowerCase().includes(searchPelanggan.toLowerCase()) || (p.telepon || "").includes(searchPelanggan));
 
   const inputStyle: React.CSSProperties = { padding: "8px 12px", background: "rgba(255,255,255,0.04)", border: `1.5px solid rgba(232,115,138,0.2)`, borderRadius: 8, color: T.text, fontFamily: T.fontSans, fontSize: 13, outline: "none", transition: "border-color 0.2s", width: "100%", boxSizing: "border-box" };
 
@@ -253,98 +328,63 @@ export default function AdminPage() {
     { id: "produk", label: "Master Produk", icon: "📦" },
     { id: "toko", label: "Master Toko", icon: "🏪" },
     { id: "supplier", label: "Master Supplier", icon: "🏭" },
+    { id: "pelanggan", label: "Master Pelanggan", icon: "👤" },
   ];
 
   if (roleLoading || loading) return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>⊛</div>
-        <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, letterSpacing: 2 }}>MEMUAT DATA...</div>
-      </div>
+      <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 13 }}>Memuat...</div>
     </div>
   );
 
   if (!isOwner) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-        <div style={{ color: T.textMid, fontFamily: T.fontDisplay, fontSize: 24, marginBottom: 8 }}>Akses Ditolak</div>
-        <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12 }}>Halaman ini hanya untuk Owner / Super Admin</div>
-        <a href="/" style={{ display: "inline-block", marginTop: 20, color: T.accent, fontFamily: T.fontMono, fontSize: 12, textDecoration: "none" }}>← Kembali ke Beranda</a>
+    <Sidebar>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, flexDirection: "column", gap: 16 }}>
+        <div style={{ fontSize: 48 }}>🔐</div>
+        <div style={{ color: T.red, fontFamily: T.fontDisplay, fontSize: 22 }}>Akses Ditolak</div>
+        <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 13 }}>Halaman ini hanya untuk Owner / Super Admin</div>
+        <a href="/dashboard" style={{ color: T.accent, fontFamily: T.fontMono, fontSize: 13 }}>← Kembali ke Dashboard</a>
       </div>
-    </div>
-  );
-
-  const BtnPrimary = ({ onClick, disabled, children, color = T.accent }: any) => (
-    <button onClick={onClick} disabled={disabled} style={{ padding: "10px 24px", background: disabled ? T.textDim : `linear-gradient(135deg, #c94f68, ${color})`, border: "none", color: "#fff", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: T.fontMono }}>{children}</button>
-  );
-  const BtnSecondary = ({ onClick, children }: any) => (
-    <button onClick={onClick} style={{ padding: "10px 18px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 13, fontFamily: T.fontMono }}>{children}</button>
-  );
-  const Label = ({ children, color = T.textDim }: any) => (
-    <label style={{ fontSize: 10, color, fontFamily: T.fontMono, letterSpacing: 1, display: "block", marginBottom: 5, fontWeight: 700 }}>{children}</label>
+    </Sidebar>
   );
 
   return (
-    <>
+    <Sidebar>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; }
-        body { background: ${T.bg}; }
-        input:focus, select:focus, textarea:focus { border-color: rgba(232,115,138,0.5) !important; box-shadow: 0 0 0 3px rgba(232,115,138,0.08) !important; outline: none; }
-        input, select, textarea { color: #e0d0d8 !important; }
-        input::placeholder, textarea::placeholder { color: #5a4860 !important; }
-        select option { background: #1a1020; color: #e0d0d8; }
-        textarea { resize: vertical; }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-        @keyframes slideDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
-        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: rgba(232,115,138,0.2); border-radius: 3px; }
-        .nav-item:hover { background: rgba(232,115,138,0.06) !important; }
-        .data-row:hover { background: rgba(255,255,255,0.015) !important; }
-        .btn-edit:hover { background: rgba(167,139,250,0.25) !important; }
-        .btn-del:hover { background: rgba(235,87,87,0.25) !important; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 600px; } }
+        .data-row:hover { background: rgba(232,115,138,0.03) !important; }
+        .btn-edit:hover { background: rgba(167,139,250,0.2) !important; }
+        .btn-del:hover { background: rgba(235,87,87,0.2) !important; }
+        select option { background: #1a1020; color: #f0e6e9; }
       `}</style>
 
       {toast && (
-        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: "#1a1020", border: `1px solid ${toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.accent}44`, color: toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.accent, padding: "14px 20px", borderRadius: 12, fontFamily: T.fontMono, fontWeight: 600, fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", animation: "fadeUp 0.3s ease" }}>
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: "#1a1020", border: `1px solid ${toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.blue}44`, color: toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.blue, borderRadius: 12, padding: "14px 20px", fontFamily: T.fontSans, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", maxWidth: 360, animation: "fadeUp 0.2s ease" }}>
           {toast.msg}
         </div>
       )}
 
-      <div style={{ display: "flex", minHeight: "100vh", fontFamily: T.fontSans, background: T.bg, color: T.text }}>
-        <aside style={{ width: 220, flexShrink: 0, background: T.sidebar, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh" }}>
-          <div style={{ padding: "24px 20px 18px", borderBottom: `1px solid ${T.border}` }}>
-            <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: "linear-gradient(135deg, #e8738a, #c94f68)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>✿</div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay }}>Azalea</div>
-                <div style={{ fontSize: 9, color: T.accent, letterSpacing: 2, textTransform: "uppercase", fontFamily: T.fontMono }}>ERP System</div>
-              </div>
-            </a>
+      <div style={{ display: "flex", minHeight: "100vh", background: T.bg, fontFamily: T.fontSans, color: T.text }}>
+        {/* ── SIDE NAV ── */}
+        <nav style={{ width: 220, background: T.sidebar, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", padding: "24px 0", flexShrink: 0 }}>
+          <div style={{ padding: "0 20px 20px", borderBottom: `1px solid ${T.border}`, marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 2, textTransform: "uppercase" }}>Azalea ERP</div>
+            <div style={{ fontSize: 18, fontFamily: T.fontDisplay, color: T.text, marginTop: 4 }}>Admin Panel</div>
           </div>
-          <nav style={{ flex: 1, padding: "16px 12px", overflowY: "auto" }}>
-            <div style={{ fontSize: 9, color: T.textDim, letterSpacing: 2, textTransform: "uppercase", fontFamily: T.fontMono, padding: "0 8px", marginBottom: 8 }}>Admin Panel</div>
-            {NAV_ITEMS.map(nav => (
-              <button key={nav.id} className="nav-item" onClick={() => setActiveSection(nav.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, marginBottom: 2, width: "100%", background: activeSection === nav.id ? T.accentDim : "transparent", borderLeft: activeSection === nav.id ? `2px solid ${T.accent}` : "2px solid transparent", border: "none", cursor: "pointer", color: activeSection === nav.id ? T.text : T.textDim, fontSize: 13, transition: "all 0.15s", textAlign: "left", fontFamily: T.fontSans }}>
-                <span>{nav.icon}</span>
-                <span style={{ fontWeight: activeSection === nav.id ? 600 : 400 }}>{nav.label}</span>
-              </button>
-            ))}
-            <div style={{ height: 1, background: T.border, margin: "12px 8px" }} />
-            {[{ href: "/", label: "Beranda", icon: "◈" }, { href: "/dashboard", label: "Dashboard", icon: "▤" }].map(nav => (
-              <a key={nav.href} href={nav.href} className="nav-item" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, marginBottom: 2, background: "transparent", borderLeft: "2px solid transparent", textDecoration: "none", color: T.textDim, fontSize: 13, transition: "all 0.15s" }}>
-                <span>{nav.icon}</span><span>{nav.label}</span>
-              </a>
-            ))}
-          </nav>
-          <div style={{ padding: "16px 20px", borderTop: `1px solid ${T.border}` }}>
-            <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, marginBottom: 4 }}>{currentUser?.nama}</div>
-            <div style={{ fontSize: 11, color: T.accent, fontFamily: T.fontMono }}>{roleInfo(currentUser?.role || "").label}</div>
-          </div>
-        </aside>
+          {NAV_ITEMS.map(item => (
+            <button key={item.id} onClick={() => setActiveSection(item.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", border: "none", background: activeSection === item.id ? T.accentDim : "transparent", color: activeSection === item.id ? T.accent : T.textDim, cursor: "pointer", fontFamily: T.fontSans, fontSize: 13, fontWeight: activeSection === item.id ? 700 : 400, borderLeft: `3px solid ${activeSection === item.id ? T.accent : "transparent"}`, transition: "all 0.15s", textAlign: "left" }}>
+              <span style={{ fontSize: 15 }}>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-        <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <header style={{ height: 58, padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${T.border}`, background: "rgba(16,12,22,0.9)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 100 }}>
+        {/* ── MAIN CONTENT ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <header style={{ padding: "16px 32px", borderBottom: `1px solid ${T.border}`, background: "rgba(12,8,22,0.9)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 100 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1 }}>AZALEA /</span>
               <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay, marginLeft: 4 }}>
@@ -380,30 +420,33 @@ export default function AdminPage() {
                     return (
                       <div key={user.id} style={{ borderBottom: `1px solid ${T.border}`, background: isEditing ? "rgba(232,115,138,0.04)" : "transparent" }}>
                         {!isEditing ? (
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px 120px 100px", gap: 8, padding: "14px 24px", alignItems: "center" }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid, display: "flex", alignItems: "center", gap: 6 }}>
-                              {user.nama || "—"}
-                              {user.id === currentUser?.id && <span style={{ fontSize: 9, background: T.accentDim, color: T.accent, padding: "1px 6px", borderRadius: 3, fontFamily: T.fontMono }}>KAMU</span>}
+                          <div className="data-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px 120px 100px", gap: 8, padding: "13px 24px", alignItems: "center", transition: "background 0.15s" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${rInfo.color}25`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: rInfo.color, fontFamily: T.fontMono, flexShrink: 0 }}>{(user.nama || user.email || "?")[0].toUpperCase()}</div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{user.nama || "—"}</div>
                             </div>
                             <div style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{user.email}</div>
-                            <div><span style={{ fontSize: 11, fontWeight: 700, color: rInfo.color, background: `${rInfo.color}18`, border: `1px solid ${rInfo.color}33`, padding: "3px 10px", borderRadius: 20, fontFamily: T.fontMono }}>{rInfo.label}</span></div>
+                            <div><span style={{ padding: "3px 10px", borderRadius: 20, background: `${rInfo.color}20`, color: rInfo.color, fontSize: 11, fontWeight: 700, fontFamily: T.fontMono }}>{rInfo.label}</span></div>
                             <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{tanggalFmt(user.created_at)}</div>
-                            <div><button onClick={() => { setEditingId(user.id); setEditRole(user.role); setEditNama(user.nama); }} style={{ background: T.accentDim, border: `1px solid ${T.borderStrong}`, color: T.accent, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button></div>
+                            <button className="btn-edit" onClick={() => { setEditingId(user.id); setEditRole(user.role); setEditNama(user.nama || ""); }} style={{ background: T.accentDim, border: `1px solid ${T.accent}30`, color: T.accent, padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
                           </div>
                         ) : (
                           <div style={{ padding: "16px 24px" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px auto", gap: 10, alignItems: "end" }}>
-                              <div><Label>NAMA</Label><input value={editNama} onChange={e => setEditNama(e.target.value)} style={inputStyle} /></div>
-                              <div><Label>EMAIL</Label><div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.02)", border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{user.email}</div></div>
-                              <div><Label>ROLE</Label>
-                                <select value={editRole} onChange={e => setEditRole(e.target.value)} style={inputStyle}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                              <div>
+                                <Label>NAMA</Label>
+                                <input value={editNama} onChange={e => setEditNama(e.target.value)} style={inputStyle} />
+                              </div>
+                              <div>
+                                <Label>ROLE</Label>
+                                <select value={editRole} onChange={e => setEditRole(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                                 </select>
                               </div>
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <button onClick={() => saveUser(user.id)} disabled={savingId === user.id} style={{ background: `linear-gradient(135deg, #c94f68, ${T.accent})`, border: "none", color: "#fff", padding: "8px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{savingId === user.id ? "..." : "Simpan"}</button>
-                                <button onClick={() => setEditingId(null)} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${T.border}`, color: T.textDim, padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
-                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button onClick={() => saveUser(user.id)} disabled={savingId === user.id} style={{ padding: "8px 18px", background: `linear-gradient(135deg, #c94f68, ${T.accent})`, border: "none", color: "#fff", borderRadius: 7, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingId === user.id ? "..." : "Simpan"}</button>
+                              <button onClick={() => setEditingId(null)} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${T.border}`, color: T.textDim, padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
                             </div>
                           </div>
                         )}
@@ -428,66 +471,71 @@ export default function AdminPage() {
                   <div style={{ display: "flex", gap: 10 }}>
                     <input value={searchProduk} onChange={e => setSearchProduk(e.target.value)} placeholder="🔍 Cari..." style={{ ...inputStyle, width: 200 }} />
                     <button onClick={() => { setShowTambahProduk(v => !v); setTambahProduk(emptyProdukForm()); setEditingProdukId(null); }} style={{ padding: "9px 18px", background: showTambahProduk ? "rgba(255,255,255,0.06)" : `linear-gradient(135deg, #c94f68, ${T.accent})`, border: showTambahProduk ? `1px solid ${T.border}` : "none", color: showTambahProduk ? T.textDim : "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap" }}>
-                      {showTambahProduk ? "✕ Batal" : "+ Tambah Produk"}
+                      {showTambahProduk ? "✕ Tutup" : "+ Tambah Produk"}
                     </button>
                   </div>
                 </div>
 
                 {showTambahProduk && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ TAMBAH PRODUK BARU</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ PRODUK BARU</div>
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
-                      <div><Label>NAMA PRODUK *</Label><input value={tambahProduk.nama_produk} onChange={e => setTambahProduk(f => ({ ...f, nama_produk: e.target.value }))} placeholder="Siomay Ayam 500g" style={inputStyle} autoFocus /></div>
-                      <div><Label color={T.purple}>SKU SHOPEE</Label><input value={tambahProduk.sku} onChange={e => setTambahProduk(f => ({ ...f, sku: e.target.value.toUpperCase() }))} placeholder="SM500G" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                      <div><Label>HARGA JUAL *</Label><input value={tambahProduk.harga_jual} onChange={e => setTambahProduk(f => ({ ...f, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                      <div><Label>STOK AWAL</Label><input type="number" min="0" value={tambahProduk.jumlah_stok} onChange={e => setTambahProduk(f => ({ ...f, jumlah_stok: e.target.value }))} style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                      <div><Label>SATUAN</Label><select value={tambahProduk.satuan} onChange={e => setTambahProduk(f => ({ ...f, satuan: e.target.value }))} style={inputStyle}>{SATUAN_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></div>
+                      <div><Label>NAMA PRODUK *</Label><input value={tambahProduk.nama_produk} onChange={e => setTambahProduk(p => ({ ...p, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus /></div>
+                      <div><Label>SKU</Label><input value={tambahProduk.sku} onChange={e => setTambahProduk(p => ({ ...p, sku: e.target.value }))} placeholder="SKU-001" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} /></div>
+                      <div><Label>HARGA JUAL *</Label><input value={tambahProduk.harga_jual} onChange={e => setTambahProduk(p => ({ ...p, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
+                      <div><Label>STOK AWAL</Label><input type="number" value={tambahProduk.jumlah_stok} onChange={e => setTambahProduk(p => ({ ...p, jumlah_stok: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
+                      <div><Label>SATUAN</Label>
+                        <select value={tambahProduk.satuan} onChange={e => setTambahProduk(p => ({ ...p, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
+                          {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}><BtnPrimary onClick={handleTambahProduk} disabled={savingProduk}>{savingProduk ? "Menyimpan..." : "✓ Simpan Produk"}</BtnPrimary><BtnSecondary onClick={() => setShowTambahProduk(false)}>Batal</BtnSecondary></div>
                   </div>
                 )}
 
                 <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 130px 90px 130px 70px 130px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
-                    {["NAMA PRODUK", "SKU", "STOK", "HARGA JUAL", "SAT.", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 120px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
+                    {["PRODUK", "SKU", "STOK", "HARGA JUAL", "SATUAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
                   </div>
                   {produkLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
-                  {!produkLoading && produkFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Tidak ada produk</div>}
+                  {!produkLoading && produkFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada produk</div>}
                   {!produkLoading && produkFiltered.map(p => (
-                    <div key={p.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, background: editingProdukId === p.id ? "rgba(167,139,250,0.05)" : "transparent", transition: "background 0.15s" }}>
+                    <div key={p.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, transition: "background 0.15s" }}>
                       {editingProdukId !== p.id ? (
-                        <>
-                          <div style={{ display: "grid", gridTemplateColumns: "2fr 130px 90px 130px 70px 130px", gap: 8, padding: "13px 24px", alignItems: "center" }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama_produk}</div>
-                            <div>{p.sku ? <span style={{ fontSize: 11, fontWeight: 700, color: T.purple, background: `${T.purple}15`, border: `1px solid ${T.purple}30`, padding: "3px 8px", borderRadius: 6, fontFamily: T.fontMono }}>{p.sku}</span> : <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, fontStyle: "italic" }}>— kosong —</span>}</div>
-                            <div style={{ fontSize: 12, color: p.jumlah_stok <= 0 ? T.red : p.jumlah_stok <= 10 ? T.yellow : T.green, fontFamily: T.fontMono, fontWeight: 700 }}>{p.jumlah_stok}</div>
-                            <div style={{ fontSize: 12, color: T.textMid, fontFamily: T.fontMono }}>{rupiahFmt(p.harga_jual)}</div>
-                            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{p.satuan}</div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button className="btn-edit" onClick={() => { setEditingProdukId(p.id); setEditProdukForm({ nama_produk: p.nama_produk, sku: p.sku || "", harga_jual: p.harga_jual.toLocaleString("id-ID"), jumlah_stok: String(p.jumlah_stok), satuan: p.satuan }); setShowTambahProduk(false); setConfirmDeleteProdukId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
-                              <button className="btn-del" onClick={() => setConfirmDeleteProdukId(confirmDeleteProdukId === p.id ? null : p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Hapus</button>
-                            </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 120px", gap: 8, padding: "12px 24px", alignItems: "center" }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama_produk}</div>
+                          <div style={{ fontSize: 11, color: p.sku ? T.yellow : T.textDim, fontFamily: T.fontMono }}>{p.sku || "—"}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: p.jumlah_stok > 0 ? T.green : T.red, fontFamily: T.fontMono }}>{p.jumlah_stok}</div>
+                          <div style={{ fontSize: 12, color: T.textMid, fontFamily: T.fontMono }}>{rupiahFmt(p.harga_jual)}</div>
+                          <div style={{ fontSize: 11, color: T.textDim }}>{p.satuan}</div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {confirmDeleteProdukId === p.id ? (
+                              <>
+                                <button onClick={() => hapusProduk(p.id, p.nama_produk)} disabled={deletingProdukId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingProdukId === p.id ? "..." : "Hapus"}</button>
+                                <button onClick={() => setConfirmDeleteProdukId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
+                              </>
+                            ) : (
+                              <>
+                                <button className="btn-edit" onClick={() => { setEditingProdukId(p.id); setEditProdukForm({ nama_produk: p.nama_produk, sku: p.sku || "", harga_jual: formatIDR(String(p.harga_jual)), jumlah_stok: String(p.jumlah_stok), satuan: p.satuan }); setShowTambahProduk(false); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
+                                <button className="btn-del" onClick={() => setConfirmDeleteProdukId(p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>🗑</button>
+                              </>
+                            )}
                           </div>
-                          {confirmDeleteProdukId === p.id && (
-                            <div style={{ padding: "10px 24px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12, animation: "slideDown 0.15s ease" }}>
-                              <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus "{p.nama_produk}"? Tidak bisa dibatalkan.</span>
-                              <button onClick={() => hapusProduk(p.id, p.nama_produk)} disabled={deletingProdukId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingProdukId === p.id ? "..." : "Ya, Hapus"}</button>
-                              <button onClick={() => setConfirmDeleteProdukId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
-                            </div>
-                          )}
-                        </>
+                        </div>
                       ) : (
-                        <div style={{ padding: "16px 24px", animation: "slideDown 0.2s ease" }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, fontFamily: T.fontMono, marginBottom: 12, letterSpacing: 1 }}>✎ EDIT PRODUK</div>
-                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                            <div><Label>NAMA PRODUK *</Label><input value={editProdukForm.nama_produk} onChange={e => setEditProdukForm(f => ({ ...f, nama_produk: e.target.value }))} style={inputStyle} autoFocus /></div>
-                            <div><Label color={T.purple}>SKU SHOPEE</Label><input value={editProdukForm.sku} onChange={e => setEditProdukForm(f => ({ ...f, sku: e.target.value.toUpperCase() }))} style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                            <div><Label>HARGA JUAL</Label><input value={editProdukForm.harga_jual} onChange={e => setEditProdukForm(f => ({ ...f, harga_jual: formatIDR(e.target.value) }))} style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                            <div><Label>STOK</Label><input type="number" min="0" value={editProdukForm.jumlah_stok} onChange={e => setEditProdukForm(f => ({ ...f, jumlah_stok: e.target.value }))} style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                            <div><Label>SATUAN</Label><select value={editProdukForm.satuan} onChange={e => setEditProdukForm(f => ({ ...f, satuan: e.target.value }))} style={inputStyle}>{SATUAN_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></div>
+                        <div style={{ padding: "14px 24px", background: "rgba(167,139,250,0.04)" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                            <input value={editProdukForm.nama_produk} onChange={e => setEditProdukForm(f => ({ ...f, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus />
+                            <input value={editProdukForm.sku} onChange={e => setEditProdukForm(f => ({ ...f, sku: e.target.value }))} placeholder="SKU" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} />
+                            <input value={editProdukForm.harga_jual} onChange={e => setEditProdukForm(f => ({ ...f, harga_jual: formatIDR(e.target.value) }))} placeholder="Harga" style={{ ...inputStyle, fontFamily: T.fontMono }} />
+                            <input type="number" value={editProdukForm.jumlah_stok} onChange={e => setEditProdukForm(f => ({ ...f, jumlah_stok: e.target.value }))} placeholder="Stok" style={{ ...inputStyle, fontFamily: T.fontMono }} />
+                            <select value={editProdukForm.satuan} onChange={e => setEditProdukForm(f => ({ ...f, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
+                              {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
                           </div>
                           <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => saveEditProduk(p.id)} disabled={savingEditProduk} style={{ padding: "9px 20px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingEditProduk ? "..." : "✓ Simpan"}</button>
+                            <button onClick={() => saveEditProduk(p.id)} disabled={savingEditProduk} style={{ padding: "8px 18px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingEditProduk ? "..." : "✓ Simpan"}</button>
                             <button onClick={() => setEditingProdukId(null)} style={{ padding: "9px 16px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
                           </div>
                         </div>
@@ -516,12 +564,12 @@ export default function AdminPage() {
 
                 {showTambahToko && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ TAMBAH TOKO BARU</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ TOKO BARU</div>
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
-                      <div><Label>NAMA TOKO *</Label><input value={tambahToko.nama} onChange={e => setTambahToko(f => ({ ...f, nama: e.target.value }))} placeholder="Azalea Official" style={inputStyle} autoFocus /></div>
+                      <div><Label>NAMA TOKO *</Label><input value={tambahToko.nama} onChange={e => setTambahToko(f => ({ ...f, nama: e.target.value }))} placeholder="Nama toko" style={inputStyle} autoFocus /></div>
                       <div><Label>PLATFORM</Label>
-                        <select value={tambahToko.platform} onChange={e => setTambahToko(f => ({ ...f, platform: e.target.value }))} style={inputStyle}>
-                          {PLATFORM_OPTIONS.map(p => <option key={p}>{p}</option>)}
+                        <select value={tambahToko.platform} onChange={e => setTambahToko(f => ({ ...f, platform: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
+                          {PLATFORM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                       </div>
                       <div><Label>STATUS</Label>
@@ -536,64 +584,59 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
-                  {tokoLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono, gridColumn: "1/-1" }}>Memuat...</div>}
-                  {!tokoLoading && tokoList.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono, gridColumn: "1/-1" }}>Belum ada toko</div>}
-                  {!tokoLoading && tokoList.map(t => {
-                    const pColor = PLATFORM_COLORS[t.platform] || T.textDim;
-                    const isEditing = editingTokoId === t.id;
-                    return (
-                      <div key={t.id} style={{ background: T.bgCard, border: `1px solid ${t.aktif ? T.border : `${T.red}25`}`, borderRadius: 14, overflow: "hidden" }}>
-                        {!isEditing ? (
-                          <div style={{ padding: 20 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-                              <div>
-                                <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay, marginBottom: 6 }}>{t.nama}</div>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: pColor, background: `${pColor}15`, border: `1px solid ${pColor}30`, padding: "2px 8px", borderRadius: 4, fontFamily: T.fontMono }}>{t.platform}</span>
-                              </div>
-                              <button onClick={() => toggleAktifToko(t.id, t.aktif)} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${t.aktif ? T.green : T.red}40`, background: t.aktif ? `${T.green}15` : `${T.red}15`, color: t.aktif ? T.green : T.red, fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, cursor: "pointer" }}>
-                                {t.aktif ? "● Aktif" : "○ Nonaktif"}
-                              </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {tokoLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
+                  {!tokoLoading && tokoList.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada toko</div>}
+                  {!tokoLoading && tokoList.map(t => (
+                    <div key={t.id} style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+                      {editingTokoId !== t.id ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px" }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 10, background: `${PLATFORM_COLORS[t.platform] || T.textDim}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏪</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{t.nama}</div>
+                            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                              <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: `${PLATFORM_COLORS[t.platform] || T.textDim}20`, color: PLATFORM_COLORS[t.platform] || T.textDim, fontWeight: 600 }}>{t.platform}</span>
+                              <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: t.aktif ? `${T.green}15` : `${T.red}15`, color: t.aktif ? T.green : T.red, fontWeight: 600 }}>{t.aktif ? "Aktif" : "Nonaktif"}</span>
                             </div>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <button className="btn-edit" onClick={() => { setEditingTokoId(t.id); setEditTokoForm({ nama: t.nama, platform: t.platform, aktif: t.aktif }); setShowTambahToko(false); setConfirmDeleteTokoId(null); }} style={{ flex: 1, background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "7px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>✎ Edit</button>
-                              <button className="btn-del" onClick={() => setConfirmDeleteTokoId(confirmDeleteTokoId === t.id ? null : t.id)} style={{ flex: 1, background: `${T.red}10`, border: `1px solid ${T.red}20`, color: T.red, padding: "7px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>🗑 Hapus</button>
-                            </div>
-                            {confirmDeleteTokoId === t.id && (
-                              <div style={{ marginTop: 10, padding: "10px 12px", background: `${T.red}08`, border: `1px solid ${T.red}20`, borderRadius: 8, animation: "slideDown 0.15s ease" }}>
-                                <div style={{ fontSize: 11, color: T.red, fontFamily: T.fontMono, marginBottom: 8 }}>⚠ Hapus toko ini? Data penjualan toko akan terpengaruh!</div>
-                                <div style={{ display: "flex", gap: 6 }}>
-                                  <button onClick={() => hapusToko(t.id, t.nama)} disabled={deletingTokoId === t.id} style={{ background: T.red, border: "none", color: "#fff", padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingTokoId === t.id ? "..." : "Ya, Hapus"}</button>
-                                  <button onClick={() => setConfirmDeleteTokoId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono }}>Batal</button>
-                                </div>
-                              </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => toggleAktifToko(t.id, t.aktif)} style={{ padding: "6px 12px", background: t.aktif ? `${T.red}15` : `${T.green}15`, border: `1px solid ${t.aktif ? T.red : T.green}30`, color: t.aktif ? T.red : T.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 600 }}>{t.aktif ? "Nonaktifkan" : "Aktifkan"}</button>
+                            <button className="btn-edit" onClick={() => { setEditingTokoId(t.id); setEditTokoForm({ nama: t.nama, platform: t.platform, aktif: t.aktif }); setShowTambahToko(false); setConfirmDeleteTokoId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
+                            {confirmDeleteTokoId === t.id ? (
+                              <>
+                                <button onClick={() => hapusToko(t.id, t.nama)} disabled={deletingTokoId === t.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingTokoId === t.id ? "..." : "Hapus"}</button>
+                                <button onClick={() => setConfirmDeleteTokoId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
+                              </>
+                            ) : (
+                              <button className="btn-del" onClick={() => setConfirmDeleteTokoId(t.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>🗑</button>
                             )}
                           </div>
-                        ) : (
-                          <div style={{ padding: 20, animation: "slideDown 0.2s ease" }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, fontFamily: T.fontMono, marginBottom: 12, letterSpacing: 1 }}>✎ EDIT TOKO</div>
-                            <div style={{ marginBottom: 10 }}><Label>NAMA TOKO *</Label><input value={editTokoForm.nama} onChange={e => setEditTokoForm(f => ({ ...f, nama: e.target.value }))} style={inputStyle} autoFocus /></div>
-                            <div style={{ marginBottom: 10 }}><Label>PLATFORM</Label>
-                              <select value={editTokoForm.platform} onChange={e => setEditTokoForm(f => ({ ...f, platform: e.target.value }))} style={inputStyle}>
-                                {PLATFORM_OPTIONS.map(p => <option key={p}>{p}</option>)}
+                        </div>
+                      ) : (
+                        <div style={{ padding: "16px 20px", background: "rgba(167,139,250,0.04)" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                            <div><Label>NAMA TOKO</Label><input value={editTokoForm.nama} onChange={e => setEditTokoForm(f => ({ ...f, nama: e.target.value }))} style={inputStyle} autoFocus /></div>
+                            <div><Label>PLATFORM</Label>
+                              <select value={editTokoForm.platform} onChange={e => setEditTokoForm(f => ({ ...f, platform: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
+                                {PLATFORM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
                               </select>
                             </div>
-                            <div style={{ marginBottom: 14 }}><Label>STATUS</Label>
+                            <div><Label>STATUS</Label>
                               <div style={{ display: "flex", gap: 8 }}>
                                 {[{ val: true, label: "Aktif" }, { val: false, label: "Nonaktif" }].map(opt => (
                                   <button key={String(opt.val)} onClick={() => setEditTokoForm(f => ({ ...f, aktif: opt.val }))} style={{ flex: 1, padding: "8px", border: `1px solid ${editTokoForm.aktif === opt.val ? (opt.val ? T.green : T.red) : T.border}`, borderRadius: 8, background: editTokoForm.aktif === opt.val ? (opt.val ? `${T.green}15` : `${T.red}15`) : "transparent", color: editTokoForm.aktif === opt.val ? (opt.val ? T.green : T.red) : T.textDim, cursor: "pointer", fontSize: 12, fontFamily: T.fontSans, fontWeight: 600 }}>{opt.label}</button>
                                 ))}
                               </div>
                             </div>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <button onClick={() => saveEditToko(t.id)} disabled={savingEditToko} style={{ flex: 1, padding: "9px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingEditToko ? "..." : "✓ Simpan"}</button>
-                              <button onClick={() => setEditingTokoId(null)} style={{ padding: "9px 14px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
-                            </div>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={() => saveEditToko(t.id)} disabled={savingEditToko} style={{ flex: 1, padding: "9px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingEditToko ? "..." : "✓ Simpan"}</button>
+                            <button onClick={() => setEditingTokoId(null)} style={{ padding: "9px 14px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -651,22 +694,98 @@ export default function AdminPage() {
                             <div style={{ padding: "10px 24px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12, animation: "slideDown 0.15s ease" }}>
                               <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus supplier "{s.nama}"?</span>
                               <button onClick={() => hapusSupplier(s.id, s.nama)} disabled={deletingSupplierId === s.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingSupplierId === s.id ? "..." : "Ya, Hapus"}</button>
-                              <button onClick={() => setConfirmDeleteSupplierId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
+                              <button onClick={() => setConfirmDeleteSupplierId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
                             </div>
                           )}
                         </>
                       ) : (
-                        <div style={{ padding: "16px 24px", animation: "slideDown 0.2s ease" }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: T.blue, fontFamily: T.fontMono, marginBottom: 12, letterSpacing: 1 }}>✎ EDIT SUPPLIER</div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                            <div><Label>NAMA *</Label><input value={editSupplierForm.nama} onChange={e => setEditSupplierForm(f => ({ ...f, nama: e.target.value }))} style={inputStyle} autoFocus /></div>
-                            <div><Label>TELEPON</Label><input value={editSupplierForm.telepon} onChange={e => setEditSupplierForm(f => ({ ...f, telepon: e.target.value }))} style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
+                        <div style={{ padding: "14px 24px", background: "rgba(96,165,250,0.04)" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                            <input value={editSupplierForm.nama} onChange={e => setEditSupplierForm(f => ({ ...f, nama: e.target.value }))} placeholder="Nama supplier *" style={inputStyle} autoFocus />
+                            <input value={editSupplierForm.telepon} onChange={e => setEditSupplierForm(f => ({ ...f, telepon: e.target.value }))} placeholder="Telepon" style={{ ...inputStyle, fontFamily: T.fontMono }} />
                           </div>
-                          <div style={{ marginBottom: 12 }}><Label>ALAMAT</Label><input value={editSupplierForm.alamat} onChange={e => setEditSupplierForm(f => ({ ...f, alamat: e.target.value }))} style={inputStyle} /></div>
-                          <div style={{ marginBottom: 14 }}><Label>CATATAN</Label><textarea value={editSupplierForm.catatan} onChange={e => setEditSupplierForm(f => ({ ...f, catatan: e.target.value }))} rows={2} style={{ ...inputStyle, fontFamily: T.fontSans }} /></div>
+                          <input value={editSupplierForm.alamat} onChange={e => setEditSupplierForm(f => ({ ...f, alamat: e.target.value }))} placeholder="Alamat" style={{ ...inputStyle, marginBottom: 10 }} />
+                          <textarea value={editSupplierForm.catatan} onChange={e => setEditSupplierForm(f => ({ ...f, catatan: e.target.value }))} placeholder="Catatan" rows={2} style={{ ...inputStyle, marginBottom: 12, fontFamily: T.fontSans }} />
                           <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => saveEditSupplier(s.id)} disabled={savingEditSupplier} style={{ padding: "9px 20px", background: `linear-gradient(135deg, #1d4ed8, ${T.blue})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingEditSupplier ? "..." : "✓ Simpan"}</button>
-                            <button onClick={() => setEditingSupplierId(null)} style={{ padding: "9px 16px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
+                            <button onClick={() => saveEditSupplier(s.id)} disabled={savingEditSupplier} style={{ padding: "9px 20px", background: `linear-gradient(135deg, #c94f68, ${T.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: T.fontMono }}>{savingEditSupplier ? "..." : "✓ Simpan"}</button>
+                            <button onClick={() => setEditingSupplierId(null)} style={{ padding: "9px 14px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ══ MASTER PELANGGAN OFFLINE ══ */}
+            {activeSection === "pelanggan" && (
+              <div style={{ animation: "fadeUp 0.3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 22, color: T.text, fontWeight: 400 }}>Master Pelanggan Offline</h2>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{pelangganList.length} pelanggan terdaftar</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <input value={searchPelanggan} onChange={e => setSearchPelanggan(e.target.value)} placeholder="🔍 Cari nama atau telepon..." style={{ ...inputStyle, width: 220 }} />
+                    <button onClick={() => { setShowTambahPelanggan(v => !v); setTambahPelanggan(emptyPelangganForm()); setEditingPelangganId(null); }} style={{ padding: "9px 18px", background: showTambahPelanggan ? "rgba(255,255,255,0.06)" : `linear-gradient(135deg, #c94f68, ${T.accent})`, border: showTambahPelanggan ? `1px solid ${T.border}` : "none", color: showTambahPelanggan ? T.textDim : "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap" }}>
+                      {showTambahPelanggan ? "✕ Tutup" : "+ Tambah Pelanggan"}
+                    </button>
+                  </div>
+                </div>
+
+                {showTambahPelanggan && (
+                  <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ PELANGGAN BARU</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div><Label>NAMA *</Label><input value={tambahPelanggan.nama} onChange={e => setTambahPelanggan(p => ({ ...p, nama: e.target.value }))} placeholder="Nama pelanggan" style={inputStyle} autoFocus /></div>
+                      <div><Label>NO. TELEPON</Label><input value={tambahPelanggan.telepon} onChange={e => setTambahPelanggan(p => ({ ...p, telepon: e.target.value }))} placeholder="08xx-xxxx-xxxx" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
+                    </div>
+                    <div style={{ marginBottom: 12 }}><Label>ALAMAT</Label><input value={tambahPelanggan.alamat} onChange={e => setTambahPelanggan(p => ({ ...p, alamat: e.target.value }))} placeholder="Alamat pengiriman (opsional)" style={inputStyle} /></div>
+                    <div style={{ marginBottom: 14 }}><Label>CATATAN</Label><input value={tambahPelanggan.catatan} onChange={e => setTambahPelanggan(p => ({ ...p, catatan: e.target.value }))} placeholder="Catatan khusus (opsional)" style={inputStyle} /></div>
+                    <div style={{ display: "flex", gap: 8 }}><BtnPrimary onClick={handleTambahPelanggan} disabled={savingPelanggan}>{savingPelanggan ? "Menyimpan..." : "✓ Simpan Pelanggan"}</BtnPrimary><BtnSecondary onClick={() => setShowTambahPelanggan(false)}>Batal</BtnSecondary></div>
+                  </div>
+                )}
+
+                <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 120px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
+                    {["NAMA", "TELEPON", "ALAMAT", "CATATAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
+                  </div>
+                  {pelangganLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
+                  {!pelangganLoading && pelangganFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>{searchPelanggan ? "Tidak ada hasil pencarian" : "Belum ada pelanggan. Tambah sekarang!"}</div>}
+                  {!pelangganLoading && pelangganFiltered.map(p => (
+                    <div key={p.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, background: editingPelangganId === p.id ? "rgba(96,165,250,0.04)" : "transparent", transition: "background 0.15s" }}>
+                      {editingPelangganId !== p.id ? (
+                        <>
+                          <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 120px", gap: 8, padding: "13px 24px", alignItems: "center" }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama}</div>
+                            <div style={{ fontSize: 12, color: p.telepon ? T.blue : T.textDim, fontFamily: T.fontMono }}>{p.telepon || "—"}</div>
+                            <div style={{ fontSize: 12, color: T.textDim }}>{p.alamat || "—"}</div>
+                            <div style={{ fontSize: 12, color: T.textDim, fontStyle: p.catatan ? "normal" : "italic" }}>{p.catatan || "—"}</div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button className="btn-edit" onClick={() => { setEditingPelangganId(p.id); setEditPelangganForm({ nama: p.nama, telepon: p.telepon || "", alamat: p.alamat || "", catatan: p.catatan || "" }); setShowTambahPelanggan(false); setConfirmDeletePelangganId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
+                              <button className="btn-del" onClick={() => setConfirmDeletePelangganId(confirmDeletePelangganId === p.id ? null : p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Hapus</button>
+                            </div>
+                          </div>
+                          {confirmDeletePelangganId === p.id && (
+                            <div style={{ padding: "10px 24px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12, animation: "slideDown 0.15s ease" }}>
+                              <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus pelanggan "{p.nama}"?</span>
+                              <button onClick={() => hapusPelanggan(p.id, p.nama)} disabled={deletingPelangganId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingPelangganId === p.id ? "..." : "Ya, Hapus"}</button>
+                              <button onClick={() => setConfirmDeletePelangganId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ padding: "14px 24px", background: "rgba(96,165,250,0.04)" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                            <input value={editPelangganForm.nama} onChange={e => setEditPelangganForm(f => ({ ...f, nama: e.target.value }))} placeholder="Nama pelanggan *" style={inputStyle} autoFocus />
+                            <input value={editPelangganForm.telepon} onChange={e => setEditPelangganForm(f => ({ ...f, telepon: e.target.value }))} placeholder="Telepon" style={{ ...inputStyle, fontFamily: T.fontMono }} />
+                          </div>
+                          <input value={editPelangganForm.alamat} onChange={e => setEditPelangganForm(f => ({ ...f, alamat: e.target.value }))} placeholder="Alamat" style={{ ...inputStyle, marginBottom: 10 }} />
+                          <input value={editPelangganForm.catatan} onChange={e => setEditPelangganForm(f => ({ ...f, catatan: e.target.value }))} placeholder="Catatan" style={{ ...inputStyle, marginBottom: 12 }} />
+                          <div style={{ display: "flex", gap: 8 }}>
+                            <button onClick={() => saveEditPelanggan(p.id)} disabled={savingEditPelanggan} style={{ padding: "9px 20px", background: `linear-gradient(135deg, #c94f68, ${T.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: T.fontMono }}>{savingEditPelanggan ? "..." : "✓ Simpan"}</button>
+                            <button onClick={() => setEditingPelangganId(null)} style={{ padding: "9px 14px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 8, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
                           </div>
                         </div>
                       )}
@@ -677,8 +796,8 @@ export default function AdminPage() {
             )}
 
           </div>
-        </main>
+        </div>
       </div>
-    </>
+    </Sidebar>
   );
 }

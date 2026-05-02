@@ -12,7 +12,7 @@ type PiutangShopee = { toko_id: number; toko_nama: string; total_piutang: number
 type ReturShopee = { id: number; toko_id: number; produk_id: number; qty: number; nominal: number; tipe: string; stok_kembali: boolean; created_at: string; nama_produk?: string; nama_toko?: string };
 type PencairanShopee = { id: number; toko_id: number; nominal_cair: number; nominal_piutang: number; selisih: number; created_at: string; nama_toko?: string };
 type Piutang = { id: number; nama_pelanggan: string; nominal: number; keterangan: string; status: string };
-type KeranjangItem = { produk_id: number; nama_produk: string; harga_jual: number; qty: number; subtotal: number };
+type KeranjangItem = { produk_id: number; nama_produk: string; harga_jual: number; qty: number; subtotal: number; harga_khusus: boolean };
 type PelangganOffline = { id: number; nama: string; telepon: string | null };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
@@ -64,7 +64,8 @@ export default function PenjualanPage() {
   const [pencairanList, setPencairanList] = useState<PencairanShopee[]>([]);
   const [piutangOffline, setPiutangOffline] = useState<Piutang[]>([]);
   const [pelangganMaster, setPelangganMaster] = useState<PelangganOffline[]>([]);
-  // ── BARU: harga khusus per produk untuk pelanggan terpilih ──
+
+  // Harga khusus: map produk_id → harga (dari tabel pelanggan_harga)
   const [pelangganHarga, setPelangganHarga] = useState<Record<number, number>>({});
   const [loadingHarga, setLoadingHarga] = useState(false);
 
@@ -83,7 +84,7 @@ export default function PenjualanPage() {
   const [cairTokoId, setCairTokoId] = useState("");
   const [cairNominal, setCairNominal] = useState("");
 
-  // Form Offline — Keranjang
+  // Form Offline
   const [keranjang, setKeranjang] = useState<KeranjangItem[]>([]);
   const [offlineProdukId, setOfflineProdukId] = useState("");
   const [offlineQty, setOfflineQty] = useState("");
@@ -93,17 +94,23 @@ export default function PenjualanPage() {
 
   const totalKeranjang = keranjang.reduce((a, k) => a + k.subtotal, 0);
 
-  // ── BARU: Fetch harga khusus dari pelanggan_harga ──
+  const showToast = (msg: string, type: Toast["type"] = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // ── Fetch harga khusus dari tabel pelanggan_harga ──
   const fetchHargaPelanggan = useCallback(async (pelangganId: number) => {
     setLoadingHarga(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("pelanggan_harga")
-        .select("produk_id, harga_khusus")
+        .select("produk_id, harga")
         .eq("pelanggan_id", pelangganId);
+      if (error) throw error;
       const map: Record<number, number> = {};
-      (data || []).forEach((row: { produk_id: number; harga_khusus: number }) => {
-        map[row.produk_id] = row.harga_khusus;
+      (data || []).forEach((row: { produk_id: number; harga: number }) => {
+        map[row.produk_id] = row.harga;
       });
       setPelangganHarga(map);
     } catch (err) {
@@ -114,14 +121,10 @@ export default function PenjualanPage() {
     }
   }, []);
 
-  // ── BARU: Helper — harga efektif untuk produk (khusus jika ada, fallback master) ──
-  const getHargaEfektif = useCallback((produkId: number, hargaMaster: number): number => {
-    return pelangganHarga[produkId] ?? hargaMaster;
-  }, [pelangganHarga]);
-
-  // ── BARU: Handle pilih pelanggan (dari dropdown) ──
+  // ── Pilih pelanggan dari dropdown ──
   const handlePilihPelanggan = useCallback(async (val: string) => {
     setOfflinePelangganId(val);
+    setKeranjang([]); // reset keranjang karena harga bisa berubah
     if (val === "baru") {
       setOfflineNamaPelanggan("");
       setPelangganHarga({});
@@ -129,18 +132,13 @@ export default function PenjualanPage() {
       const p = pelangganMaster.find(x => String(x.id) === val);
       setOfflineNamaPelanggan(p?.nama || "");
       await fetchHargaPelanggan(parseInt(val));
-      // Reset keranjang jika sudah ada item — harga bisa berubah
-      setKeranjang([]);
-      if (Object.keys(pelangganHarga).length > 0 || true) {
-        // akan di-update setelah fetch selesai, keranjang di-reset biar tidak salah harga
-      }
     } else {
       setOfflineNamaPelanggan("");
       setPelangganHarga({});
-      setKeranjang([]);
     }
-  }, [pelangganMaster, fetchHargaPelanggan, pelangganHarga]);
+  }, [pelangganMaster, fetchHargaPelanggan]);
 
+  // ── Tambah ke keranjang — pakai harga khusus jika ada, fallback harga master ──
   const tambahKeranjang = () => {
     if (!offlineProdukId || !offlineQty) return showToast("Pilih produk & isi qty!", "error");
     const p = produk.find(x => x.id === parseInt(offlineProdukId));
@@ -152,8 +150,9 @@ export default function PenjualanPage() {
       return showToast(`Stok tidak cukup! Tersisa ${p.jumlah_stok - qtyDiKeranjang}`, "error");
     }
 
-    // ── BARU: Pakai harga khusus jika ada, fallback ke harga master ──
-    const hargaEfektif = getHargaEfektif(p.id, p.harga_jual);
+    // Pakai harga khusus pelanggan jika ada, fallback ke harga master
+    const hargaEfektif = pelangganHarga[p.id] ?? p.harga_jual;
+    const isKhusus = pelangganHarga[p.id] !== undefined;
 
     setKeranjang(prev => {
       const existing = prev.find(k => k.produk_id === p.id);
@@ -166,9 +165,10 @@ export default function PenjualanPage() {
       return [...prev, {
         produk_id: p.id,
         nama_produk: p.nama_produk,
-        harga_jual: hargaEfektif,   // ← harga efektif (khusus atau master)
+        harga_jual: hargaEfektif,
         qty,
         subtotal: hargaEfektif * qty,
+        harga_khusus: isKhusus,
       }];
     });
     setOfflineProdukId(""); setOfflineQty("");
@@ -176,11 +176,7 @@ export default function PenjualanPage() {
 
   const hapusKeranjang = (produk_id: number) => setKeranjang(prev => prev.filter(k => k.produk_id !== produk_id));
 
-  const showToast = (msg: string, type: Toast["type"] = "success") => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
+  // ── Fetch semua data ──
   const fetchData = useCallback(async () => {
     try {
       const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline, resFee, resPelanggan] = await Promise.all([
@@ -235,6 +231,12 @@ export default function PenjualanPage() {
     border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
     fontFamily: C.fontSans, fontSize: 13, outline: "none", boxSizing: "border-box",
     marginBottom: 8,
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 10, color: C.muted, fontFamily: C.fontMono,
+    letterSpacing: "0.1em", textTransform: "uppercase" as const,
+    display: "block", marginBottom: 6,
   };
 
   // ── RETUR ──
@@ -310,7 +312,11 @@ export default function PenjualanPage() {
       await supabase.from("piutang").insert([{ nama_pelanggan: offlineNamaPelanggan.trim(), nominal: totalKeranjang, keterangan, status: "Belum Lunas" }]);
     }
     showToast(`${keranjang.length} item terjual = ${rupiahFmt(totalKeranjang)} via ${offlineMetode}`);
-    setKeranjang([]); setOfflineNamaPelanggan(""); setOfflinePelangganId(""); setOfflineProdukId(""); setOfflineQty("");
+    setKeranjang([]);
+    setOfflineNamaPelanggan("");
+    setOfflinePelangganId("");
+    setOfflineProdukId("");
+    setOfflineQty("");
     setPelangganHarga({});
     fetchData();
     setSubmitting(null);
@@ -332,56 +338,6 @@ export default function PenjualanPage() {
     </Sidebar>
   );
 
-  // ── Komponen Dropdown Pelanggan (reusable di Tunai & Piutang) ──
-  const DropdownPelanggan = ({ required }: { required: boolean }) => (
-    <div style={{ marginBottom: 8 }}>
-      <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-        Pelanggan {required ? <span style={{ color: C.red }}>*</span> : <span style={{ color: C.dim }}>(opsional)</span>}
-      </label>
-      <select
-        value={offlinePelangganId}
-        onChange={e => handlePilihPelanggan(e.target.value)}
-        style={inputStyle}
-      >
-        <option value="">{required ? "— Pilih Pelanggan —" : "— Tanpa Pelanggan —"}</option>
-        {pelangganMaster.map(p => (
-          <option key={p.id} value={String(p.id)}>
-            {p.nama}{p.telepon ? ` (${p.telepon})` : ""}
-          </option>
-        ))}
-        <option value="baru">✏️ + Pelanggan Baru (input manual)</option>
-      </select>
-
-      {offlinePelangganId === "baru" && (
-        <input
-          type="text"
-          value={offlineNamaPelanggan}
-          onChange={e => setOfflineNamaPelanggan(e.target.value)}
-          placeholder="Nama pelanggan baru..."
-          style={{ ...inputStyle, marginTop: 4 }}
-          autoFocus
-        />
-      )}
-
-      {offlinePelangganId && offlinePelangganId !== "baru" && offlineNamaPelanggan && (
-        <div style={{ fontSize: 11, fontFamily: C.fontMono, marginTop: -4, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-          {loadingHarga ? (
-            <span style={{ color: C.muted }}>⏳ Memuat harga khusus...</span>
-          ) : (
-            <>
-              <span style={{ color: C.green }}>✓ {offlineNamaPelanggan}</span>
-              {Object.keys(pelangganHarga).length > 0 && (
-                <span style={{ color: C.accent, background: C.accentDim, padding: "2px 7px", borderRadius: 4, fontSize: 10 }}>
-                  🏷 {Object.keys(pelangganHarga).length} harga khusus
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <Sidebar>
       <style>{`
@@ -395,6 +351,7 @@ export default function PenjualanPage() {
 
       <div style={{ background: C.bg, minHeight: "100vh", padding: "32px 28px", fontFamily: C.fontSans, color: C.text }}>
 
+        {/* Header */}
         <div style={{ marginBottom: 28, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: 28, color: "#f0eaff", fontWeight: 400 }}>Penjualan</h1>
@@ -405,6 +362,7 @@ export default function PenjualanPage() {
           </a>
         </div>
 
+        {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
           {[
             { label: "Piutang Shopee", value: rupiahFmt(totalPiutangShopee), color: C.yellow, icon: "🛍", sub: `${piutangShopee.filter(p => p.sisa_piutang > 0).length} toko aktif` },
@@ -422,6 +380,7 @@ export default function PenjualanPage() {
           ))}
         </div>
 
+        {/* Tab utama */}
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           {[{ id: "shopee", label: "🛍 Shopee" }, { id: "offline", label: "🏪 Offline" }].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{
@@ -489,19 +448,19 @@ export default function PenjualanPage() {
               <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 24 }}>
                 <div style={{ background: C.card, borderRadius: 14, padding: 20, border: `1px solid ${C.border}` }}>
                   <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Input Retur / Batal</h3>
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Toko</label>
+                  <label style={labelStyle}>Toko</label>
                   <select value={returTokoId} onChange={e => setReturTokoId(e.target.value)} style={inputStyle}>
                     <option value="">— Pilih Toko —</option>
                     {toko.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
                   </select>
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Produk</label>
+                  <label style={labelStyle}>Produk</label>
                   <select value={returProdukId} onChange={e => setReturProdukId(e.target.value)} style={inputStyle}>
                     <option value="">— Pilih Produk —</option>
                     {produk.map(p => <option key={p.id} value={p.id}>{p.nama_produk}</option>)}
                   </select>
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Qty</label>
+                  <label style={labelStyle}>Qty</label>
                   <input type="number" min="1" value={returQty} onChange={e => setReturQty(e.target.value)} placeholder="1" style={inputStyle} />
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tipe</label>
+                  <label style={labelStyle}>Tipe</label>
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                     {(["Pembatalan", "Retur"] as const).map(t => (
                       <button key={t} onClick={() => setReturTipe(t)} style={{ flex: 1, padding: "9px", border: `1px solid ${returTipe === t ? C.accent : C.border}`, borderRadius: 8, background: returTipe === t ? C.accentDim : "transparent", color: returTipe === t ? C.accent : C.muted, fontFamily: C.fontSans, fontWeight: 600, fontSize: 12, cursor: "pointer" }}>{t}</button>
@@ -535,14 +494,14 @@ export default function PenjualanPage() {
               <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 24 }}>
                 <div style={{ background: C.card, borderRadius: 14, padding: 20, border: `1px solid ${C.border}` }}>
                   <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Catat Pencairan</h3>
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Toko</label>
+                  <label style={labelStyle}>Toko</label>
                   <select value={cairTokoId} onChange={e => setCairTokoId(e.target.value)} style={inputStyle}>
                     <option value="">— Pilih Toko —</option>
                     {piutangShopee.filter(p => p.sisa_piutang > 0).map(p => (
                       <option key={p.toko_id} value={p.toko_id}>{p.toko_nama} — sisa {rupiahFmt(p.sisa_piutang)}</option>
                     ))}
                   </select>
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Nominal Cair</label>
+                  <label style={labelStyle}>Nominal Cair</label>
                   <input value={cairNominal} onChange={e => setCairNominal(formatIDR(e.target.value))} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} />
                   {cairTokoId && (
                     <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 12 }}>
@@ -581,48 +540,95 @@ export default function PenjualanPage() {
             <div style={{ background: C.card, borderRadius: 14, padding: 20, border: `1px solid ${C.border}`, height: "fit-content" }}>
               <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Penjualan Offline</h3>
 
-              {/* ── BARU: Metode Bayar duluan, biar dropdown pelanggan muncul sebelum pilih produk ── */}
-              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Metode Bayar</label>
+              {/* Metode Bayar — di atas segalanya */}
+              <label style={labelStyle}>Metode Bayar</label>
               <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                 {["Tunai", "Piutang"].map(m => (
                   <button key={m} onClick={() => {
                     setOfflineMetode(m);
-                    if (m === "Tunai") {
-                      // Reset pelanggan tapi tidak hapus keranjang (harga tunai = harga master)
-                      setOfflinePelangganId("");
-                      setOfflineNamaPelanggan("");
-                      setPelangganHarga({});
-                      setKeranjang([]);
-                    }
+                    // Reset pelanggan & keranjang saat ganti metode
+                    setOfflinePelangganId("");
+                    setOfflineNamaPelanggan("");
+                    setPelangganHarga({});
+                    setKeranjang([]);
                   }} style={{ flex: 1, padding: "9px", border: `1px solid ${offlineMetode === m ? C.accent : C.border}`, borderRadius: 8, background: offlineMetode === m ? C.accentDim : "transparent", color: offlineMetode === m ? C.accent : C.muted, fontFamily: C.fontSans, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
                     {m === "Tunai" ? "💵 Tunai" : "📝 Piutang"}
                   </button>
                 ))}
               </div>
 
-              {/* ── Dropdown Pelanggan — Tunai (opsional) & Piutang (wajib) ── */}
-              <DropdownPelanggan required={offlineMetode === "Piutang"} />
-
-              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tambah Item</label>
-
-              {/* ── BARU: Info harga khusus tersedia saat pilih produk ── */}
+              {/* Dropdown Pelanggan — muncul untuk TUNAI (opsional) dan PIUTANG (wajib) */}
+              <label style={labelStyle}>
+                Pelanggan{" "}
+                {offlineMetode === "Piutang"
+                  ? <span style={{ color: C.red }}>*</span>
+                  : <span style={{ color: C.dim, fontSize: 9, textTransform: "none", letterSpacing: 0 }}>(opsional)</span>
+                }
+              </label>
               <select
-                value={offlineProdukId}
-                onChange={e => setOfflineProdukId(e.target.value)}
+                value={offlinePelangganId}
+                onChange={e => handlePilihPelanggan(e.target.value)}
                 style={inputStyle}
               >
+                <option value="">{offlineMetode === "Piutang" ? "— Pilih Pelanggan —" : "— Tanpa Pelanggan —"}</option>
+                {pelangganMaster.map(p => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.nama}{p.telepon ? ` (${p.telepon})` : ""}
+                  </option>
+                ))}
+                <option value="baru">✏️ + Pelanggan Baru (input manual)</option>
+              </select>
+
+              {/* Input nama manual kalau pilih "Pelanggan Baru" */}
+              {offlinePelangganId === "baru" && (
+                <input
+                  type="text"
+                  value={offlineNamaPelanggan}
+                  onChange={e => setOfflineNamaPelanggan(e.target.value)}
+                  placeholder="Nama pelanggan baru..."
+                  style={{ ...inputStyle, marginTop: -4 }}
+                  autoFocus
+                />
+              )}
+
+              {/* Info pelanggan terpilih + badge harga khusus */}
+              {offlinePelangganId && offlinePelangganId !== "baru" && (
+                <div style={{ fontSize: 11, fontFamily: C.fontMono, marginTop: -4, marginBottom: 6, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {loadingHarga ? (
+                    <span style={{ color: C.muted }}>⏳ Memuat harga khusus...</span>
+                  ) : (
+                    <>
+                      <span style={{ color: C.green }}>✓ {offlineNamaPelanggan}</span>
+                      {Object.keys(pelangganHarga).length > 0
+                        ? <span style={{ color: C.accent, background: C.accentDim, padding: "2px 7px", borderRadius: 4, fontSize: 10 }}>
+                            🏷 {Object.keys(pelangganHarga).length} harga khusus
+                          </span>
+                        : <span style={{ color: C.muted, fontSize: 10 }}>pakai harga master</span>
+                      }
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Dropdown Produk — tampilkan harga khusus jika ada */}
+              <label style={labelStyle}>Tambah Item</label>
+              <select value={offlineProdukId} onChange={e => setOfflineProdukId(e.target.value)} style={inputStyle}>
                 <option value="">— Pilih Produk —</option>
                 {produk.map(p => {
                   const hargaKhusus = pelangganHarga[p.id];
-                  const label = hargaKhusus
-                    ? `${p.nama_produk} — 🏷 ${rupiahFmt(hargaKhusus)} (stok: ${p.jumlah_stok})`
-                    : `${p.nama_produk} — ${rupiahFmt(p.harga_jual)} (stok: ${p.jumlah_stok})`;
-                  return <option key={p.id} value={p.id}>{label}</option>;
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {hargaKhusus
+                        ? `${p.nama_produk} — 🏷 ${rupiahFmt(hargaKhusus)} (stok: ${p.jumlah_stok})`
+                        : `${p.nama_produk} — ${rupiahFmt(p.harga_jual)} (stok: ${p.jumlah_stok})`
+                      }
+                    </option>
+                  );
                 })}
               </select>
 
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <input type="number" min="1" value={offlineQty} onChange={e => setOfflineQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
+                <input type="number" min="1" value={offlineQty} onChange={e => setOfflineQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, marginBottom: 0, flex: 1 }} onKeyDown={e => e.key === "Enter" && tambahKeranjang()} />
                 <button onClick={tambahKeranjang} style={{ padding: "10px 18px", borderRadius: 8, background: C.accentDim, color: C.accent, fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 13, whiteSpace: "nowrap", border: `1px solid ${C.accent}40` }}>+ Tambah</button>
               </div>
 
@@ -630,25 +636,23 @@ export default function PenjualanPage() {
               {keranjang.length > 0 && (
                 <div style={{ background: "#120e1e", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Keranjang ({keranjang.length} item)</div>
-                  {keranjang.map(k => {
-                    const produkData = produk.find(p => p.id === k.produk_id);
-                    const isHargaKhusus = produkData && pelangganHarga[k.produk_id] !== undefined;
-                    return (
-                      <div key={k.produk_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.dim}` }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, color: C.textMid, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
-                            {k.nama_produk}
-                            {isHargaKhusus && <span style={{ fontSize: 9, background: C.accent + "30", color: C.accent, padding: "1px 5px", borderRadius: 3, fontFamily: C.fontMono }}>KHUSUS</span>}
-                          </div>
-                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.harga_jual)} × {k.qty}</div>
+                  {keranjang.map(k => (
+                    <div key={k.produk_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.dim}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, color: C.textMid, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                          {k.nama_produk}
+                          {k.harga_khusus && (
+                            <span style={{ fontSize: 9, background: C.accent + "30", color: C.accent, padding: "1px 5px", borderRadius: 3, fontFamily: C.fontMono }}>KHUSUS</span>
+                          )}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
-                          <button onClick={() => hapusKeranjang(k.produk_id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, opacity: 0.7, padding: "2px 4px" }}>×</button>
-                        </div>
+                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.harga_jual)} × {k.qty}</div>
                       </div>
-                    );
-                  })}
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
+                        <button onClick={() => hapusKeranjang(k.produk_id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, opacity: 0.7, padding: "2px 4px" }}>×</button>
+                      </div>
+                    </div>
+                  ))}
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Total</span>
                     <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(totalKeranjang)}</span>

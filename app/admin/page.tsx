@@ -9,6 +9,7 @@ type Produk = { id: number; nama_produk: string; sku: string | null; jumlah_stok
 type Toko = { id: number; nama: string; platform: string; aktif: boolean; created_at: string };
 type Supplier = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
 type Pelanggan = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
+type HargaKhusus = { id: number; pelanggan_id: number; produk_id: number; harga: number; nama_produk?: string };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const T = {
@@ -120,7 +121,7 @@ export default function AdminPage() {
   const [confirmDeleteSupplierId, setConfirmDeleteSupplierId] = useState<number | null>(null);
   const [deletingSupplierId, setDeletingSupplierId] = useState<number | null>(null);
 
-  // ── PELANGGAN OFFLINE ──
+  // ── PELANGGAN ──
   const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
   const [pelangganLoading, setPelangganLoading] = useState(false);
   const [searchPelanggan, setSearchPelanggan] = useState("");
@@ -133,12 +134,22 @@ export default function AdminPage() {
   const [confirmDeletePelangganId, setConfirmDeletePelangganId] = useState<number | null>(null);
   const [deletingPelangganId, setDeletingPelangganId] = useState<number | null>(null);
 
+  // ── HARGA KHUSUS ──
+  const [hargaPanel, setHargaPanel] = useState<number | null>(null); // pelanggan_id yang sedang buka panel harga
+  const [hargaList, setHargaList] = useState<HargaKhusus[]>([]); // harga khusus untuk pelanggan aktif
+  const [hargaLoading, setHargaLoading] = useState(false);
+  const [hargaProdukId, setHargaProdukId] = useState(""); // produk yang dipilih untuk tambah harga
+  const [hargaNilai, setHargaNilai] = useState(""); // nilai harga baru
+  const [savingHarga, setSavingHarga] = useState(false);
+  const [editingHargaId, setEditingHargaId] = useState<number | null>(null);
+  const [editHargaNilai, setEditHargaNilai] = useState("");
+
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ── FETCH FUNCTIONS ──
+  // ── FETCH ──
   const fetchUsers = useCallback(async () => {
     const { data, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
     if (error) showToast("Gagal load users: " + error.message, "error");
@@ -178,11 +189,80 @@ export default function AdminPage() {
     setPelangganLoading(false);
   }, []);
 
+  // ── FETCH HARGA KHUSUS untuk pelanggan tertentu ──
+  const fetchHargaKhusus = useCallback(async (pelangganId: number) => {
+    setHargaLoading(true);
+    const { data, error } = await supabase
+      .from("pelanggan_harga")
+      .select("id, pelanggan_id, produk_id, harga, stok_barang(nama_produk)")
+      .eq("pelanggan_id", pelangganId)
+      .order("produk_id");
+    if (error) showToast("Gagal load harga: " + error.message, "error");
+    else setHargaList((data || []).map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk })));
+    setHargaLoading(false);
+  }, []);
+
+  const bukaHargaPanel = async (pelangganId: number) => {
+    if (hargaPanel === pelangganId) {
+      setHargaPanel(null);
+      return;
+    }
+    setHargaPanel(pelangganId);
+    setHargaProdukId("");
+    setHargaNilai("");
+    setEditingHargaId(null);
+    await fetchHargaKhusus(pelangganId);
+    // Fetch produk kalau belum ada
+    if (produkList.length === 0) await fetchProduk();
+  };
+
+  // ── SIMPAN HARGA KHUSUS (upsert) ──
+  const simpanHarga = async (pelangganId: number) => {
+    if (!hargaProdukId) return showToast("Pilih produk!", "error");
+    if (!hargaNilai) return showToast("Isi harga!", "error");
+    setSavingHarga(true);
+    const { error } = await supabase
+      .from("pelanggan_harga")
+      .upsert([{ pelanggan_id: pelangganId, produk_id: parseInt(hargaProdukId), harga: toAngka(hargaNilai) }], { onConflict: "pelanggan_id,produk_id" });
+    if (error) showToast("Gagal simpan harga: " + error.message, "error");
+    else {
+      showToast("✓ Harga khusus disimpan!");
+      setHargaProdukId(""); setHargaNilai("");
+      await fetchHargaKhusus(pelangganId);
+    }
+    setSavingHarga(false);
+  };
+
+  // ── UPDATE HARGA KHUSUS ──
+  const updateHarga = async (hargaId: number, pelangganId: number) => {
+    if (!editHargaNilai) return showToast("Isi harga!", "error");
+    const { error } = await supabase
+      .from("pelanggan_harga")
+      .update({ harga: toAngka(editHargaNilai) })
+      .eq("id", hargaId);
+    if (error) showToast("Gagal update: " + error.message, "error");
+    else {
+      showToast("✓ Harga diupdate!");
+      setEditingHargaId(null);
+      await fetchHargaKhusus(pelangganId);
+    }
+  };
+
+  // ── HAPUS HARGA KHUSUS ──
+  const hapusHarga = async (hargaId: number, pelangganId: number) => {
+    const { error } = await supabase.from("pelanggan_harga").delete().eq("id", hargaId);
+    if (error) showToast("Gagal hapus: " + error.message, "error");
+    else {
+      showToast("🗑 Harga dihapus");
+      await fetchHargaKhusus(pelangganId);
+    }
+  };
+
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { if (activeSection === "produk") fetchProduk(); }, [activeSection, fetchProduk]);
   useEffect(() => { if (activeSection === "toko") fetchToko(); }, [activeSection, fetchToko]);
   useEffect(() => { if (activeSection === "supplier") fetchSupplier(); }, [activeSection, fetchSupplier]);
-  useEffect(() => { if (activeSection === "pelanggan") fetchPelanggan(); }, [activeSection, fetchPelanggan]);
+  useEffect(() => { if (activeSection === "pelanggan") { fetchPelanggan(); fetchProduk(); } }, [activeSection, fetchPelanggan, fetchProduk]);
 
   // ── USER CRUD ──
   const saveUser = async (id: string) => {
@@ -321,6 +401,9 @@ export default function AdminPage() {
   const usersFiltered = users.filter(u => search === "" || u.nama?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()) || u.role?.toLowerCase().includes(search.toLowerCase()));
   const pelangganFiltered = pelangganList.filter(p => searchPelanggan === "" || p.nama?.toLowerCase().includes(searchPelanggan.toLowerCase()) || (p.telepon || "").includes(searchPelanggan));
 
+  // Produk yang belum diset harga khusus untuk pelanggan aktif
+  const produkBelumDiset = produkList.filter(p => !hargaList.some(h => h.produk_id === p.id));
+
   const inputStyle: React.CSSProperties = { padding: "8px 12px", background: "rgba(255,255,255,0.04)", border: `1.5px solid rgba(232,115,138,0.2)`, borderRadius: 8, color: T.text, fontFamily: T.fontSans, fontSize: 13, outline: "none", transition: "border-color 0.2s", width: "100%", boxSizing: "border-box" };
 
   const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
@@ -354,7 +437,7 @@ export default function AdminPage() {
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 600px; } }
+        @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 2000px; } }
         .data-row:hover { background: rgba(232,115,138,0.03) !important; }
         .btn-edit:hover { background: rgba(167,139,250,0.2) !important; }
         .btn-del:hover { background: rgba(235,87,87,0.2) !important; }
@@ -433,12 +516,8 @@ export default function AdminPage() {
                         ) : (
                           <div style={{ padding: "16px 24px" }}>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                              <div>
-                                <Label>NAMA</Label>
-                                <input value={editNama} onChange={e => setEditNama(e.target.value)} style={inputStyle} />
-                              </div>
-                              <div>
-                                <Label>ROLE</Label>
+                              <div><Label>NAMA</Label><input value={editNama} onChange={e => setEditNama(e.target.value)} style={inputStyle} /></div>
+                              <div><Label>ROLE</Label>
                                 <select value={editRole} onChange={e => setEditRole(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
                                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                                 </select>
@@ -555,13 +634,12 @@ export default function AdminPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div>
                     <h2 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 22, color: T.text, fontWeight: 400 }}>Master Toko Online</h2>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{tokoList.length} toko · {tokoList.filter(t => t.aktif).length} aktif · {tokoList.filter(t => !t.aktif).length} nonaktif</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{tokoList.length} toko · {tokoList.filter(t => t.aktif).length} aktif</p>
                   </div>
                   <button onClick={() => { setShowTambahToko(v => !v); setTambahToko(emptyTokoForm()); setEditingTokoId(null); }} style={{ padding: "9px 18px", background: showTambahToko ? "rgba(255,255,255,0.06)" : `linear-gradient(135deg, #c94f68, ${T.accent})`, border: showTambahToko ? `1px solid ${T.border}` : "none", color: showTambahToko ? T.textDim : "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap" }}>
                     {showTambahToko ? "✕ Batal" : "+ Tambah Toko"}
                   </button>
                 </div>
-
                 {showTambahToko && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ TOKO BARU</div>
@@ -583,7 +661,6 @@ export default function AdminPage() {
                     <div style={{ display: "flex", gap: 8 }}><BtnPrimary onClick={handleTambahToko} disabled={savingToko}>{savingToko ? "Menyimpan..." : "✓ Simpan Toko"}</BtnPrimary><BtnSecondary onClick={() => setShowTambahToko(false)}>Batal</BtnSecondary></div>
                   </div>
                 )}
-
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {tokoLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
                   {!tokoLoading && tokoList.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada toko</div>}
@@ -601,14 +678,14 @@ export default function AdminPage() {
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
                             <button onClick={() => toggleAktifToko(t.id, t.aktif)} style={{ padding: "6px 12px", background: t.aktif ? `${T.red}15` : `${T.green}15`, border: `1px solid ${t.aktif ? T.red : T.green}30`, color: t.aktif ? T.red : T.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 600 }}>{t.aktif ? "Nonaktifkan" : "Aktifkan"}</button>
-                            <button className="btn-edit" onClick={() => { setEditingTokoId(t.id); setEditTokoForm({ nama: t.nama, platform: t.platform, aktif: t.aktif }); setShowTambahToko(false); setConfirmDeleteTokoId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
+                            <button className="btn-edit" onClick={() => { setEditingTokoId(t.id); setEditTokoForm({ nama: t.nama, platform: t.platform, aktif: t.aktif }); setShowTambahToko(false); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
                             {confirmDeleteTokoId === t.id ? (
                               <>
                                 <button onClick={() => hapusToko(t.id, t.nama)} disabled={deletingTokoId === t.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingTokoId === t.id ? "..." : "Hapus"}</button>
                                 <button onClick={() => setConfirmDeleteTokoId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
                               </>
                             ) : (
-                              <button className="btn-del" onClick={() => setConfirmDeleteTokoId(t.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>🗑</button>
+                              <button className="btn-del" onClick={() => setConfirmDeleteTokoId(t.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>🗑</button>
                             )}
                           </div>
                         </div>
@@ -656,7 +733,6 @@ export default function AdminPage() {
                     </button>
                   </div>
                 </div>
-
                 {showTambahSupplier && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ TAMBAH SUPPLIER BARU</div>
@@ -669,7 +745,6 @@ export default function AdminPage() {
                     <div style={{ display: "flex", gap: 8 }}><BtnPrimary onClick={handleTambahSupplier} disabled={savingSupplier}>{savingSupplier ? "Menyimpan..." : "✓ Simpan Supplier"}</BtnPrimary><BtnSecondary onClick={() => setShowTambahSupplier(false)}>Batal</BtnSecondary></div>
                   </div>
                 )}
-
                 <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 120px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
                     {["NAMA", "TELEPON", "ALAMAT", "CATATAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
@@ -684,14 +759,14 @@ export default function AdminPage() {
                             <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{s.nama}</div>
                             <div style={{ fontSize: 12, color: s.telepon ? T.blue : T.textDim, fontFamily: T.fontMono }}>{s.telepon || "—"}</div>
                             <div style={{ fontSize: 12, color: T.textDim }}>{s.alamat || "—"}</div>
-                            <div style={{ fontSize: 12, color: T.textDim, fontStyle: s.catatan ? "normal" : "italic" }}>{s.catatan || "—"}</div>
+                            <div style={{ fontSize: 12, color: T.textDim }}>{s.catatan || "—"}</div>
                             <div style={{ display: "flex", gap: 6 }}>
-                              <button className="btn-edit" onClick={() => { setEditingSupplierId(s.id); setEditSupplierForm({ nama: s.nama, telepon: s.telepon || "", alamat: s.alamat || "", catatan: s.catatan || "" }); setShowTambahSupplier(false); setConfirmDeleteSupplierId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
-                              <button className="btn-del" onClick={() => setConfirmDeleteSupplierId(confirmDeleteSupplierId === s.id ? null : s.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Hapus</button>
+                              <button className="btn-edit" onClick={() => { setEditingSupplierId(s.id); setEditSupplierForm({ nama: s.nama, telepon: s.telepon || "", alamat: s.alamat || "", catatan: s.catatan || "" }); setShowTambahSupplier(false); setConfirmDeleteSupplierId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
+                              <button className="btn-del" onClick={() => setConfirmDeleteSupplierId(confirmDeleteSupplierId === s.id ? null : s.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Hapus</button>
                             </div>
                           </div>
                           {confirmDeleteSupplierId === s.id && (
-                            <div style={{ padding: "10px 24px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12, animation: "slideDown 0.15s ease" }}>
+                            <div style={{ padding: "10px 24px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12 }}>
                               <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus supplier "{s.nama}"?</span>
                               <button onClick={() => hapusSupplier(s.id, s.nama)} disabled={deletingSupplierId === s.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingSupplierId === s.id ? "..." : "Ya, Hapus"}</button>
                               <button onClick={() => setConfirmDeleteSupplierId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
@@ -718,7 +793,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* ══ MASTER PELANGGAN OFFLINE ══ */}
+            {/* ══ MASTER PELANGGAN ══ */}
             {activeSection === "pelanggan" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -747,36 +822,37 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 120px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
-                    {["NAMA", "TELEPON", "ALAMAT", "CATATAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {pelangganLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
-                  {!pelangganLoading && pelangganFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>{searchPelanggan ? "Tidak ada hasil pencarian" : "Belum ada pelanggan. Tambah sekarang!"}</div>}
+                  {!pelangganLoading && pelangganFiltered.length === 0 && (
+                    <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>{searchPelanggan ? "Tidak ada hasil" : "Belum ada pelanggan"}</div>
+                  )}
                   {!pelangganLoading && pelangganFiltered.map(p => (
-                    <div key={p.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, background: editingPelangganId === p.id ? "rgba(96,165,250,0.04)" : "transparent", transition: "background 0.15s" }}>
+                    <div key={p.id} style={{ background: T.bgCard, border: `1px solid ${hargaPanel === p.id ? "rgba(167,139,250,0.4)" : T.border}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.2s" }}>
+
+                      {/* Row utama pelanggan */}
                       {editingPelangganId !== p.id ? (
-                        <>
-                          <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr 120px", gap: 8, padding: "13px 24px", alignItems: "center" }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama}</div>
-                            <div style={{ fontSize: 12, color: p.telepon ? T.blue : T.textDim, fontFamily: T.fontMono }}>{p.telepon || "—"}</div>
-                            <div style={{ fontSize: 12, color: T.textDim }}>{p.alamat || "—"}</div>
-                            <div style={{ fontSize: 12, color: T.textDim, fontStyle: p.catatan ? "normal" : "italic" }}>{p.catatan || "—"}</div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button className="btn-edit" onClick={() => { setEditingPelangganId(p.id); setEditPelangganForm({ nama: p.nama, telepon: p.telepon || "", alamat: p.alamat || "", catatan: p.catatan || "" }); setShowTambahPelanggan(false); setConfirmDeletePelangganId(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
-                              <button className="btn-del" onClick={() => setConfirmDeletePelangganId(confirmDeletePelangganId === p.id ? null : p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Hapus</button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 20px" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: T.textMid }}>{p.nama}</div>
+                            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>
+                              {p.telepon || "—"} {p.alamat ? `· ${p.alamat}` : ""}
                             </div>
                           </div>
-                          {confirmDeletePelangganId === p.id && (
-                            <div style={{ padding: "10px 24px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12, animation: "slideDown 0.15s ease" }}>
-                              <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus pelanggan "{p.nama}"?</span>
-                              <button onClick={() => hapusPelanggan(p.id, p.nama)} disabled={deletingPelangganId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingPelangganId === p.id ? "..." : "Ya, Hapus"}</button>
-                              <button onClick={() => setConfirmDeletePelangganId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
-                            </div>
-                          )}
-                        </>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {/* Tombol Harga Khusus */}
+                            <button
+                              onClick={() => bukaHargaPanel(p.id)}
+                              style={{ padding: "5px 12px", background: hargaPanel === p.id ? `${T.purple}25` : `${T.purple}10`, border: `1px solid ${T.purple}40`, color: T.purple, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}
+                            >
+                              💰 Harga {hargaPanel === p.id ? "▲" : "▼"}
+                            </button>
+                            <button className="btn-edit" onClick={() => { setEditingPelangganId(p.id); setEditPelangganForm({ nama: p.nama, telepon: p.telepon || "", alamat: p.alamat || "", catatan: p.catatan || "" }); setShowTambahPelanggan(false); setConfirmDeletePelangganId(null); setHargaPanel(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
+                            <button className="btn-del" onClick={() => setConfirmDeletePelangganId(confirmDeletePelangganId === p.id ? null : p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Hapus</button>
+                          </div>
+                        </div>
                       ) : (
-                        <div style={{ padding: "14px 24px", background: "rgba(96,165,250,0.04)" }}>
+                        <div style={{ padding: "14px 20px", background: "rgba(96,165,250,0.04)" }}>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                             <input value={editPelangganForm.nama} onChange={e => setEditPelangganForm(f => ({ ...f, nama: e.target.value }))} placeholder="Nama pelanggan *" style={inputStyle} autoFocus />
                             <input value={editPelangganForm.telepon} onChange={e => setEditPelangganForm(f => ({ ...f, telepon: e.target.value }))} placeholder="Telepon" style={{ ...inputStyle, fontFamily: T.fontMono }} />
@@ -789,6 +865,95 @@ export default function AdminPage() {
                           </div>
                         </div>
                       )}
+
+                      {/* Konfirmasi hapus */}
+                      {confirmDeletePelangganId === p.id && (
+                        <div style={{ padding: "10px 20px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12 }}>
+                          <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus "{p.nama}"?</span>
+                          <button onClick={() => hapusPelanggan(p.id, p.nama)} disabled={deletingPelangganId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingPelangganId === p.id ? "..." : "Ya, Hapus"}</button>
+                          <button onClick={() => setConfirmDeletePelangganId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
+                        </div>
+                      )}
+
+                      {/* ── PANEL HARGA KHUSUS ── */}
+                      {hargaPanel === p.id && (
+                        <div style={{ borderTop: `1px solid ${T.purple}30`, background: "rgba(167,139,250,0.04)", padding: "16px 20px", animation: "slideDown 0.2s ease" }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, fontFamily: T.fontMono, letterSpacing: 1, marginBottom: 14 }}>
+                            💰 HARGA KHUSUS — {p.nama}
+                            <span style={{ fontSize: 10, color: T.textDim, fontWeight: 400, marginLeft: 8 }}>kalau tidak diset, pakai harga master</span>
+                          </div>
+
+                          {/* Daftar harga khusus yang sudah ada */}
+                          {hargaLoading ? (
+                            <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, marginBottom: 12 }}>Memuat...</div>
+                          ) : hargaList.length === 0 ? (
+                            <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, marginBottom: 12, fontStyle: "italic" }}>Belum ada harga khusus — semua produk pakai harga master</div>
+                          ) : (
+                            <div style={{ marginBottom: 14 }}>
+                              {hargaList.map(h => (
+                                <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${T.border}` }}>
+                                  <div style={{ flex: 1, fontSize: 12, color: T.textMid, fontWeight: 600 }}>{h.nama_produk || `Produk #${h.produk_id}`}</div>
+                                  {editingHargaId === h.id ? (
+                                    <>
+                                      <input
+                                        value={editHargaNilai}
+                                        onChange={e => setEditHargaNilai(formatIDR(e.target.value))}
+                                        style={{ ...inputStyle, width: 140, fontFamily: T.fontMono, fontSize: 12 }}
+                                        autoFocus
+                                        onKeyDown={e => e.key === "Enter" && updateHarga(h.id, p.id)}
+                                      />
+                                      <button onClick={() => updateHarga(h.id, p.id)} style={{ padding: "5px 12px", background: T.green + "20", border: `1px solid ${T.green}40`, color: T.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>✓</button>
+                                      <button onClick={() => setEditingHargaId(null)} style={{ padding: "5px 8px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: T.yellow, fontFamily: T.fontMono, minWidth: 120, textAlign: "right" }}>{rupiahFmt(h.harga)}</div>
+                                      <button onClick={() => { setEditingHargaId(h.id); setEditHargaNilai(formatIDR(String(h.harga))); }} style={{ padding: "4px 10px", background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, borderRadius: 5, cursor: "pointer", fontSize: 10, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
+                                      <button onClick={() => hapusHarga(h.id, p.id)} style={{ padding: "4px 8px", background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, borderRadius: 5, cursor: "pointer", fontSize: 10, fontFamily: T.fontMono, fontWeight: 700 }}>🗑</button>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Form tambah harga khusus */}
+                          {produkBelumDiset.length > 0 && (
+                            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                              <div style={{ flex: 2 }}>
+                                <Label>PRODUK</Label>
+                                <select value={hargaProdukId} onChange={e => setHargaProdukId(e.target.value)} style={{ ...inputStyle, fontSize: 12 }}>
+                                  <option value="">— Pilih Produk —</option>
+                                  {produkBelumDiset.map(pr => (
+                                    <option key={pr.id} value={pr.id}>{pr.nama_produk} (master: {rupiahFmt(pr.harga_jual)})</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <Label>HARGA KHUSUS</Label>
+                                <input
+                                  value={hargaNilai}
+                                  onChange={e => setHargaNilai(formatIDR(e.target.value))}
+                                  placeholder="0"
+                                  style={{ ...inputStyle, fontFamily: T.fontMono, fontSize: 12 }}
+                                  onKeyDown={e => e.key === "Enter" && simpanHarga(p.id)}
+                                />
+                              </div>
+                              <button
+                                onClick={() => simpanHarga(p.id)}
+                                disabled={savingHarga}
+                                style={{ padding: "8px 16px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap", marginBottom: 1 }}
+                              >
+                                {savingHarga ? "..." : "+ Simpan"}
+                              </button>
+                            </div>
+                          )}
+                          {produkBelumDiset.length === 0 && hargaList.length > 0 && (
+                            <div style={{ fontSize: 11, color: T.green, fontFamily: T.fontMono }}>✓ Semua produk sudah diset harga khusus</div>
+                          )}
+                        </div>
+                      )}
+
                     </div>
                   ))}
                 </div>

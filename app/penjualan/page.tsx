@@ -194,7 +194,7 @@ export default function PenjualanPage() {
       setProduk(resProduk.data || []);
       setPelangganMaster(resPelanggan.data || []);
 setPelangganMaster(resPelanggan.data || []);
-console.log("pelanggan data:", resPelanggan.data);
+console.log("pelanggan full:", resPelanggan);
       const penjualanData = resPenjualan.data || [];
       const returData = resRetur.data || [];
       const pencairanData = resPencairan.data || [];

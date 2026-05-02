@@ -64,6 +64,10 @@ export default function PenjualanPage() {
   const [pencairanList, setPencairanList] = useState<PencairanShopee[]>([]);
   const [piutangOffline, setPiutangOffline] = useState<Piutang[]>([]);
   const [pelangganMaster, setPelangganMaster] = useState<PelangganOffline[]>([]);
+  // ── BARU: harga khusus per produk untuk pelanggan terpilih ──
+  const [pelangganHarga, setPelangganHarga] = useState<Record<number, number>>({});
+  const [loadingHarga, setLoadingHarga] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -85,10 +89,57 @@ export default function PenjualanPage() {
   const [offlineQty, setOfflineQty] = useState("");
   const [offlineMetode, setOfflineMetode] = useState("Tunai");
   const [offlineNamaPelanggan, setOfflineNamaPelanggan] = useState("");
-  // "": belum pilih, "baru": input manual, angka string: id dari master
   const [offlinePelangganId, setOfflinePelangganId] = useState("");
 
   const totalKeranjang = keranjang.reduce((a, k) => a + k.subtotal, 0);
+
+  // ── BARU: Fetch harga khusus dari pelanggan_harga ──
+  const fetchHargaPelanggan = useCallback(async (pelangganId: number) => {
+    setLoadingHarga(true);
+    try {
+      const { data } = await supabase
+        .from("pelanggan_harga")
+        .select("produk_id, harga_khusus")
+        .eq("pelanggan_id", pelangganId);
+      const map: Record<number, number> = {};
+      (data || []).forEach((row: { produk_id: number; harga_khusus: number }) => {
+        map[row.produk_id] = row.harga_khusus;
+      });
+      setPelangganHarga(map);
+    } catch (err) {
+      console.error("Gagal fetch harga pelanggan:", err);
+      setPelangganHarga({});
+    } finally {
+      setLoadingHarga(false);
+    }
+  }, []);
+
+  // ── BARU: Helper — harga efektif untuk produk (khusus jika ada, fallback master) ──
+  const getHargaEfektif = useCallback((produkId: number, hargaMaster: number): number => {
+    return pelangganHarga[produkId] ?? hargaMaster;
+  }, [pelangganHarga]);
+
+  // ── BARU: Handle pilih pelanggan (dari dropdown) ──
+  const handlePilihPelanggan = useCallback(async (val: string) => {
+    setOfflinePelangganId(val);
+    if (val === "baru") {
+      setOfflineNamaPelanggan("");
+      setPelangganHarga({});
+    } else if (val) {
+      const p = pelangganMaster.find(x => String(x.id) === val);
+      setOfflineNamaPelanggan(p?.nama || "");
+      await fetchHargaPelanggan(parseInt(val));
+      // Reset keranjang jika sudah ada item — harga bisa berubah
+      setKeranjang([]);
+      if (Object.keys(pelangganHarga).length > 0 || true) {
+        // akan di-update setelah fetch selesai, keranjang di-reset biar tidak salah harga
+      }
+    } else {
+      setOfflineNamaPelanggan("");
+      setPelangganHarga({});
+      setKeranjang([]);
+    }
+  }, [pelangganMaster, fetchHargaPelanggan, pelangganHarga]);
 
   const tambahKeranjang = () => {
     if (!offlineProdukId || !offlineQty) return showToast("Pilih produk & isi qty!", "error");
@@ -100,6 +151,10 @@ export default function PenjualanPage() {
     if (p.jumlah_stok < qtyDiKeranjang + qty) {
       return showToast(`Stok tidak cukup! Tersisa ${p.jumlah_stok - qtyDiKeranjang}`, "error");
     }
+
+    // ── BARU: Pakai harga khusus jika ada, fallback ke harga master ──
+    const hargaEfektif = getHargaEfektif(p.id, p.harga_jual);
+
     setKeranjang(prev => {
       const existing = prev.find(k => k.produk_id === p.id);
       if (existing) {
@@ -108,7 +163,13 @@ export default function PenjualanPage() {
           : k
         );
       }
-      return [...prev, { produk_id: p.id, nama_produk: p.nama_produk, harga_jual: p.harga_jual, qty, subtotal: p.harga_jual * qty }];
+      return [...prev, {
+        produk_id: p.id,
+        nama_produk: p.nama_produk,
+        harga_jual: hargaEfektif,   // ← harga efektif (khusus atau master)
+        qty,
+        subtotal: hargaEfektif * qty,
+      }];
     });
     setOfflineProdukId(""); setOfflineQty("");
   };
@@ -120,8 +181,6 @@ export default function PenjualanPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ✅ FIXED: Query dari toko_online, penjualan_online, retur_online, pencairan_online
-  // ✅ FIXED: Tambah fee_platform sebagai pengurang piutang
   const fetchData = useCallback(async () => {
     try {
       const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline, resFee, resPelanggan] = await Promise.all([
@@ -131,9 +190,7 @@ export default function PenjualanPage() {
         supabase.from("retur_online").select("*, stok_barang(nama_produk), toko_online(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("pencairan_online").select("*, toko_online(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("piutang").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
-        // ✅ Fee platform mengurangi piutang
         supabase.from("fee_platform").select("toko_id, total_fee"),
-        // ✅ Pelanggan offline master
         supabase.from("pelanggan_offline").select("id, nama, telepon").order("nama"),
       ]);
 
@@ -149,48 +206,17 @@ export default function PenjualanPage() {
 
       const piutangPerToko: PiutangShopee[] = tokoList.map((t: Toko) => {
         const penjualanToko = penjualanData.filter((p: any) => p.toko_id === t.id);
-
-        const totalPiutang = penjualanToko.reduce((a: number, p: any) =>
-          a + Math.round(p.total_nominal || 0), 0);
-
-        const totalDitarik = penjualanToko.reduce((a: number, p: any) =>
-          a + Math.round(p.total_ditarik || 0), 0);
-
-        const totalRetur = returData
-          .filter((r: any) => r.toko_id === t.id)
-          .reduce((a: number, r: any) => a + Math.round(r.nominal || 0), 0);
-
-        // ✅ Fee platform sebagai pengurang piutang (bukan kas keluar)
-        const totalFee = feeData
-          .filter((f: any) => f.toko_id === t.id)
-          .reduce((a: number, f: any) => a + Math.round(f.total_fee || 0), 0);
-
+        const totalPiutang = penjualanToko.reduce((a: number, p: any) => a + Math.round(p.total_nominal || 0), 0);
+        const totalDitarik = penjualanToko.reduce((a: number, p: any) => a + Math.round(p.total_ditarik || 0), 0);
+        const totalRetur = returData.filter((r: any) => r.toko_id === t.id).reduce((a: number, r: any) => a + Math.round(r.nominal || 0), 0);
+        const totalFee = feeData.filter((f: any) => f.toko_id === t.id).reduce((a: number, f: any) => a + Math.round(f.total_fee || 0), 0);
         const sisaPiutang = totalPiutang - totalRetur - totalFee - totalDitarik;
-
-        return {
-          toko_id: t.id,
-          toko_nama: t.nama,
-          total_piutang: totalPiutang,
-          total_retur: totalRetur,
-          total_fee: totalFee,
-          total_cair: totalDitarik,
-          sisa_piutang: Math.max(0, sisaPiutang),
-        };
+        return { toko_id: t.id, toko_nama: t.nama, total_piutang: totalPiutang, total_retur: totalRetur, total_fee: totalFee, total_cair: totalDitarik, sisa_piutang: Math.max(0, sisaPiutang) };
       });
 
       setPiutangShopee(piutangPerToko);
-
-      setReturList(returData.map((r: any) => ({
-        ...r,
-        nama_produk: r.stok_barang?.nama_produk,
-        nama_toko: r.toko_online?.nama,
-      })));
-
-      setPencairanList(pencairanData.map((p: any) => ({
-        ...p,
-        nama_toko: p.toko_online?.nama,
-      })));
-
+      setReturList(returData.map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk, nama_toko: r.toko_online?.nama })));
+      setPencairanList(pencairanData.map((p: any) => ({ ...p, nama_toko: p.toko_online?.nama })));
       setPiutangOffline(resPiutangOffline.data || []);
     } catch (err) {
       console.error(err);
@@ -220,21 +246,11 @@ export default function PenjualanPage() {
       if (!p) throw new Error("Produk tidak ditemukan");
       const qty = parseInt(returQty);
       const nominal = p.harga_jual * qty;
-
-      await supabase.from("retur_online").insert([{
-        toko_id: parseInt(returTokoId),
-        produk_id: parseInt(returProdukId),
-        qty,
-        nominal,
-        tipe: returTipe,
-        stok_kembali: returStokKembali,
-      }]);
-
+      await supabase.from("retur_online").insert([{ toko_id: parseInt(returTokoId), produk_id: parseInt(returProdukId), qty, nominal, tipe: returTipe, stok_kembali: returStokKembali }]);
       if (returStokKembali) {
         await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok + qty }).eq("id", p.id);
         await supabase.from("mutasi_stok").insert([{ stok_barang_id: p.id, tipe: "Masuk", qty, keterangan: `Retur ${returTipe}` }]);
       }
-
       showToast(`Retur ${p.nama_produk} ×${qty} berhasil!`);
       setReturTokoId(""); setReturProdukId(""); setReturQty("");
       fetchData();
@@ -252,47 +268,20 @@ export default function PenjualanPage() {
     try {
       const nominalCair = toAngka(cairNominal);
       if (nominalCair <= 0) throw new Error("Nominal harus lebih dari 0");
-
       const tokoData = piutangShopee.find(p => p.toko_id === parseInt(cairTokoId));
       if (!tokoData) throw new Error("Data toko tidak ditemukan");
       if (nominalCair > tokoData.sisa_piutang) throw new Error(`Nominal melebihi sisa piutang (${rupiahFmt(tokoData.sisa_piutang)})`);
-
-      await supabase.from("pencairan_online").insert([{
-        toko_id: parseInt(cairTokoId),
-        nominal_cair: nominalCair,
-        nominal_piutang: tokoData.sisa_piutang,
-        selisih: tokoData.sisa_piutang - nominalCair,
-      }]);
-
-      // Update penjualan_online status — alokasikan dari yang terlama
+      await supabase.from("pencairan_online").insert([{ toko_id: parseInt(cairTokoId), nominal_cair: nominalCair, nominal_piutang: tokoData.sisa_piutang, selisih: tokoData.sisa_piutang - nominalCair }]);
       let sisaCair = nominalCair;
-      const penjualanToko = await supabase
-        .from("penjualan_online")
-        .select("*")
-        .eq("toko_id", parseInt(cairTokoId))
-        .neq("status", "Lunas")
-        .order("created_at", { ascending: true });
-
+      const penjualanToko = await supabase.from("penjualan_online").select("*").eq("toko_id", parseInt(cairTokoId)).neq("status", "Lunas").order("created_at", { ascending: true });
       for (const pj of (penjualanToko.data || [])) {
         if (sisaCair <= 0) break;
         const sisaPiutangBaris = pj.total_nominal - pj.total_ditarik;
         const ditarikSekarang = Math.min(sisaCair, sisaPiutangBaris);
-        await supabase.from("penjualan_online").update({
-          total_ditarik: pj.total_ditarik + ditarikSekarang,
-          status: (pj.total_ditarik + ditarikSekarang) >= pj.total_nominal ? "Lunas" : "Sebagian",
-        }).eq("id", pj.id);
+        await supabase.from("penjualan_online").update({ total_ditarik: pj.total_ditarik + ditarikSekarang, status: (pj.total_ditarik + ditarikSekarang) >= pj.total_nominal ? "Lunas" : "Sebagian" }).eq("id", pj.id);
         sisaCair -= ditarikSekarang;
       }
-
-      // ✅ Hanya insert kas masuk — tidak ada kas keluar Fee Platform
-      // Fee sudah dipotong platform sebelum dana bisa ditarik (dicatat via fee_platform)
-      await supabase.from("kas").insert([{
-        tipe: "Masuk",
-        kategori: "Shopee",
-        nominal: nominalCair,
-        keterangan: `Pencairan Shopee - ${tokoData.toko_nama}`,
-      }]);
-
+      await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Shopee", nominal: nominalCair, keterangan: `Pencairan Shopee - ${tokoData.toko_nama}` }]);
       showToast(`Pencairan ${tokoData.toko_nama} berhasil! Dana: ${rupiahFmt(nominalCair)}`);
       setCairTokoId(""); setCairNominal("");
       fetchData();
@@ -307,31 +296,22 @@ export default function PenjualanPage() {
   const prosesOffline = async () => {
     if (keranjang.length === 0) return showToast("Keranjang kosong!", "error");
     if (offlineMetode === "Piutang" && !offlineNamaPelanggan.trim()) return showToast("Pilih atau isi nama pelanggan!", "error");
-
     setSubmitting("offline");
-
     for (const item of keranjang) {
       const p = produk.find(x => x.id === item.produk_id);
       if (!p) continue;
       await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - item.qty }).eq("id", p.id);
-      await supabase.from("mutasi_stok").insert([{
-        stok_barang_id: p.id,
-        tipe: "Keluar",
-        qty: item.qty,
-        keterangan: "Penjualan Offline",
-      }]);
+      await supabase.from("mutasi_stok").insert([{ stok_barang_id: p.id, tipe: "Keluar", qty: item.qty, keterangan: "Penjualan Offline" }]);
     }
-
     const keterangan = keranjang.map(k => `${k.nama_produk} ×${k.qty}`).join(", ");
-
     if (offlineMetode === "Tunai") {
       await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: totalKeranjang, keterangan }]);
     } else {
       await supabase.from("piutang").insert([{ nama_pelanggan: offlineNamaPelanggan.trim(), nominal: totalKeranjang, keterangan, status: "Belum Lunas" }]);
     }
-
     showToast(`${keranjang.length} item terjual = ${rupiahFmt(totalKeranjang)} via ${offlineMetode}`);
     setKeranjang([]); setOfflineNamaPelanggan(""); setOfflinePelangganId(""); setOfflineProdukId(""); setOfflineQty("");
+    setPelangganHarga({});
     fetchData();
     setSubmitting(null);
   };
@@ -350,6 +330,56 @@ export default function PenjualanPage() {
         <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat data...</div>
       </div>
     </Sidebar>
+  );
+
+  // ── Komponen Dropdown Pelanggan (reusable di Tunai & Piutang) ──
+  const DropdownPelanggan = ({ required }: { required: boolean }) => (
+    <div style={{ marginBottom: 8 }}>
+      <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+        Pelanggan {required ? <span style={{ color: C.red }}>*</span> : <span style={{ color: C.dim }}>(opsional)</span>}
+      </label>
+      <select
+        value={offlinePelangganId}
+        onChange={e => handlePilihPelanggan(e.target.value)}
+        style={inputStyle}
+      >
+        <option value="">{required ? "— Pilih Pelanggan —" : "— Tanpa Pelanggan —"}</option>
+        {pelangganMaster.map(p => (
+          <option key={p.id} value={String(p.id)}>
+            {p.nama}{p.telepon ? ` (${p.telepon})` : ""}
+          </option>
+        ))}
+        <option value="baru">✏️ + Pelanggan Baru (input manual)</option>
+      </select>
+
+      {offlinePelangganId === "baru" && (
+        <input
+          type="text"
+          value={offlineNamaPelanggan}
+          onChange={e => setOfflineNamaPelanggan(e.target.value)}
+          placeholder="Nama pelanggan baru..."
+          style={{ ...inputStyle, marginTop: 4 }}
+          autoFocus
+        />
+      )}
+
+      {offlinePelangganId && offlinePelangganId !== "baru" && offlineNamaPelanggan && (
+        <div style={{ fontSize: 11, fontFamily: C.fontMono, marginTop: -4, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+          {loadingHarga ? (
+            <span style={{ color: C.muted }}>⏳ Memuat harga khusus...</span>
+          ) : (
+            <>
+              <span style={{ color: C.green }}>✓ {offlineNamaPelanggan}</span>
+              {Object.keys(pelangganHarga).length > 0 && (
+                <span style={{ color: C.accent, background: C.accentDim, padding: "2px 7px", borderRadius: 4, fontSize: 10 }}>
+                  🏷 {Object.keys(pelangganHarga).length} harga khusus
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 
   return (
@@ -551,11 +581,46 @@ export default function PenjualanPage() {
             <div style={{ background: C.card, borderRadius: 14, padding: 20, border: `1px solid ${C.border}`, height: "fit-content" }}>
               <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Penjualan Offline</h3>
 
+              {/* ── BARU: Metode Bayar duluan, biar dropdown pelanggan muncul sebelum pilih produk ── */}
+              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Metode Bayar</label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                {["Tunai", "Piutang"].map(m => (
+                  <button key={m} onClick={() => {
+                    setOfflineMetode(m);
+                    if (m === "Tunai") {
+                      // Reset pelanggan tapi tidak hapus keranjang (harga tunai = harga master)
+                      setOfflinePelangganId("");
+                      setOfflineNamaPelanggan("");
+                      setPelangganHarga({});
+                      setKeranjang([]);
+                    }
+                  }} style={{ flex: 1, padding: "9px", border: `1px solid ${offlineMetode === m ? C.accent : C.border}`, borderRadius: 8, background: offlineMetode === m ? C.accentDim : "transparent", color: offlineMetode === m ? C.accent : C.muted, fontFamily: C.fontSans, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+                    {m === "Tunai" ? "💵 Tunai" : "📝 Piutang"}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── Dropdown Pelanggan — Tunai (opsional) & Piutang (wajib) ── */}
+              <DropdownPelanggan required={offlineMetode === "Piutang"} />
+
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tambah Item</label>
-              <select value={offlineProdukId} onChange={e => setOfflineProdukId(e.target.value)} style={inputStyle}>
+
+              {/* ── BARU: Info harga khusus tersedia saat pilih produk ── */}
+              <select
+                value={offlineProdukId}
+                onChange={e => setOfflineProdukId(e.target.value)}
+                style={inputStyle}
+              >
                 <option value="">— Pilih Produk —</option>
-                {produk.map(p => <option key={p.id} value={p.id}>{p.nama_produk} — {rupiahFmt(p.harga_jual)} (stok: {p.jumlah_stok})</option>)}
+                {produk.map(p => {
+                  const hargaKhusus = pelangganHarga[p.id];
+                  const label = hargaKhusus
+                    ? `${p.nama_produk} — 🏷 ${rupiahFmt(hargaKhusus)} (stok: ${p.jumlah_stok})`
+                    : `${p.nama_produk} — ${rupiahFmt(p.harga_jual)} (stok: ${p.jumlah_stok})`;
+                  return <option key={p.id} value={p.id}>{label}</option>;
+                })}
               </select>
+
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <input type="number" min="1" value={offlineQty} onChange={e => setOfflineQty(e.target.value)} placeholder="Qty" style={{ ...inputStyle, marginBottom: 0, flex: 1 }} />
                 <button onClick={tambahKeranjang} style={{ padding: "10px 18px", borderRadius: 8, background: C.accentDim, color: C.accent, fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 13, whiteSpace: "nowrap", border: `1px solid ${C.accent}40` }}>+ Tambah</button>
@@ -565,84 +630,29 @@ export default function PenjualanPage() {
               {keranjang.length > 0 && (
                 <div style={{ background: "#120e1e", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Keranjang ({keranjang.length} item)</div>
-                  {keranjang.map(k => (
-                    <div key={k.produk_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.dim}` }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, color: C.textMid, fontWeight: 600 }}>{k.nama_produk}</div>
-                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.harga_jual)} × {k.qty}</div>
+                  {keranjang.map(k => {
+                    const produkData = produk.find(p => p.id === k.produk_id);
+                    const isHargaKhusus = produkData && pelangganHarga[k.produk_id] !== undefined;
+                    return (
+                      <div key={k.produk_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.dim}` }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: C.textMid, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                            {k.nama_produk}
+                            {isHargaKhusus && <span style={{ fontSize: 9, background: C.accent + "30", color: C.accent, padding: "1px 5px", borderRadius: 3, fontFamily: C.fontMono }}>KHUSUS</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.harga_jual)} × {k.qty}</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
+                          <button onClick={() => hapusKeranjang(k.produk_id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, opacity: 0.7, padding: "2px 4px" }}>×</button>
+                        </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
-                        <button onClick={() => hapusKeranjang(k.produk_id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 14, opacity: 0.7, padding: "2px 4px" }}>×</button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Total</span>
                     <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(totalKeranjang)}</span>
                   </div>
-                </div>
-              )}
-
-              {/* Metode Bayar */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                {["Tunai", "Piutang"].map(m => (
-                  <button key={m} onClick={() => {
-                    setOfflineMetode(m);
-                    if (m === "Tunai") { setOfflinePelangganId(""); setOfflineNamaPelanggan(""); }
-                  }} style={{ flex: 1, padding: "9px", border: `1px solid ${offlineMetode === m ? C.accent : C.border}`, borderRadius: 8, background: offlineMetode === m ? C.accentDim : "transparent", color: offlineMetode === m ? C.accent : C.muted, fontFamily: C.fontSans, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-                    {m === "Tunai" ? "💵 Tunai" : "📝 Piutang"}
-                  </button>
-                ))}
-              </div>
-
-              {/* Pilih Pelanggan — hanya muncul jika metode Piutang */}
-              {offlineMetode === "Piutang" && (
-                <div style={{ marginBottom: 8 }}>
-                  <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Pelanggan</label>
-                  <select
-                    value={offlinePelangganId}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setOfflinePelangganId(val);
-                      if (val === "baru") {
-                        setOfflineNamaPelanggan("");
-                      } else if (val) {
-                        const p = pelangganMaster.find(x => String(x.id) === val);
-                        setOfflineNamaPelanggan(p?.nama || "");
-                      } else {
-                        setOfflineNamaPelanggan("");
-                      }
-                    }}
-                    style={inputStyle}
-                  >
-                    <option value="">— Pilih Pelanggan —</option>
-                    {pelangganMaster.map(p => (
-                      <option key={p.id} value={String(p.id)}>
-                        {p.nama}{p.telepon ? ` (${p.telepon})` : ""}
-                      </option>
-                    ))}
-                    <option value="baru">✏️ + Pelanggan Baru (input manual)</option>
-                  </select>
-
-                  {/* Input manual — hanya muncul jika pilih "Pelanggan Baru" */}
-                  {offlinePelangganId === "baru" && (
-                    <input
-                      type="text"
-                      value={offlineNamaPelanggan}
-                      onChange={e => setOfflineNamaPelanggan(e.target.value)}
-                      placeholder="Nama pelanggan baru..."
-                      style={{ ...inputStyle, marginTop: 4 }}
-                      autoFocus
-                    />
-                  )}
-
-                  {/* Info nama yang dipilih */}
-                  {offlinePelangganId && offlinePelangganId !== "baru" && offlineNamaPelanggan && (
-                    <div style={{ fontSize: 11, color: C.green, fontFamily: C.fontMono, marginTop: -4, marginBottom: 4 }}>
-                      ✓ {offlineNamaPelanggan}
-                    </div>
-                  )}
                 </div>
               )}
 

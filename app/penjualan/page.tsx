@@ -65,6 +65,9 @@ export default function PenjualanPage() {
   const [piutangOffline, setPiutangOffline] = useState<Piutang[]>([]);
   const [pelangganMaster, setPelangganMaster] = useState<PelangganOffline[]>([]);
 
+  setPelangganMaster(resPelanggan.data || []);
+console.log("pelanggan data:", resPelanggan.data);
+
   // Harga khusus: map produk_id → harga (dari tabel pelanggan_harga)
   const [pelangganHarga, setPelangganHarga] = useState<Record<number, number>>({});
   const [loadingHarga, setLoadingHarga] = useState(false);

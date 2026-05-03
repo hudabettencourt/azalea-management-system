@@ -5,7 +5,18 @@ import { supabase } from "@/lib/supabase";
 import { useRole } from "@/hooks/useRole";
 
 type Profile = { id: string; email: string; nama: string; role: string; created_at: string };
-type Produk = { id: number; nama_produk: string; sku: string | null; jumlah_stok: number; harga_jual: number; satuan: string };
+type Produk = {
+  id: number;
+  nama_produk: string;
+  sku: string | null;
+  jumlah_stok: number;
+  harga_jual: number;
+  satuan: string;
+  berat_kg: number | null;
+  kemasan_bahan_id: number | null;
+  kemasan_nama?: string | null;
+};
+type BahanBaku = { id: number; nama: string; satuan: string; kategori: string };
 type Toko = { id: number; nama: string; platform: string; aktif: boolean; created_at: string };
 type Supplier = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
 type Pelanggan = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
@@ -47,14 +58,27 @@ const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 const formatIDR = (val: string) => val.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 const toAngka = (str: string) => parseInt(str.replace(/\./g, "")) || 0;
 
-type ProdukForm = { nama_produk: string; sku: string; harga_jual: string; jumlah_stok: string; satuan: string };
+type ProdukForm = {
+  nama_produk: string;
+  sku: string;
+  harga_jual: string;
+  jumlah_stok: string;
+  satuan: string;
+  berat_kg: string;
+  kemasan_bahan_id: string;
+};
 type TokoForm = { nama: string; platform: string; aktif: boolean };
 type SupplierForm = { nama: string; telepon: string; alamat: string; catatan: string };
 type PelangganForm = { nama: string; telepon: string; alamat: string; catatan: string };
-const emptyProdukForm = (): ProdukForm => ({ nama_produk: "", sku: "", harga_jual: "", jumlah_stok: "0", satuan: "pcs" });
+
+const emptyProdukForm = (): ProdukForm => ({
+  nama_produk: "", sku: "", harga_jual: "", jumlah_stok: "0", satuan: "pcs",
+  berat_kg: "", kemasan_bahan_id: "",
+});
 const emptyTokoForm = (): TokoForm => ({ nama: "", platform: "Shopee", aktif: true });
 const emptySupplierForm = (): SupplierForm => ({ nama: "", telepon: "", alamat: "", catatan: "" });
 const emptyPelangganForm = (): PelangganForm => ({ nama: "", telepon: "", alamat: "", catatan: "" });
+
 type Section = "users" | "produk" | "toko" | "supplier" | "pelanggan";
 
 import Sidebar from "@/components/Sidebar";
@@ -96,6 +120,10 @@ export default function AdminPage() {
   const [confirmDeleteProdukId, setConfirmDeleteProdukId] = useState<number | null>(null);
   const [deletingProdukId, setDeletingProdukId] = useState<number | null>(null);
 
+  // ── BAHAN BAKU (untuk dropdown kemasan) ──
+  const [bahanBakuList, setBahanBakuList] = useState<BahanBaku[]>([]);
+  const [bahanBakuLoading, setBahanBakuLoading] = useState(false);
+
   // ── TOKO ──
   const [tokoList, setTokoList] = useState<Toko[]>([]);
   const [tokoLoading, setTokoLoading] = useState(false);
@@ -135,11 +163,11 @@ export default function AdminPage() {
   const [deletingPelangganId, setDeletingPelangganId] = useState<number | null>(null);
 
   // ── HARGA KHUSUS ──
-  const [hargaPanel, setHargaPanel] = useState<number | null>(null); // pelanggan_id yang sedang buka panel harga
-  const [hargaList, setHargaList] = useState<HargaKhusus[]>([]); // harga khusus untuk pelanggan aktif
+  const [hargaPanel, setHargaPanel] = useState<number | null>(null);
+  const [hargaList, setHargaList] = useState<HargaKhusus[]>([]);
   const [hargaLoading, setHargaLoading] = useState(false);
-  const [hargaProdukId, setHargaProdukId] = useState(""); // produk yang dipilih untuk tambah harga
-  const [hargaNilai, setHargaNilai] = useState(""); // nilai harga baru
+  const [hargaProdukId, setHargaProdukId] = useState("");
+  const [hargaNilai, setHargaNilai] = useState("");
   const [savingHarga, setSavingHarga] = useState(false);
   const [editingHargaId, setEditingHargaId] = useState<number | null>(null);
   const [editHargaNilai, setEditHargaNilai] = useState("");
@@ -157,11 +185,32 @@ export default function AdminPage() {
     setLoading(false);
   }, []);
 
+  const fetchBahanBaku = useCallback(async () => {
+    if (bahanBakuList.length > 0) return; // sudah di-fetch sebelumnya
+    setBahanBakuLoading(true);
+    const { data, error } = await supabase
+      .from("bahan_baku")
+      .select("id, nama, satuan, kategori")
+      .or("aktif.eq.true,aktif.is.null")
+      .order("kategori")
+      .order("nama");
+    if (error) showToast("Gagal load bahan: " + error.message, "error");
+    else setBahanBakuList(data || []);
+    setBahanBakuLoading(false);
+  }, [bahanBakuList.length]);
+
   const fetchProduk = useCallback(async () => {
     setProdukLoading(true);
-    const { data, error } = await supabase.from("stok_barang").select("id, nama_produk, sku, jumlah_stok, harga_jual, satuan").order("nama_produk");
+    // Join ke bahan_baku untuk ambil nama kemasan
+    const { data, error } = await supabase
+      .from("stok_barang")
+      .select("id, nama_produk, sku, jumlah_stok, harga_jual, satuan, berat_kg, kemasan_bahan_id, bahan_baku(nama)")
+      .order("nama_produk");
     if (error) showToast("Gagal load produk: " + error.message, "error");
-    else setProdukList(data || []);
+    else setProdukList((data || []).map((r: any) => ({
+      ...r,
+      kemasan_nama: r.bahan_baku?.nama ?? null,
+    })));
     setProdukLoading(false);
   }, []);
 
@@ -189,7 +238,6 @@ export default function AdminPage() {
     setPelangganLoading(false);
   }, []);
 
-  // ── FETCH HARGA KHUSUS untuk pelanggan tertentu ──
   const fetchHargaKhusus = useCallback(async (pelangganId: number) => {
     setHargaLoading(true);
     const { data, error } = await supabase
@@ -203,63 +251,44 @@ export default function AdminPage() {
   }, []);
 
   const bukaHargaPanel = async (pelangganId: number) => {
-    if (hargaPanel === pelangganId) {
-      setHargaPanel(null);
-      return;
-    }
+    if (hargaPanel === pelangganId) { setHargaPanel(null); return; }
     setHargaPanel(pelangganId);
-    setHargaProdukId("");
-    setHargaNilai("");
-    setEditingHargaId(null);
+    setHargaProdukId(""); setHargaNilai(""); setEditingHargaId(null);
     await fetchHargaKhusus(pelangganId);
-    // Fetch produk kalau belum ada
     if (produkList.length === 0) await fetchProduk();
   };
 
-  // ── SIMPAN HARGA KHUSUS (upsert) ──
   const simpanHarga = async (pelangganId: number) => {
     if (!hargaProdukId) return showToast("Pilih produk!", "error");
     if (!hargaNilai) return showToast("Isi harga!", "error");
     setSavingHarga(true);
-    const { error } = await supabase
-      .from("pelanggan_harga")
+    const { error } = await supabase.from("pelanggan_harga")
       .upsert([{ pelanggan_id: pelangganId, produk_id: parseInt(hargaProdukId), harga: toAngka(hargaNilai) }], { onConflict: "pelanggan_id,produk_id" });
     if (error) showToast("Gagal simpan harga: " + error.message, "error");
-    else {
-      showToast("✓ Harga khusus disimpan!");
-      setHargaProdukId(""); setHargaNilai("");
-      await fetchHargaKhusus(pelangganId);
-    }
+    else { showToast("✓ Harga khusus disimpan!"); setHargaProdukId(""); setHargaNilai(""); await fetchHargaKhusus(pelangganId); }
     setSavingHarga(false);
   };
 
-  // ── UPDATE HARGA KHUSUS ──
   const updateHarga = async (hargaId: number, pelangganId: number) => {
     if (!editHargaNilai) return showToast("Isi harga!", "error");
-    const { error } = await supabase
-      .from("pelanggan_harga")
-      .update({ harga: toAngka(editHargaNilai) })
-      .eq("id", hargaId);
+    const { error } = await supabase.from("pelanggan_harga").update({ harga: toAngka(editHargaNilai) }).eq("id", hargaId);
     if (error) showToast("Gagal update: " + error.message, "error");
-    else {
-      showToast("✓ Harga diupdate!");
-      setEditingHargaId(null);
-      await fetchHargaKhusus(pelangganId);
-    }
+    else { showToast("✓ Harga diupdate!"); setEditingHargaId(null); await fetchHargaKhusus(pelangganId); }
   };
 
-  // ── HAPUS HARGA KHUSUS ──
   const hapusHarga = async (hargaId: number, pelangganId: number) => {
     const { error } = await supabase.from("pelanggan_harga").delete().eq("id", hargaId);
     if (error) showToast("Gagal hapus: " + error.message, "error");
-    else {
-      showToast("🗑 Harga dihapus");
-      await fetchHargaKhusus(pelangganId);
-    }
+    else { showToast("🗑 Harga dihapus"); await fetchHargaKhusus(pelangganId); }
   };
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => { if (activeSection === "produk") fetchProduk(); }, [activeSection, fetchProduk]);
+  useEffect(() => {
+    if (activeSection === "produk") {
+      fetchProduk();
+      fetchBahanBaku();
+    }
+  }, [activeSection, fetchProduk, fetchBahanBaku]);
   useEffect(() => { if (activeSection === "toko") fetchToko(); }, [activeSection, fetchToko]);
   useEffect(() => { if (activeSection === "supplier") fetchSupplier(); }, [activeSection, fetchSupplier]);
   useEffect(() => { if (activeSection === "pelanggan") { fetchPelanggan(); fetchProduk(); } }, [activeSection, fetchPelanggan, fetchProduk]);
@@ -281,11 +310,21 @@ export default function AdminPage() {
   };
 
   // ── PRODUK CRUD ──
+  const buildProdukPayload = (f: ProdukForm) => ({
+    nama_produk: f.nama_produk.trim(),
+    sku: f.sku.trim().toUpperCase() || null,
+    harga_jual: toAngka(f.harga_jual),
+    jumlah_stok: parseInt(f.jumlah_stok) || 0,
+    satuan: f.satuan,
+    berat_kg: f.berat_kg ? parseFloat(f.berat_kg.replace(",", ".")) : null,
+    kemasan_bahan_id: f.kemasan_bahan_id ? parseInt(f.kemasan_bahan_id) : null,
+  });
+
   const handleTambahProduk = async () => {
     if (!tambahProduk.nama_produk.trim()) return showToast("Nama produk wajib diisi!", "error");
     if (!tambahProduk.harga_jual) return showToast("Harga jual wajib diisi!", "error");
     setSavingProduk(true);
-    const { error } = await supabase.from("stok_barang").insert([{ nama_produk: tambahProduk.nama_produk.trim(), sku: tambahProduk.sku.trim().toUpperCase() || null, harga_jual: toAngka(tambahProduk.harga_jual), jumlah_stok: parseInt(tambahProduk.jumlah_stok) || 0, satuan: tambahProduk.satuan }]);
+    const { error } = await supabase.from("stok_barang").insert([buildProdukPayload(tambahProduk)]);
     if (error) showToast("Gagal tambah produk: " + error.message, "error");
     else { showToast(`✓ Produk "${tambahProduk.nama_produk}" ditambahkan!`); setTambahProduk(emptyProdukForm()); setShowTambahProduk(false); fetchProduk(); }
     setSavingProduk(false);
@@ -294,9 +333,9 @@ export default function AdminPage() {
   const saveEditProduk = async (id: number) => {
     if (!editProdukForm.nama_produk.trim()) return showToast("Nama produk wajib diisi!", "error");
     setSavingEditProduk(true);
-    const { error } = await supabase.from("stok_barang").update({ nama_produk: editProdukForm.nama_produk.trim(), sku: editProdukForm.sku.trim().toUpperCase() || null, harga_jual: toAngka(editProdukForm.harga_jual), jumlah_stok: parseInt(editProdukForm.jumlah_stok) || 0, satuan: editProdukForm.satuan }).eq("id", id);
+    const { error } = await supabase.from("stok_barang").update(buildProdukPayload(editProdukForm)).eq("id", id);
     if (error) showToast("Gagal update produk: " + error.message, "error");
-    else { showToast(`✓ Produk berhasil diupdate!`); setEditingProdukId(null); fetchProduk(); }
+    else { showToast("✓ Produk berhasil diupdate!"); setEditingProdukId(null); fetchProduk(); }
     setSavingEditProduk(false);
   };
 
@@ -323,7 +362,7 @@ export default function AdminPage() {
     setSavingEditToko(true);
     const { error } = await supabase.from("toko_online").update({ nama: editTokoForm.nama.trim(), platform: editTokoForm.platform, aktif: editTokoForm.aktif }).eq("id", id);
     if (error) showToast("Gagal update toko: " + error.message, "error");
-    else { showToast(`✓ Toko berhasil diupdate!`); setEditingTokoId(null); fetchToko(); }
+    else { showToast("✓ Toko berhasil diupdate!"); setEditingTokoId(null); fetchToko(); }
     setSavingEditToko(false);
   };
 
@@ -356,7 +395,7 @@ export default function AdminPage() {
     setSavingEditSupplier(true);
     const { error } = await supabase.from("supplier").update({ nama: editSupplierForm.nama.trim(), telepon: editSupplierForm.telepon.trim() || null, alamat: editSupplierForm.alamat.trim() || null, catatan: editSupplierForm.catatan.trim() || null }).eq("id", id);
     if (error) showToast("Gagal update supplier: " + error.message, "error");
-    else { showToast(`✓ Supplier berhasil diupdate!`); setEditingSupplierId(null); fetchSupplier(); }
+    else { showToast("✓ Supplier berhasil diupdate!"); setEditingSupplierId(null); fetchSupplier(); }
     setSavingEditSupplier(false);
   };
 
@@ -383,7 +422,7 @@ export default function AdminPage() {
     setSavingEditPelanggan(true);
     const { error } = await supabase.from("pelanggan_offline").update({ nama: editPelangganForm.nama.trim(), telepon: editPelangganForm.telepon.trim() || null, alamat: editPelangganForm.alamat.trim() || null, catatan: editPelangganForm.catatan.trim() || null }).eq("id", id);
     if (error) showToast("Gagal update pelanggan: " + error.message, "error");
-    else { showToast(`✓ Pelanggan berhasil diupdate!`); setEditingPelangganId(null); fetchPelanggan(); }
+    else { showToast("✓ Pelanggan berhasil diupdate!"); setEditingPelangganId(null); fetchPelanggan(); }
     setSavingEditPelanggan(false);
   };
 
@@ -396,15 +435,51 @@ export default function AdminPage() {
   };
 
   // ── FILTERED LISTS ──
-  const produkFiltered = produkList.filter(p => searchProduk === "" || p.nama_produk?.toLowerCase().includes(searchProduk.toLowerCase()) || (p.sku || "").toLowerCase().includes(searchProduk.toLowerCase()));
-  const supplierFiltered = supplierList.filter(s => searchSupplier === "" || s.nama?.toLowerCase().includes(searchSupplier.toLowerCase()) || (s.telepon || "").includes(searchSupplier));
-  const usersFiltered = users.filter(u => search === "" || u.nama?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()) || u.role?.toLowerCase().includes(search.toLowerCase()));
-  const pelangganFiltered = pelangganList.filter(p => searchPelanggan === "" || p.nama?.toLowerCase().includes(searchPelanggan.toLowerCase()) || (p.telepon || "").includes(searchPelanggan));
+  const produkFiltered = produkList.filter(p =>
+    searchProduk === "" ||
+    p.nama_produk?.toLowerCase().includes(searchProduk.toLowerCase()) ||
+    (p.sku || "").toLowerCase().includes(searchProduk.toLowerCase())
+  );
+  const supplierFiltered = supplierList.filter(s =>
+    searchSupplier === "" ||
+    s.nama?.toLowerCase().includes(searchSupplier.toLowerCase()) ||
+    (s.telepon || "").includes(searchSupplier)
+  );
+  const usersFiltered = users.filter(u =>
+    search === "" ||
+    u.nama?.toLowerCase().includes(search.toLowerCase()) ||
+    u.email?.toLowerCase().includes(search.toLowerCase()) ||
+    u.role?.toLowerCase().includes(search.toLowerCase())
+  );
+  const pelangganFiltered = pelangganList.filter(p =>
+    searchPelanggan === "" ||
+    p.nama?.toLowerCase().includes(searchPelanggan.toLowerCase()) ||
+    (p.telepon || "").includes(searchPelanggan)
+  );
 
-  // Produk yang belum diset harga khusus untuk pelanggan aktif
   const produkBelumDiset = produkList.filter(p => !hargaList.some(h => h.produk_id === p.id));
 
-  const inputStyle: React.CSSProperties = { padding: "8px 12px", background: "rgba(255,255,255,0.04)", border: `1.5px solid rgba(232,115,138,0.2)`, borderRadius: 8, color: T.text, fontFamily: T.fontSans, fontSize: 13, outline: "none", transition: "border-color 0.2s", width: "100%", boxSizing: "border-box" };
+  // Kelompokkan bahan baku per kategori untuk dropdown
+  const bahanByKategori = bahanBakuList.reduce<Record<string, BahanBaku[]>>((acc, b) => {
+    const cat = b.kategori || "Lainnya";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(b);
+    return acc;
+  }, {});
+
+  const inputStyle: React.CSSProperties = {
+    padding: "8px 12px",
+    background: "rgba(255,255,255,0.04)",
+    border: `1.5px solid rgba(232,115,138,0.2)`,
+    borderRadius: 8,
+    color: T.text,
+    fontFamily: T.fontSans,
+    fontSize: 13,
+    outline: "none",
+    transition: "border-color 0.2s",
+    width: "100%",
+    boxSizing: "border-box",
+  };
 
   const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
     { id: "users", label: "Manajemen User", icon: "⊛" },
@@ -431,6 +506,33 @@ export default function AdminPage() {
     </Sidebar>
   );
 
+  // Reusable dropdown kemasan
+  const KemasanSelect = ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+  }) => (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ ...inputStyle, cursor: "pointer" }}
+      disabled={bahanBakuLoading}
+    >
+      <option value="">— Tanpa kemasan —</option>
+      {Object.entries(bahanByKategori).map(([kat, items]) => (
+        <optgroup key={kat} label={kat}>
+          {items.map(b => (
+            <option key={b.id} value={b.id}>
+              {b.nama} ({b.satuan})
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+
   return (
     <Sidebar>
       <style>{`
@@ -442,6 +544,7 @@ export default function AdminPage() {
         .btn-edit:hover { background: rgba(167,139,250,0.2) !important; }
         .btn-del:hover { background: rgba(235,87,87,0.2) !important; }
         select option { background: #1a1020; color: #f0e6e9; }
+        select optgroup { background: #1a1020; color: #7a6880; font-style: normal; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
       `}</style>
 
       {toast && (
@@ -555,39 +658,88 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                {/* ── FORM TAMBAH PRODUK ── */}
                 {showTambahProduk && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ PRODUK BARU</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
-                      <div><Label>NAMA PRODUK *</Label><input value={tambahProduk.nama_produk} onChange={e => setTambahProduk(p => ({ ...p, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus /></div>
-                      <div><Label>SKU</Label><input value={tambahProduk.sku} onChange={e => setTambahProduk(p => ({ ...p, sku: e.target.value }))} placeholder="SKU-001" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} /></div>
-                      <div><Label>HARGA JUAL *</Label><input value={tambahProduk.harga_jual} onChange={e => setTambahProduk(p => ({ ...p, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                      <div><Label>STOK AWAL</Label><input type="number" value={tambahProduk.jumlah_stok} onChange={e => setTambahProduk(p => ({ ...p, jumlah_stok: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
-                      <div><Label>SATUAN</Label>
+                    {/* Row 1: nama, sku, harga, stok, satuan */}
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div>
+                        <Label>NAMA PRODUK *</Label>
+                        <input value={tambahProduk.nama_produk} onChange={e => setTambahProduk(p => ({ ...p, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus />
+                      </div>
+                      <div>
+                        <Label>SKU</Label>
+                        <input value={tambahProduk.sku} onChange={e => setTambahProduk(p => ({ ...p, sku: e.target.value }))} placeholder="SKU-001" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} />
+                      </div>
+                      <div>
+                        <Label>HARGA JUAL *</Label>
+                        <input value={tambahProduk.harga_jual} onChange={e => setTambahProduk(p => ({ ...p, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} />
+                      </div>
+                      <div>
+                        <Label>STOK AWAL</Label>
+                        <input type="number" value={tambahProduk.jumlah_stok} onChange={e => setTambahProduk(p => ({ ...p, jumlah_stok: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} />
+                      </div>
+                      <div>
+                        <Label>SATUAN</Label>
                         <select value={tambahProduk.satuan} onChange={e => setTambahProduk(p => ({ ...p, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
                           {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}><BtnPrimary onClick={handleTambahProduk} disabled={savingProduk}>{savingProduk ? "Menyimpan..." : "✓ Simpan Produk"}</BtnPrimary><BtnSecondary onClick={() => setShowTambahProduk(false)}>Batal</BtnSecondary></div>
+                    {/* Row 2: berat, kemasan */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginBottom: 16 }}>
+                      <div>
+                        <Label>BERAT (kg)</Label>
+                        <input
+                          type="number"
+                          value={tambahProduk.berat_kg}
+                          onChange={e => setTambahProduk(p => ({ ...p, berat_kg: e.target.value }))}
+                          placeholder="0.25"
+                          step="0.001"
+                          min="0"
+                          style={{ ...inputStyle, fontFamily: T.fontMono }}
+                        />
+                      </div>
+                      <div>
+                        <Label>KEMASAN BAHAN {bahanBakuLoading ? "(memuat...)" : ""}</Label>
+                        <KemasanSelect
+                          value={tambahProduk.kemasan_bahan_id}
+                          onChange={v => setTambahProduk(p => ({ ...p, kemasan_bahan_id: v }))}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <BtnPrimary onClick={handleTambahProduk} disabled={savingProduk}>{savingProduk ? "Menyimpan..." : "✓ Simpan Produk"}</BtnPrimary>
+                      <BtnSecondary onClick={() => setShowTambahProduk(false)}>Batal</BtnSecondary>
+                    </div>
                   </div>
                 )}
 
+                {/* ── TABEL PRODUK ── */}
                 <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 120px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
-                    {["PRODUK", "SKU", "STOK", "HARGA JUAL", "SATUAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 0.8fr 1fr 0.7fr 0.8fr 1.2fr 130px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
+                    {["PRODUK", "SKU", "STOK", "HARGA JUAL", "SATUAN", "BERAT", "KEMASAN", "AKSI"].map(h => (
+                      <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>
+                    ))}
                   </div>
                   {produkLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
                   {!produkLoading && produkFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada produk</div>}
                   {!produkLoading && produkFiltered.map(p => (
                     <div key={p.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, transition: "background 0.15s" }}>
                       {editingProdukId !== p.id ? (
-                        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 120px", gap: 8, padding: "12px 24px", alignItems: "center" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 0.8fr 1fr 0.7fr 0.8fr 1.2fr 130px", gap: 8, padding: "12px 24px", alignItems: "center" }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama_produk}</div>
                           <div style={{ fontSize: 11, color: p.sku ? T.yellow : T.textDim, fontFamily: T.fontMono }}>{p.sku || "—"}</div>
                           <div style={{ fontSize: 13, fontWeight: 700, color: p.jumlah_stok > 0 ? T.green : T.red, fontFamily: T.fontMono }}>{p.jumlah_stok}</div>
                           <div style={{ fontSize: 12, color: T.textMid, fontFamily: T.fontMono }}>{rupiahFmt(p.harga_jual)}</div>
                           <div style={{ fontSize: 11, color: T.textDim }}>{p.satuan}</div>
+                          <div style={{ fontSize: 12, color: p.berat_kg ? T.blue : T.textDim, fontFamily: T.fontMono }}>
+                            {p.berat_kg != null ? `${p.berat_kg} kg` : "—"}
+                          </div>
+                          <div style={{ fontSize: 11, color: p.kemasan_nama ? T.orange : T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {p.kemasan_nama || "—"}
+                          </div>
                           <div style={{ display: "flex", gap: 6 }}>
                             {confirmDeleteProdukId === p.id ? (
                               <>
@@ -596,14 +748,28 @@ export default function AdminPage() {
                               </>
                             ) : (
                               <>
-                                <button className="btn-edit" onClick={() => { setEditingProdukId(p.id); setEditProdukForm({ nama_produk: p.nama_produk, sku: p.sku || "", harga_jual: formatIDR(String(p.harga_jual)), jumlah_stok: String(p.jumlah_stok), satuan: p.satuan }); setShowTambahProduk(false); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
+                                <button className="btn-edit" onClick={() => {
+                                  setEditingProdukId(p.id);
+                                  setEditProdukForm({
+                                    nama_produk: p.nama_produk,
+                                    sku: p.sku || "",
+                                    harga_jual: formatIDR(String(p.harga_jual)),
+                                    jumlah_stok: String(p.jumlah_stok),
+                                    satuan: p.satuan,
+                                    berat_kg: p.berat_kg != null ? String(p.berat_kg) : "",
+                                    kemasan_bahan_id: p.kemasan_bahan_id != null ? String(p.kemasan_bahan_id) : "",
+                                  });
+                                  setShowTambahProduk(false);
+                                }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
                                 <button className="btn-del" onClick={() => setConfirmDeleteProdukId(p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>🗑</button>
                               </>
                             )}
                           </div>
                         </div>
                       ) : (
+                        /* ── INLINE EDIT ROW ── */
                         <div style={{ padding: "14px 24px", background: "rgba(167,139,250,0.04)" }}>
+                          {/* Row 1 */}
                           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
                             <input value={editProdukForm.nama_produk} onChange={e => setEditProdukForm(f => ({ ...f, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus />
                             <input value={editProdukForm.sku} onChange={e => setEditProdukForm(f => ({ ...f, sku: e.target.value }))} placeholder="SKU" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} />
@@ -612,6 +778,28 @@ export default function AdminPage() {
                             <select value={editProdukForm.satuan} onChange={e => setEditProdukForm(f => ({ ...f, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
                               {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
+                          </div>
+                          {/* Row 2: berat + kemasan */}
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, marginBottom: 12 }}>
+                            <div>
+                              <Label>BERAT (kg)</Label>
+                              <input
+                                type="number"
+                                value={editProdukForm.berat_kg}
+                                onChange={e => setEditProdukForm(f => ({ ...f, berat_kg: e.target.value }))}
+                                placeholder="0.25"
+                                step="0.001"
+                                min="0"
+                                style={{ ...inputStyle, fontFamily: T.fontMono }}
+                              />
+                            </div>
+                            <div>
+                              <Label>KEMASAN BAHAN</Label>
+                              <KemasanSelect
+                                value={editProdukForm.kemasan_bahan_id}
+                                onChange={v => setEditProdukForm(f => ({ ...f, kemasan_bahan_id: v }))}
+                              />
+                            </div>
                           </div>
                           <div style={{ display: "flex", gap: 8 }}>
                             <button onClick={() => saveEditProduk(p.id)} disabled={savingEditProduk} style={{ padding: "8px 18px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>{savingEditProduk ? "..." : "✓ Simpan"}</button>
@@ -622,8 +810,11 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
+
                 <div style={{ marginTop: 16, background: `${T.purple}08`, border: `1px solid ${T.purple}20`, borderRadius: 10, padding: "14px 20px", fontSize: 12, color: T.purple, fontFamily: T.fontMono }}>
-                  📦 <strong>SKU</strong> harus sesuai kolom <em>SKU Induk</em> di Excel Shopee. Produk tanpa SKU tidak terdeteksi saat upload.
+                  📦 <strong>SKU</strong> harus sesuai kolom <em>SKU Induk</em> di Excel Shopee. Produk tanpa SKU tidak terdeteksi saat upload. &nbsp;·&nbsp;
+                  ⚖ <strong>Berat</strong> digunakan untuk kalkulasi ongkir & borongan. &nbsp;·&nbsp;
+                  🎁 <strong>Kemasan</strong> merujuk ke bahan baku packaging yang dipakai per produk.
                 </div>
               </div>
             )}
@@ -750,7 +941,7 @@ export default function AdminPage() {
                     {["NAMA", "TELEPON", "ALAMAT", "CATATAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
                   </div>
                   {supplierLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
-                  {!supplierLoading && supplierFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada supplier</div>}
+                  {!supplierLoading && supplierFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.fontMono }}>Belum ada supplier</div>}
                   {!supplierLoading && supplierFiltered.map(s => (
                     <div key={s.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, background: editingSupplierId === s.id ? "rgba(96,165,250,0.04)" : "transparent", transition: "background 0.15s" }}>
                       {editingSupplierId !== s.id ? (
@@ -829,8 +1020,6 @@ export default function AdminPage() {
                   )}
                   {!pelangganLoading && pelangganFiltered.map(p => (
                     <div key={p.id} style={{ background: T.bgCard, border: `1px solid ${hargaPanel === p.id ? "rgba(167,139,250,0.4)" : T.border}`, borderRadius: 12, overflow: "hidden", transition: "border-color 0.2s" }}>
-
-                      {/* Row utama pelanggan */}
                       {editingPelangganId !== p.id ? (
                         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 20px" }}>
                           <div style={{ flex: 1 }}>
@@ -840,11 +1029,7 @@ export default function AdminPage() {
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
-                            {/* Tombol Harga Khusus */}
-                            <button
-                              onClick={() => bukaHargaPanel(p.id)}
-                              style={{ padding: "5px 12px", background: hargaPanel === p.id ? `${T.purple}25` : `${T.purple}10`, border: `1px solid ${T.purple}40`, color: T.purple, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}
-                            >
+                            <button onClick={() => bukaHargaPanel(p.id)} style={{ padding: "5px 12px", background: hargaPanel === p.id ? `${T.purple}25` : `${T.purple}10`, border: `1px solid ${T.purple}40`, color: T.purple, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>
                               💰 Harga {hargaPanel === p.id ? "▲" : "▼"}
                             </button>
                             <button className="btn-edit" onClick={() => { setEditingPelangganId(p.id); setEditPelangganForm({ nama: p.nama, telepon: p.telepon || "", alamat: p.alamat || "", catatan: p.catatan || "" }); setShowTambahPelanggan(false); setConfirmDeletePelangganId(null); setHargaPanel(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
@@ -866,7 +1051,6 @@ export default function AdminPage() {
                         </div>
                       )}
 
-                      {/* Konfirmasi hapus */}
                       {confirmDeletePelangganId === p.id && (
                         <div style={{ padding: "10px 20px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12 }}>
                           <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus "{p.nama}"?</span>
@@ -875,15 +1059,12 @@ export default function AdminPage() {
                         </div>
                       )}
 
-                      {/* ── PANEL HARGA KHUSUS ── */}
                       {hargaPanel === p.id && (
                         <div style={{ borderTop: `1px solid ${T.purple}30`, background: "rgba(167,139,250,0.04)", padding: "16px 20px", animation: "slideDown 0.2s ease" }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, fontFamily: T.fontMono, letterSpacing: 1, marginBottom: 14 }}>
                             💰 HARGA KHUSUS — {p.nama}
                             <span style={{ fontSize: 10, color: T.textDim, fontWeight: 400, marginLeft: 8 }}>kalau tidak diset, pakai harga master</span>
                           </div>
-
-                          {/* Daftar harga khusus yang sudah ada */}
                           {hargaLoading ? (
                             <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, marginBottom: 12 }}>Memuat...</div>
                           ) : hargaList.length === 0 ? (
@@ -895,13 +1076,7 @@ export default function AdminPage() {
                                   <div style={{ flex: 1, fontSize: 12, color: T.textMid, fontWeight: 600 }}>{h.nama_produk || `Produk #${h.produk_id}`}</div>
                                   {editingHargaId === h.id ? (
                                     <>
-                                      <input
-                                        value={editHargaNilai}
-                                        onChange={e => setEditHargaNilai(formatIDR(e.target.value))}
-                                        style={{ ...inputStyle, width: 140, fontFamily: T.fontMono, fontSize: 12 }}
-                                        autoFocus
-                                        onKeyDown={e => e.key === "Enter" && updateHarga(h.id, p.id)}
-                                      />
+                                      <input value={editHargaNilai} onChange={e => setEditHargaNilai(formatIDR(e.target.value))} style={{ ...inputStyle, width: 140, fontFamily: T.fontMono, fontSize: 12 }} autoFocus onKeyDown={e => e.key === "Enter" && updateHarga(h.id, p.id)} />
                                       <button onClick={() => updateHarga(h.id, p.id)} style={{ padding: "5px 12px", background: T.green + "20", border: `1px solid ${T.green}40`, color: T.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>✓</button>
                                       <button onClick={() => setEditingHargaId(null)} style={{ padding: "5px 8px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
                                     </>
@@ -916,8 +1091,6 @@ export default function AdminPage() {
                               ))}
                             </div>
                           )}
-
-                          {/* Form tambah harga khusus */}
                           {produkBelumDiset.length > 0 && (
                             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                               <div style={{ flex: 2 }}>
@@ -931,19 +1104,9 @@ export default function AdminPage() {
                               </div>
                               <div style={{ flex: 1 }}>
                                 <Label>HARGA KHUSUS</Label>
-                                <input
-                                  value={hargaNilai}
-                                  onChange={e => setHargaNilai(formatIDR(e.target.value))}
-                                  placeholder="0"
-                                  style={{ ...inputStyle, fontFamily: T.fontMono, fontSize: 12 }}
-                                  onKeyDown={e => e.key === "Enter" && simpanHarga(p.id)}
-                                />
+                                <input value={hargaNilai} onChange={e => setHargaNilai(formatIDR(e.target.value))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono, fontSize: 12 }} onKeyDown={e => e.key === "Enter" && simpanHarga(p.id)} />
                               </div>
-                              <button
-                                onClick={() => simpanHarga(p.id)}
-                                disabled={savingHarga}
-                                style={{ padding: "8px 16px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap", marginBottom: 1 }}
-                              >
+                              <button onClick={() => simpanHarga(p.id)} disabled={savingHarga} style={{ padding: "8px 16px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap", marginBottom: 1 }}>
                                 {savingHarga ? "..." : "+ Simpan"}
                               </button>
                             </div>
@@ -953,7 +1116,6 @@ export default function AdminPage() {
                           )}
                         </div>
                       )}
-
                     </div>
                   ))}
                 </div>

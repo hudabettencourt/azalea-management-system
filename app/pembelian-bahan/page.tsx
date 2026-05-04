@@ -4,26 +4,24 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 
-type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number; aktif: boolean | null };
+type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number; aktif: boolean | null; updated_at: string | null };
 type PembelianBahan = { id: number; tanggal: string; supplier_nama: string; total_bayar: number; metode_bayar: string; status_bayar: string; total_item: number; created_at: string };
 type HutangBahan = { id: number; supplier_nama: string; nominal: number; status: string; created_at: string };
 type ItemBeli = { bahan_id: string; nama: string; qty: string; harga_beli: string; satuan: string };
 type Toast = { msg: string; type: "success" | "error" | "info" };
-type EditBahan = { id: number; nama: string; satuan: string; kategori: string } | null;
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => 
-  new Date(s).toLocaleDateString("id-ID", { 
-    day: "2-digit", 
-    month: "short", 
+const tanggalFmt = (s: string) =>
+  new Date(s).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Asia/Jakarta", // ✅ Penting!
+    timeZone: "Asia/Jakarta",
   });
 
 const SATUAN_LIST = ["kg", "liter", "pack", "pcs", "roll", "karung", "lusin", "box", "gram", "ml"];
-const KATEGORI_LIST = ["Bahan Baku", "Bahan Penolong", "Packaging"];
 const PAGE_SIZE = 10;
 
 export default function PembelianBahanPage() {
@@ -33,18 +31,13 @@ export default function PembelianBahanPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [activeTab, setActiveTab] = useState<"beli" | "riwayat" | "hutang" | "master">("beli");
+  const [activeTab, setActiveTab] = useState<"beli" | "riwayat" | "hutang" | "stok">("beli");
 
   // Form pembelian
   const [supplierNama, setSupplierNama] = useState("");
   const [metodeBayar, setMetodeBayar] = useState("Tunai");
   const [catatan, setCatatan] = useState("");
   const [items, setItems] = useState<ItemBeli[]>([{ bahan_id: "", nama: "", qty: "", harga_beli: "", satuan: "" }]);
-
-  // Form master bahan baru
-  const [namaBaru, setNamaBaru] = useState("");
-  const [satuanBaru, setSatuanBaru] = useState("kg");
-  const [kategoriBaru, setKategoriBaru] = useState("Bahan Baku");
 
   // Filter & sort riwayat
   const [filterSupplier, setFilterSupplier] = useState("");
@@ -54,14 +47,9 @@ export default function PembelianBahanPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Filter master
-  const [filterKategori, setFilterKategori] = useState("Semua");
-  const [searchBahan, setSearchBahan] = useState("");
-
-  // Edit bahan
-  const [editBahan, setEditBahan] = useState<EditBahan>(null);
-  const [editSubmitting, setEditSubmitting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  // Filter stok bahan
+  const [filterKategoriStok, setFilterKategoriStok] = useState("Semua");
+  const [searchStok, setSearchStok] = useState("");
 
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
@@ -90,7 +78,7 @@ export default function PembelianBahanPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ─── Riwayat: filter + sort + paginate ─────────────────────────────────────
+  // ─── Riwayat: filter + sort + paginate ──────────────────────────────────────
   const riwayatFiltered = useMemo(() => {
     let data = [...riwayat];
     if (filterSupplier.trim()) {
@@ -117,15 +105,15 @@ export default function PembelianBahanPage() {
     setCurrentPage(1);
   };
 
-  // ─── Master bahan: filter ───────────────────────────────────────────────────
+  // ─── Stok bahan: filter ─────────────────────────────────────────────────────
   const kategoriList = Array.from(new Set(bahan.map(b => b.kategori).filter(Boolean)));
   const bahanFiltered = useMemo(() => {
-    let data = filterKategori === "Semua" ? bahan : bahan.filter(b => b.kategori === filterKategori);
-    if (searchBahan.trim()) data = data.filter(b => b.nama.toLowerCase().includes(searchBahan.toLowerCase()));
+    let data = filterKategoriStok === "Semua" ? bahan : bahan.filter(b => b.kategori === filterKategoriStok);
+    if (searchStok.trim()) data = data.filter(b => b.nama.toLowerCase().includes(searchStok.toLowerCase()));
     return data;
-  }, [bahan, filterKategori, searchBahan]);
+  }, [bahan, filterKategoriStok, searchStok]);
 
-  // ─── Form helpers ───────────────────────────────────────────────────────────
+  // ─── Form helpers ────────────────────────────────────────────────────────────
   const addItem = () => setItems([...items, { bahan_id: "", nama: "", qty: "", harga_beli: "", satuan: "" }]);
   const removeItem = (idx: number) => { if (items.length > 1) setItems(items.filter((_, i) => i !== idx)); };
   const updateItem = (idx: number, field: keyof ItemBeli, value: string) => {
@@ -140,12 +128,12 @@ export default function PembelianBahanPage() {
   };
 
   const totalBayar = Math.round(
-  items.reduce((acc, item) => 
-    acc + (parseFloat(item.qty || "0") * parseInt(item.harga_beli || "0")), 0
-  )
-);
+    items.reduce((acc, item) =>
+      acc + (parseFloat(item.qty || "0") * parseInt(item.harga_beli || "0")), 0
+    )
+  );
 
-  // ─── Simpan pembelian ───────────────────────────────────────────────────────
+  // ─── Simpan pembelian ────────────────────────────────────────────────────────
   const simpanPembelian = async () => {
     if (!supplierNama.trim()) return showToast("Isi nama supplier!", "error");
     const validItems = items.filter(i => i.bahan_id && i.qty && i.harga_beli);
@@ -167,20 +155,31 @@ export default function PembelianBahanPage() {
 
       if (errPembelian) throw new Error("Gagal simpan: " + errPembelian.message);
 
+      const now = new Date().toISOString();
+
       for (const item of validItems) {
         const qty = parseFloat(item.qty);
         const harga = parseInt(item.harga_beli);
         const bahanId = parseInt(item.bahan_id);
-        const { error: errDetail } = await supabase.from("detail_pembelian_bahan").insert([{ pembelian_bahan_id: pembelianData.id, bahan_baku_id: bahanId, qty, harga_beli: harga, }]);
+        const { error: errDetail } = await supabase.from("detail_pembelian_bahan").insert([{ pembelian_bahan_id: pembelianData.id, bahan_baku_id: bahanId, qty, harga_beli: harga }]);
         if (errDetail) throw new Error("Gagal simpan detail: " + errDetail.message);
+
         const { error: errRpc } = await supabase.rpc("update_hpp_bahan", { p_bahan_id: bahanId, p_qty: qty, p_harga_beli: harga });
         if (errRpc) {
           const bahanData = bahan.find(b => b.id === bahanId);
           if (bahanData) {
             const stokBaru = (bahanData.stok || 0) + qty;
             const hppBaru = stokBaru > 0 ? Math.round(((bahanData.stok || 0) * (bahanData.harga_beli_avg || 0) + qty * harga) / stokBaru) : harga;
-            await supabase.from("bahan_baku").update({ stok: stokBaru, harga_beli_avg: hppBaru, total_nilai_stok: stokBaru * hppBaru }).eq("id", bahanId);
+            await supabase.from("bahan_baku").update({
+              stok: stokBaru,
+              harga_beli_avg: hppBaru,
+              total_nilai_stok: stokBaru * hppBaru,
+              updated_at: now,
+            }).eq("id", bahanId);
           }
+        } else {
+          // RPC berhasil — tetap update updated_at
+          await supabase.from("bahan_baku").update({ updated_at: now }).eq("id", bahanId);
         }
       }
 
@@ -212,39 +211,9 @@ export default function PembelianBahanPage() {
     fetchData();
   };
 
-  const tambahBahan = async () => {
-    if (!namaBaru.trim()) return showToast("Isi nama bahan!", "error");
-    const { error } = await supabase.from("bahan_baku").insert([{ nama: namaBaru.trim(), satuan: satuanBaru, kategori: kategoriBaru, aktif: true, stok: 0, harga_beli_avg: 0, total_nilai_stok: 0 }]);
-    if (error) return showToast("Gagal tambah bahan: " + error.message, "error");
-    showToast(`${namaBaru} berhasil ditambahkan!`);
-    setNamaBaru("");
-    fetchData();
-  };
-
-  // ─── Edit bahan ─────────────────────────────────────────────────────────────
-  const simpanEditBahan = async () => {
-    if (!editBahan) return;
-    if (!editBahan.nama.trim()) return showToast("Nama tidak boleh kosong!", "error");
-    setEditSubmitting(true);
-    const { error } = await supabase.from("bahan_baku").update({ nama: editBahan.nama.trim(), satuan: editBahan.satuan, kategori: editBahan.kategori }).eq("id", editBahan.id);
-    setEditSubmitting(false);
-    if (error) return showToast("Gagal update: " + error.message, "error");
-    showToast("Bahan berhasil diperbarui!");
-    setEditBahan(null);
-    fetchData();
-  };
-
-  const softDeleteBahan = async (id: number) => {
-    const { error } = await supabase.from("bahan_baku").update({ aktif: false }).eq("id", id);
-    if (error) return showToast("Gagal hapus: " + error.message, "error");
-    showToast("Bahan dihapus (soft delete)");
-    setConfirmDelete(null);
-    fetchData();
-  };
-
   const totalHutang = hutang.reduce((a, b) => a + b.nominal, 0);
 
-  // ─── Styles ─────────────────────────────────────────────────────────────────
+  // ─── Styles ──────────────────────────────────────────────────────────────────
   const C = {
     bg: "#100c16", card: "#1a1425", border: "#2a1f3d",
     text: "#e2d9f3", muted: "#7c6d8a", dim: "#5a4f6a",
@@ -303,54 +272,6 @@ export default function PembelianBahanPage() {
         }}>{toast.msg}</div>
       )}
 
-      {/* Edit Modal */}
-      {editBahan && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,8,20,0.85)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: "16px", padding: "28px", width: "400px", maxWidth: "90vw" }}>
-            <h3 style={{ margin: "0 0 20px", fontFamily: "'DM Serif Display', serif", color: C.text, fontWeight: 400 }}>Edit Bahan</h3>
-            <div style={{ marginBottom: "14px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>NAMA BAHAN</label>
-              <input value={editBahan.nama} onChange={e => setEditBahan({ ...editBahan, nama: e.target.value })} style={inputS} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "20px" }}>
-              <div>
-                <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>SATUAN</label>
-                <select value={editBahan.satuan} onChange={e => setEditBahan({ ...editBahan, satuan: e.target.value })} style={inputS}>
-                  {SATUAN_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>KATEGORI</label>
-                <select value={editBahan.kategori} onChange={e => setEditBahan({ ...editBahan, kategori: e.target.value })} style={inputS}>
-                  {KATEGORI_LIST.map(k => <option key={k} value={k}>{k}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button onClick={() => setEditBahan(null)} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "8px", color: C.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Batal</button>
-              <button onClick={simpanEditBahan} disabled={editSubmitting} style={{ flex: 2, padding: "10px", background: C.accent + "30", border: `1px solid ${C.accent}60`, borderRadius: "8px", color: C.accent, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 700 }}>
-                {editSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Delete Modal */}
-      {confirmDelete !== null && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,8,20,0.85)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: C.card, border: `1px solid #f8717140`, borderRadius: "16px", padding: "28px", width: "360px", maxWidth: "90vw", textAlign: "center" }}>
-            <div style={{ fontSize: "32px", marginBottom: "12px" }}>🗑</div>
-            <h3 style={{ margin: "0 0 8px", color: C.text, fontFamily: "'DM Serif Display', serif", fontWeight: 400 }}>Hapus Bahan?</h3>
-            <p style={{ color: C.muted, fontSize: "13px", margin: "0 0 20px" }}>Bahan akan disembunyikan (soft delete). Data historis tetap aman.</p>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button onClick={() => setConfirmDelete(null)} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: "8px", color: C.muted, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Batal</button>
-              <button onClick={() => softDeleteBahan(confirmDelete)} style={{ flex: 1, padding: "10px", background: "#f8717120", border: "1px solid #f8717140", borderRadius: "8px", color: C.danger, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 700 }}>Hapus</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div style={{ padding: "28px 24px", fontFamily: "'DM Sans', sans-serif", background: C.bg, minHeight: "100vh", maxWidth: "960px", margin: "0 auto" }}>
 
         {/* Header */}
@@ -384,7 +305,7 @@ export default function PembelianBahanPage() {
           <button onClick={() => setActiveTab("hutang")} style={tabBtn(activeTab === "hutang", C.warn)}>
             💳 Hutang {hutang.length > 0 && `(${hutang.length})`}
           </button>
-          <button onClick={() => setActiveTab("master")} style={tabBtn(activeTab === "master", "#60a5fa")}>📦 Master Bahan</button>
+          <button onClick={() => setActiveTab("stok")} style={tabBtn(activeTab === "stok", "#60a5fa")}>📦 Stok Bahan</button>
         </div>
 
         {/* ─── TAB: INPUT BELI ─── */}
@@ -416,7 +337,7 @@ export default function PembelianBahanPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                 <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em" }}>
                   BAHAN YANG DIBELI
-                  {bahan.length === 0 && <span style={{ color: C.danger, marginLeft: "8px", fontWeight: 400 }}>⚠ Tambah bahan di tab Master dulu</span>}
+                  {bahan.length === 0 && <span style={{ color: C.danger, marginLeft: "8px", fontWeight: 400 }}>⚠ Tambah bahan di Admin → Master Bahan dulu</span>}
                 </label>
                 <button onClick={addItem} style={{ background: C.success + "15", border: `1px solid ${C.success}40`, color: C.success, padding: "5px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>+ Tambah Bahan</button>
               </div>
@@ -495,7 +416,6 @@ export default function PembelianBahanPage() {
           <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
             <h3 style={{ margin: "0 0 16px", fontFamily: "'DM Serif Display', serif", color: C.text, fontWeight: 400 }}>Riwayat Pembelian Bahan</h3>
 
-            {/* Filter bar */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "10px", marginBottom: "16px" }}>
               <input
                 type="text" value={filterSupplier} placeholder="🔍 Cari supplier..."
@@ -515,7 +435,6 @@ export default function PembelianBahanPage() {
               </select>
             </div>
 
-            {/* Sort header */}
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "8px", marginBottom: "8px", paddingBottom: "8px", borderBottom: `1px solid ${C.border}` }}>
               {[
                 { label: "Supplier", field: "supplier_nama" as const },
@@ -557,7 +476,6 @@ export default function PembelianBahanPage() {
               </div>
             ))}
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", paddingTop: "12px", borderTop: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: "12px", color: C.muted }}>
@@ -610,95 +528,84 @@ export default function PembelianBahanPage() {
           </div>
         )}
 
-        {/* ─── TAB: MASTER BAHAN ─── */}
-        {activeTab === "master" && (
-          <div>
-            {/* Form tambah */}
-            <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}`, marginBottom: "16px" }}>
-              <h3 style={{ margin: "0 0 16px", fontFamily: "'DM Serif Display', serif", fontSize: "16px", color: C.text, fontWeight: 400 }}>+ Tambah Bahan Baru</h3>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: "10px", alignItems: "end" }}>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>NAMA BAHAN</label>
-                  <input type="text" value={namaBaru} onChange={e => setNamaBaru(e.target.value)} onKeyDown={e => e.key === "Enter" && tambahBahan()} placeholder="Nama bahan baru" style={inputS} />
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>SATUAN</label>
-                  <select value={satuanBaru} onChange={e => setSatuanBaru(e.target.value)} style={inputS}>
-                    {SATUAN_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: C.muted, display: "block", marginBottom: "6px", letterSpacing: "0.08em" }}>KATEGORI</label>
-                  <select value={kategoriBaru} onChange={e => setKategoriBaru(e.target.value)} style={inputS}>
-                    {KATEGORI_LIST.map(k => <option key={k} value={k}>{k}</option>)}
-                  </select>
-                </div>
-                <button onClick={tambahBahan} style={{ padding: "9px 16px", background: "#60a5fa20", border: "1px solid #60a5fa40", color: "#60a5fa", borderRadius: "8px", cursor: "pointer", fontWeight: 700, fontSize: "13px", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
-                  + Tambah
-                </button>
+        {/* ─── TAB: STOK BAHAN (read-only) ─── */}
+        {activeTab === "stok" && (
+          <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: "18px", color: C.text, fontWeight: 400 }}>
+                  Stok Bahan ({bahan.length})
+                </h3>
+                <p style={{ margin: "3px 0 0", fontSize: "11px", color: C.muted, fontFamily: "'DM Mono', monospace" }}>
+                  Read-only · CRUD bahan di Admin → Master Bahan
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                <input
+                  type="text" value={searchStok}
+                  onChange={e => setSearchStok(e.target.value)}
+                  placeholder="🔍 Cari nama..."
+                  style={{ ...inputS, width: "140px", padding: "6px 10px" }}
+                />
+                {["Semua", ...kategoriList].map(k => (
+                  <button key={k} onClick={() => setFilterKategoriStok(k)} style={{
+                    padding: "5px 10px", borderRadius: "6px",
+                    border: `1px solid ${filterKategoriStok === k ? "#60a5fa60" : C.border}`,
+                    background: filterKategoriStok === k ? "#60a5fa20" : "transparent",
+                    color: filterKategoriStok === k ? "#60a5fa" : C.muted,
+                    fontSize: "11px", fontWeight: 700, cursor: "pointer",
+                  }}>{k}</button>
+                ))}
               </div>
             </div>
 
-            {/* List bahan */}
-            <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-                <h3 style={{ margin: 0, fontFamily: "'DM Serif Display', serif", fontSize: "16px", color: C.text, fontWeight: 400 }}>Daftar Bahan ({bahan.length})</h3>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                  <input type="text" value={searchBahan} onChange={e => setSearchBahan(e.target.value)} placeholder="🔍 Cari nama..." style={{ ...inputS, width: "140px", padding: "6px 10px" }} />
-                  {["Semua", ...kategoriList].map(k => (
-                    <button key={k} onClick={() => setFilterKategori(k)} style={{
-                      padding: "5px 10px", borderRadius: "6px", border: `1px solid ${filterKategori === k ? C.accent + "60" : C.border}`,
-                      background: filterKategori === k ? C.accent + "20" : "transparent",
-                      color: filterKategori === k ? C.accent : C.muted,
-                      fontSize: "11px", fontWeight: 700, cursor: "pointer",
-                    }}>{k}</button>
-                  ))}
-                </div>
+            {/* Header */}
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1.2fr", gap: "8px", paddingBottom: "8px", borderBottom: `1px solid ${C.border}`, marginBottom: "4px" }}>
+              {["NAMA BAHAN", "KATEGORI", "STOK", "HPP / SATUAN", "TERAKHIR DIPERBARUI"].map(h => (
+                <div key={h} style={{ fontSize: "10px", fontWeight: 700, color: C.dim, letterSpacing: "0.08em" }}>{h}</div>
+              ))}
+            </div>
+
+            {bahanFiltered.length === 0 && (
+              <div style={{ textAlign: "center", color: C.dim, padding: "32px", fontSize: "14px" }}>
+                {searchStok ? "Tidak ditemukan." : "Belum ada bahan."}
               </div>
+            )}
 
-              {bahanFiltered.length === 0 && (
-                <div style={{ textAlign: "center", color: C.dim, padding: "32px", fontSize: "14px" }}>
-                  {searchBahan ? "Tidak ditemukan." : "Belum ada bahan. Tambahkan di atas!"}
-                </div>
-              )}
-
-              {bahanFiltered.map(b => {
-                const catColor = b.kategori === "Bahan Baku" ? "#60a5fa" : b.kategori === "Bahan Penolong" ? C.warn : C.accent;
-                return (
-                  <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}20` }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <span style={{ background: catColor + "20", color: catColor, padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700 }}>
-                        {b.kategori}
-                      </span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: "14px", color: C.text }}>{b.nama}</div>
-                        <div style={{ fontSize: "11px", color: C.dim, fontFamily: "'DM Mono', monospace" }}>
-                          HPP: {rupiahFmt(b.harga_beli_avg)}/{b.satuan}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 700, fontSize: "15px", color: b.stok <= 0 ? C.danger : "#f0eaff", fontFamily: "'DM Mono', monospace" }}>
-                          {b.stok} {b.satuan}
-                        </div>
-                        {b.stok <= 0 && <div style={{ fontSize: "10px", color: C.danger, fontWeight: 700 }}>⚠ Habis</div>}
-                      </div>
-                      <button onClick={() => setEditBahan({ id: b.id, nama: b.nama, satuan: b.satuan, kategori: b.kategori })}
-                        style={{ background: C.accent + "15", border: `1px solid ${C.accent}30`, color: C.accent, padding: "5px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 700 }}>
-                        Edit
-                      </button>
-                      <button onClick={() => setConfirmDelete(b.id)}
-                        style={{ background: C.danger + "15", border: `1px solid ${C.danger}30`, color: C.danger, padding: "5px 10px", borderRadius: "6px", cursor: "pointer", fontSize: "11px", fontWeight: 700 }}>
-                        Hapus
-                      </button>
-                    </div>
+            {bahanFiltered.map(b => {
+              const catColor = b.kategori === "Bahan Baku" ? "#60a5fa" : b.kategori === "Bahan Penolong" ? C.warn : C.accent;
+              return (
+                <div key={b.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1.2fr", gap: "8px", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}20` }}>
+                  <div style={{ fontWeight: 600, fontSize: "13px", color: C.text }}>{b.nama}</div>
+                  <div>
+                    <span style={{ background: catColor + "20", color: catColor, padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700 }}>
+                      {b.kategori}
+                    </span>
                   </div>
-                );
-              })}
+                  <div style={{
+                    fontWeight: 700, fontSize: "14px",
+                    color: b.stok <= 0 ? C.danger : "#f0eaff",
+                    fontFamily: "'DM Mono', monospace"
+                  }}>
+                    {b.stok} <span style={{ fontSize: "11px", fontWeight: 400, color: C.muted }}>{b.satuan}</span>
+                    {b.stok <= 0 && <div style={{ fontSize: "10px", color: C.danger, fontWeight: 700 }}>⚠ Habis</div>}
+                  </div>
+                  <div style={{ fontSize: "12px", color: C.accent, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>
+                    {rupiahFmt(b.harga_beli_avg)}/{b.satuan}
+                  </div>
+                  <div style={{ fontSize: "11px", color: C.muted, fontFamily: "'DM Mono', monospace" }}>
+                    {b.updated_at ? tanggalFmt(b.updated_at) : <span style={{ color: C.dim }}>—</span>}
+                  </div>
+                </div>
+              );
+            })}
+
+            <div style={{ marginTop: "16px", background: "#60a5fa08", border: "1px solid #60a5fa20", borderRadius: "10px", padding: "12px 16px", fontSize: "12px", color: "#60a5fa", fontFamily: "'DM Mono', monospace" }}>
+              ℹ Untuk menambah, mengedit, atau menghapus bahan — buka <strong>Admin → Master Bahan Baku</strong>
             </div>
           </div>
         )}
+
       </div>
     </Sidebar>
   );

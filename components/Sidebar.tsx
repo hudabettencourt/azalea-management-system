@@ -19,30 +19,30 @@ const MENU_GROUPS: MenuGroup[] = [
   {
     group: "Transaksi",
     items: [
-      { label: "Penjualan",     href: "/penjualan",       icon: "🛍️" },
-      { label: "Pembelian Bahan",   href: "/pembelian-bahan", icon: "🧪" },
-      { label: "Pembelian Reseller",href: "/pembelian",        icon: "📦" },
-      { label: "Kas",           href: "/kas",             icon: "💰" },
-      { label: "Fee Platform",     href: "/fee-platform",       icon: "💰" }
+      { label: "Penjualan",          href: "/penjualan",       icon: "🛍️" },
+      { label: "Pembelian Bahan",    href: "/pembelian-bahan", icon: "🧪" },
+      { label: "Pembelian Reseller", href: "/pembelian",       icon: "📦" },
+      { label: "Kas",                href: "/kas",             icon: "💰" },
+      { label: "Fee Platform",       href: "/fee-platform",    icon: "💰" },
     ],
   },
   {
     group: "Operasional",
     items: [
-      { label: "Produksi",      href: "/produksi",        icon: "⚙️" },
-      { label: "Penggajian",    href: "/penggajian",      icon: "👥" },
+      { label: "Produksi",   href: "/produksi",   icon: "⚙️" },
+      { label: "Penggajian", href: "/penggajian", icon: "👥" },
     ],
   },
   {
     group: "Laporan",
     items: [
-      { label: "Laporan",       href: "/laporan",         icon: "📊" },
+      { label: "Laporan", href: "/laporan", icon: "📊" },
     ],
   },
   {
     group: "Pengaturan",
     items: [
-      { label: "Admin",         href: "/admin",           icon: "🔐", roles: ["owner", "super_admin"] },
+      { label: "Admin", href: "/admin", icon: "🔐", roles: ["owner", "super_admin"] },
     ],
   },
 ];
@@ -72,18 +72,35 @@ export default function Sidebar({ children }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-  supabase.auth.getUser().then(async ({ data }) => {
-    if (!data.user) return;
-    setUserEmail(data.user.email ?? null);
-    // ✅ Ambil role dari tabel profiles (bukan user_metadata)
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", data.user.id)
-      .single();
-    setRole(profile?.role ?? "staff");
-  });
-}, []);
+    const fetchRole = async (userId: string, email: string) => {
+      setUserEmail(email);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .single();
+      setRole(profile?.role ?? "staff");
+    };
+
+    // Cek session yang sudah ada dulu
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchRole(session.user.id, session.user.email ?? "");
+      }
+    });
+
+    // Subscribe perubahan auth (login, token refresh, dll)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        fetchRole(session.user.id, session.user.email ?? "");
+      } else {
+        setRole(null);
+        setUserEmail(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -91,7 +108,6 @@ export default function Sidebar({ children }: SidebarProps) {
   };
 
   const NavItem = ({ item }: { item: MenuGroup["items"][0] }) => {
-    // Sembunyikan menu yang ada role restriction
     if (item.roles && (!role || !item.roles.includes(role))) return null;
 
     const active =
@@ -165,11 +181,10 @@ export default function Sidebar({ children }: SidebarProps) {
         </button>
       </div>
 
-      {/* Navigation with groups */}
+      {/* Navigation */}
       <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px", overflowY: "auto" }}>
         {MENU_GROUPS.map((group, gi) => (
           <div key={gi} style={{ marginBottom: "4px" }}>
-            {/* Group label — hanya tampil kalau tidak collapsed dan ada nama group */}
             {!collapsed && group.group && (
               <div style={{
                 fontSize: "9px",
@@ -183,7 +198,6 @@ export default function Sidebar({ children }: SidebarProps) {
                 {group.group}
               </div>
             )}
-            {/* Divider kalau collapsed */}
             {collapsed && gi > 0 && (
               <div style={{ height: "1px", background: C.border, margin: "6px 8px" }} />
             )}
@@ -283,12 +297,10 @@ export default function Sidebar({ children }: SidebarProps) {
         *::-webkit-scrollbar-thumb:hover { background: ${C.accent}40; }
       `}</style>
 
-      {/* Mobile menu button */}
       <button className="sidebar-mobile-button" onClick={() => setMobileOpen(true)} aria-label="Open menu">
         ☰
       </button>
 
-      {/* Mobile overlay + drawer */}
       {mobileOpen && (
         <>
           <div className="sidebar-mobile-overlay" onClick={() => setMobileOpen(false)} />
@@ -297,7 +309,6 @@ export default function Sidebar({ children }: SidebarProps) {
       )}
 
       <div style={{ display: "flex", minHeight: "100vh", background: C.bg }}>
-        {/* Desktop sidebar */}
         <div
           className="sidebar-desktop"
           style={{
@@ -317,7 +328,6 @@ export default function Sidebar({ children }: SidebarProps) {
           <SidebarContent />
         </div>
 
-        {/* Main content */}
         <div style={{ flex: 1, minWidth: 0, overflowX: "hidden" }}>
           {children}
         </div>

@@ -9,36 +9,34 @@ type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; s
 type StokBarang = { id: number; nama_produk: string; jumlah_stok: number; sku: string | null; berat_kg: number | null; satuan: string };
 type PresetKemasan = { bahan_baku_id: number; berat_gram: number; nama_bahan: string; harga_beli_avg: number };
 
-// 1 baris output = 1 varian produk dalam batch ini
 type OutputItem = {
   stok_barang_id: string;
-  qty: string;           // jumlah unit
-  // kemasan — bisa multiple, pre-fill dari preset tapi bisa diedit
+  qty: string;
   kemasan: KemasamItem[];
 };
 type KemasamItem = {
   bahan_baku_id: string;
   nama_bahan: string;
-  berat_gram: string;    // berat kemasan per unit output (gram)
+  berat_gram: string;
   harga_beli_avg: number;
 };
 
 type BahanPakai = { bahan_id: string; nama: string; qty: string; satuan: string; stok_tersedia: number };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
-// Riwayat batch — header
 type BatchRiwayat = {
   id: number;
   total_hpp: number;
   total_kg_output: number;
   gaji_operator: number;
+  gaji_packing: number;
+  gaji_borongan: number;
   biaya_gas: number;
   operator: string | null;
   catatan: string | null;
   created_at: string;
 };
 
-// Detail output per batch
 type OutputRiwayat = {
   id: number;
   batch_id: number;
@@ -90,13 +88,15 @@ export default function ProduksiPage() {
   // ── FORM HEADER BATCH ──
   const [operator, setOperator] = useState("");
   const [gajiOperator, setGajiOperator] = useState("");
+  const [gajiPacking, setGajiPacking] = useState("");
+  const [gajiBorongan, setGajiBorongan] = useState("");
   const [biayaGas, setBiayaGas] = useState("");
   const [catatan, setCatatan] = useState("");
   const [bahanPakai, setBahanPakai] = useState<BahanPakai[]>([
     { bahan_id: "", nama: "", qty: "", satuan: "", stok_tersedia: 0 }
   ]);
 
-  // ── FORM OUTPUT (multi varian) ──
+  // ── FORM OUTPUT ──
   const [outputItems, setOutputItems] = useState<OutputItem[]>([emptyOutput()]);
 
   // ── RIWAYAT ──
@@ -118,7 +118,10 @@ export default function ProduksiPage() {
       const [resBahan, resStok, resBatch] = await Promise.all([
         supabase.from("bahan_baku").select("*").or("aktif.eq.true,aktif.is.null").order("kategori").order("nama"),
         supabase.from("stok_barang").select("id, nama_produk, jumlah_stok, sku, berat_kg, satuan").order("nama_produk"),
-        supabase.from("produksi_batch").select("id, total_hpp, total_kg_output, gaji_operator, biaya_gas, operator, catatan, created_at").order("created_at", { ascending: false }).limit(200),
+        supabase.from("produksi_batch")
+          .select("id, total_hpp, total_kg_output, gaji_operator, gaji_packing, gaji_borongan, biaya_gas, operator, catatan, created_at")
+          .order("created_at", { ascending: false })
+          .limit(200),
       ]);
       if (resBahan.error) throw new Error("Gagal load bahan: " + resBahan.error.message);
       if (resStok.error) throw new Error("Gagal load stok: " + resStok.error.message);
@@ -135,7 +138,7 @@ export default function ProduksiPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── FETCH PRESET KEMASAN untuk produk tertentu ──
+  // ── FETCH PRESET KEMASAN ──
   const fetchPreset = async (stokBarangId: number): Promise<PresetKemasan[]> => {
     const { data } = await supabase
       .from("produk_kemasan_default")
@@ -170,7 +173,6 @@ export default function ProduksiPage() {
   const updateOutputProduk = async (idx: number, stokBarangId: string) => {
     const items = [...outputItems];
     items[idx] = { ...items[idx], stok_barang_id: stokBarangId, kemasan: [] };
-    // Auto-fetch preset kemasan
     if (stokBarangId) {
       const presets = await fetchPreset(parseInt(stokBarangId));
       items[idx].kemasan = presets.map(p => ({
@@ -220,11 +222,14 @@ export default function ProduksiPage() {
     const b = bahan.find(x => x.id === parseInt(item.bahan_id));
     return sum + (parseFloat(item.qty) * (b?.harga_beli_avg || 0));
   }, 0);
-  const gajiOp = toAngka(gajiOperator);
-  const gasOp = toAngka(biayaGas);
-  const totalHPPBatch = hppBahan + gajiOp + gasOp;
 
-  // Total kg output = sum(qty × berat_kg produk)
+  const gajiOp = toAngka(gajiOperator);
+  const gajiPack = toAngka(gajiPacking);
+  const gajiBor = toAngka(gajiBorongan);
+  const gasOp = toAngka(biayaGas);
+  const totalGaji = gajiOp + gajiPack + gajiBor;
+  const totalHPPBatch = hppBahan + totalGaji + gasOp;
+
   const totalKgOutput = validOutput.reduce((sum, o) => {
     const produk = stokBarang.find(s => s.id === parseInt(o.stok_barang_id));
     return sum + (parseFloat(o.qty) * (produk?.berat_kg || 0));
@@ -232,20 +237,17 @@ export default function ProduksiPage() {
 
   const hppPerKg = totalKgOutput > 0 ? totalHPPBatch / totalKgOutput : 0;
 
-  // HPP per unit tiap output
   const calcHppOutput = (o: OutputItem) => {
     const produk = stokBarang.find(s => s.id === parseInt(o.stok_barang_id));
     const beratKg = produk?.berat_kg || 0;
     const hppAdonan = hppPerKg * beratKg;
     const hppKemasan = o.kemasan.reduce((sum, k) => {
       if (!k.bahan_baku_id || !k.berat_gram) return sum;
-      const beratKgKemasan = parseFloat(k.berat_gram) / 1000;
-      return sum + beratKgKemasan * k.harga_beli_avg;
+      return sum + (parseFloat(k.berat_gram) / 1000) * k.harga_beli_avg;
     }, 0);
     return { hppAdonan, hppKemasan, hppPerUnit: hppAdonan + hppKemasan };
   };
 
-  // Stok warnings
   const stokWarnings = validBahan.filter(i => {
     const b = bahan.find(x => x.id === parseInt(i.bahan_id));
     return b && b.stok < parseFloat(i.qty);
@@ -263,13 +265,15 @@ export default function ProduksiPage() {
       const timestampWIB = new Date().toISOString().replace("Z", "+07:00");
       const totalHppBulat = Math.round(totalHPPBatch);
 
-      // 1. Insert produksi_batch header
+      // 1. Insert produksi_batch
       const { data: batchData, error: errBatch } = await supabase
         .from("produksi_batch")
         .insert([{
           total_hpp: totalHppBulat,
           total_kg_output: Math.round(totalKgOutput * 1000) / 1000,
           gaji_operator: Math.round(gajiOp),
+          gaji_packing: Math.round(gajiPack),
+          gaji_borongan: Math.round(gajiBor),
           biaya_gas: Math.round(gasOp),
           operator: operator.trim() || null,
           catatan: catatan.trim() || null,
@@ -279,7 +283,7 @@ export default function ProduksiPage() {
         .single();
       if (errBatch) throw new Error("Gagal simpan batch: " + errBatch.message);
 
-      // 2. Insert detail bahan + kurangi stok bahan
+      // 2. Insert detail bahan + kurangi stok
       for (const item of validBahan) {
         const qtyBahan = parseFloat(item.qty);
         const bahanId = parseInt(item.bahan_id);
@@ -301,10 +305,9 @@ export default function ProduksiPage() {
       for (const o of validOutput) {
         const produk = stokBarang.find(s => s.id === parseInt(o.stok_barang_id));
         const qty = parseFloat(o.qty);
-        const { hppAdonan, hppKemasan, hppPerUnit } = calcHppOutput(o);
+        const { hppKemasan, hppPerUnit } = calcHppOutput(o);
         const hppPerUnitBulat = Math.round(hppPerUnit);
 
-        // Insert detail_produksi_output
         const { data: outputData, error: errOutput } = await supabase
           .from("detail_produksi_output")
           .insert([{
@@ -317,7 +320,6 @@ export default function ProduksiPage() {
           .single();
         if (errOutput) throw new Error("Gagal simpan output: " + errOutput.message);
 
-        // Insert kemasan per output
         for (const k of o.kemasan) {
           if (!k.bahan_baku_id || !k.berat_gram || parseFloat(k.berat_gram) <= 0) continue;
           const beratGram = parseFloat(k.berat_gram);
@@ -329,7 +331,6 @@ export default function ProduksiPage() {
             berat_gram: beratGram,
             hpp_kemasan: hppKemasanUnit,
           }]);
-          // Kurangi stok kemasan (bahan baku) sebesar berat × qty output
           const bK = bahan.find(x => x.id === parseInt(k.bahan_baku_id));
           if (bK) {
             const pakai = beratKgK * qty;
@@ -341,25 +342,36 @@ export default function ProduksiPage() {
           }
         }
 
-        // Update stok produk jadi (weighted average HPP)
         const stokLama = produk?.jumlah_stok || 0;
         const stokBaru = stokLama + qty;
-        const { data: hppLama } = await supabase
-          .from("stok_barang")
-          .select("hpp_per_unit")
-          .eq("id", parseInt(o.stok_barang_id))
-          .single();
+        const { data: hppLama } = await supabase.from("stok_barang").select("hpp_per_unit").eq("id", parseInt(o.stok_barang_id)).single();
         const hppLamaVal = hppLama?.hpp_per_unit || hppPerUnitBulat;
         const hppBaru = stokBaru > 0 ? Math.round((stokLama * hppLamaVal + qty * hppPerUnitBulat) / stokBaru) : hppPerUnitBulat;
         await supabase.from("stok_barang").update({ jumlah_stok: stokBaru, hpp_per_unit: hppBaru }).eq("id", parseInt(o.stok_barang_id));
 
-        // Mutasi stok
         await supabase.from("mutasi_stok").insert([{
           stok_barang_id: parseInt(o.stok_barang_id),
           tipe: "Masuk",
           qty,
           keterangan: `Produksi batch #${batchData.id} · HPP ${rupiahFmt(hppPerUnitBulat)}/${produk?.satuan || "unit"}`,
           created_at: timestampWIB,
+        }]);
+      }
+
+      // 4. Catat gaji ke gaji_harian
+      const tanggalHari = new Date().toISOString().split("T")[0];
+      const gajiEntries = [
+        { label: "Operator Produksi", nominal: gajiOp, tipe: "HPP" },
+        { label: "Packing", nominal: gajiPack, tipe: "HPP" },
+        { label: "Borongan Pencetak", nominal: gajiBor, tipe: "HPP" },
+      ].filter(g => g.nominal > 0);
+
+      for (const g of gajiEntries) {
+        await supabase.from("gaji_harian").insert([{
+          tanggal: tanggalHari,
+          nominal: g.nominal,
+          keterangan: `${g.label} · Batch #${batchData.id}${operator.trim() ? ` · ${operator.trim()}` : ""}`,
+          tipe_beban: g.tipe,
         }]);
       }
 
@@ -370,7 +382,7 @@ export default function ProduksiPage() {
       showToast(`✓ Batch #${batchData.id} berhasil!\n${outputNames}\nTotal HPP: ${rupiahFmt(totalHppBulat)}`);
 
       // Reset form
-      setOperator(""); setGajiOperator(""); setBiayaGas(""); setCatatan("");
+      setOperator(""); setGajiOperator(""); setGajiPacking(""); setGajiBorongan(""); setBiayaGas(""); setCatatan("");
       setBahanPakai([{ bahan_id: "", nama: "", qty: "", satuan: "", stok_tersedia: 0 }]);
       setOutputItems([emptyOutput()]);
       fetchData();
@@ -387,7 +399,6 @@ export default function ProduksiPage() {
     if (expandedBatch === id) { setExpandedBatch(null); return; }
     setExpandedBatch(id);
     if (outputCache[id]) return;
-    // Fetch output + kemasan
     const { data: outputs } = await supabase
       .from("detail_produksi_output")
       .select("id, batch_id, stok_barang_id, qty, hpp_per_unit, stok_barang(nama_produk, berat_kg, satuan)")
@@ -410,7 +421,7 @@ export default function ProduksiPage() {
     setOutputCache(prev => ({ ...prev, [id]: enriched }));
   };
 
-  // ── FILTER / PAGINATE RIWAYAT ──
+  // ── FILTER / PAGINATE ──
   const riwayatFiltered = useMemo(() => {
     let data = [...riwayat];
     if (filterOp.trim()) data = data.filter(r => (r.operator || "").toLowerCase().includes(filterOp.toLowerCase()));
@@ -507,26 +518,73 @@ export default function ProduksiPage() {
         {activeTab === "input" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-            {/* HEADER BATCH: operator, gaji, gas, catatan */}
+            {/* INFO BATCH */}
             <div style={{ background: C.card, padding: "20px 24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
               <div style={{ fontSize: "12px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 14, letterSpacing: 1 }}>📋 INFO BATCH</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
+
+              {/* Baris 1: operator + catatan */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                 <div>
                   <Lbl>OPERATOR</Lbl>
-                  <input type="text" value={operator} onChange={e => setOperator(e.target.value)} placeholder="Nama operator" style={inputS} />
-                </div>
-                <div>
-                  <Lbl>GAJI HARIAN (Rp)</Lbl>
-                  <input type="text" value={gajiOperator} onChange={e => setGajiOperator(formatIDR(e.target.value))} placeholder="150.000" style={inputS} />
+                  <input type="text" value={operator} onChange={e => setOperator(e.target.value)} placeholder="Nama operator / penanggung jawab" style={inputS} />
                 </div>
                 <div>
                   <Lbl>BIAYA GAS (Rp)</Lbl>
                   <input type="text" value={biayaGas} onChange={e => setBiayaGas(formatIDR(e.target.value))} placeholder="20.000" style={inputS} />
                 </div>
-                <div>
-                  <Lbl>CATATAN</Lbl>
-                  <input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Opsional" style={inputS} />
+              </div>
+
+              {/* Baris 2: 3 gaji */}
+              <div style={{ background: "#0f0b1a", borderRadius: "10px", border: `1px solid ${C.border}`, padding: "14px 16px" }}>
+                <div style={{ fontSize: "10px", fontWeight: 700, color: C.yellow, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 12 }}>
+                  💰 GAJI PRODUKSI
+                  {(gajiOp + gajiPack + gajiBor) > 0 && (
+                    <span style={{ color: C.success, marginLeft: 10, fontWeight: 400 }}>
+                      Total: {rupiahFmt(gajiOp + gajiPack + gajiBor)}
+                    </span>
+                  )}
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div>
+                    <Lbl>GAJI OPERATOR (3 orang)</Lbl>
+                    <input
+                      type="text"
+                      value={gajiOperator}
+                      onChange={e => setGajiOperator(formatIDR(e.target.value))}
+                      placeholder="0"
+                      style={inputS}
+                    />
+                    {gajiOp > 0 && <div style={{ fontSize: "10px", color: C.success, marginTop: 3, fontFamily: C.fontMono }}>{rupiahFmt(gajiOp)}</div>}
+                  </div>
+                  <div>
+                    <Lbl>GAJI PACKING</Lbl>
+                    <input
+                      type="text"
+                      value={gajiPacking}
+                      onChange={e => setGajiPacking(formatIDR(e.target.value))}
+                      placeholder="0"
+                      style={inputS}
+                    />
+                    {gajiPack > 0 && <div style={{ fontSize: "10px", color: C.success, marginTop: 3, fontFamily: C.fontMono }}>{rupiahFmt(gajiPack)}</div>}
+                  </div>
+                  <div>
+                    <Lbl>GAJI BORONGAN PENCETAK</Lbl>
+                    <input
+                      type="text"
+                      value={gajiBorongan}
+                      onChange={e => setGajiBorongan(formatIDR(e.target.value))}
+                      placeholder="0 (nanti dari timbangan)"
+                      style={{ ...inputS, opacity: 0.85 }}
+                    />
+                    {gajiBor > 0 && <div style={{ fontSize: "10px", color: C.success, marginTop: 3, fontFamily: C.fontMono }}>{rupiahFmt(gajiBor)}</div>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Catatan */}
+              <div style={{ marginTop: 12 }}>
+                <Lbl>CATATAN</Lbl>
+                <input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Opsional" style={inputS} />
               </div>
             </div>
 
@@ -573,7 +631,6 @@ export default function ProduksiPage() {
 
                 return (
                   <div key={oIdx} style={{ marginBottom: 16, background: "#0f0b1a", borderRadius: "10px", border: `1px solid ${C.border}`, overflow: "hidden" }}>
-                    {/* Baris produk + qty */}
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 44px", gap: 10, padding: "14px 16px", alignItems: "end" }}>
                       <div>
                         <Lbl>PRODUK OUTPUT {oIdx + 1}</Lbl>
@@ -596,7 +653,6 @@ export default function ProduksiPage() {
                       <button onClick={() => removeOutput(oIdx)} disabled={outputItems.length === 1} style={{ background: outputItems.length === 1 ? "transparent" : C.danger + "15", border: `1px solid ${outputItems.length === 1 ? C.dim : C.danger + "40"}`, color: outputItems.length === 1 ? C.dim : C.danger, padding: "8px", borderRadius: "6px", cursor: outputItems.length === 1 ? "not-allowed" : "pointer", fontSize: "14px", marginTop: 20 }}>×</button>
                     </div>
 
-                    {/* Preview HPP output ini */}
                     {o.stok_barang_id && o.qty && hppPerKg > 0 && (
                       <div style={{ padding: "10px 16px", background: C.accent + "08", borderTop: `1px solid ${C.border}`, display: "flex", gap: 20, fontSize: "11px", fontFamily: C.fontMono }}>
                         <span style={{ color: C.muted }}>HPP adonan: <strong style={{ color: C.textMid }}>{rupiahFmt(Math.round(hppAdonan))}</strong></span>
@@ -606,7 +662,6 @@ export default function ProduksiPage() {
                       </div>
                     )}
 
-                    {/* Kemasan per output ini */}
                     <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                         <div style={{ fontSize: "10px", fontWeight: 700, color: C.orange, fontFamily: C.fontMono, letterSpacing: 1 }}>
@@ -638,16 +693,18 @@ export default function ProduksiPage() {
             {validBahan.length > 0 && validOutput.length > 0 && totalKgOutput > 0 && (
               <div style={{ background: C.accentDim, border: `1px solid ${C.accent}40`, borderRadius: "12px", padding: "18px 20px" }}>
                 <div style={{ fontSize: "12px", color: C.textMid, marginBottom: 12, fontWeight: 600 }}>📊 Ringkasan Batch</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
                   {[
                     { label: "HPP Bahan", val: rupiahFmt(Math.round(hppBahan)), color: C.textMid },
                     { label: "Gaji Operator", val: rupiahFmt(gajiOp), color: C.textMid },
+                    { label: "Gaji Packing", val: rupiahFmt(gajiPack), color: C.textMid },
+                    { label: "Gaji Borongan", val: rupiahFmt(gajiBor), color: C.textMid },
                     { label: "Biaya Gas", val: rupiahFmt(gasOp), color: C.textMid },
                     { label: "Total HPP Batch", val: rupiahFmt(Math.round(totalHPPBatch)), color: C.accent },
                   ].map((s, i) => (
                     <div key={i}>
                       <div style={{ fontSize: "10px", color: C.muted, marginBottom: 3 }}>{s.label}</div>
-                      <div style={{ fontSize: "14px", fontWeight: 700, color: s.color, fontFamily: C.fontMono }}>{s.val}</div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: s.color, fontFamily: C.fontMono }}>{s.val}</div>
                     </div>
                   ))}
                 </div>
@@ -655,7 +712,6 @@ export default function ProduksiPage() {
                   <span style={{ color: C.muted }}>Total kg output: <strong style={{ color: C.text }}>{totalKgOutput.toFixed(3)} kg</strong></span>
                   <span style={{ color: C.muted }}>HPP/kg adonan: <strong style={{ color: C.accent, fontSize: "14px" }}>{rupiahFmt(Math.round(hppPerKg))}/kg</strong></span>
                 </div>
-                {/* Per varian */}
                 <div style={{ marginTop: 12, borderTop: `1px dashed ${C.accent}40`, paddingTop: 12 }}>
                   <div style={{ fontSize: "10px", color: C.muted, marginBottom: 8, fontFamily: C.fontMono, letterSpacing: 1 }}>HPP PER VARIAN:</div>
                   <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8 }}>
@@ -681,7 +737,6 @@ export default function ProduksiPage() {
               </div>
             )}
 
-            {/* TOMBOL SIMPAN */}
             <button
               onClick={simpanBatch}
               disabled={submitting || stokWarnings.length > 0 || validOutput.length === 0 || validBahan.length === 0 || totalKgOutput === 0}
@@ -718,7 +773,6 @@ export default function ProduksiPage() {
 
             {riwayatPage.map(r => (
               <div key={r.id} style={{ marginBottom: 10 }}>
-                {/* Header baris */}
                 <div
                   onClick={() => toggleBatch(r.id)}
                   style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: expandedBatch === r.id ? C.accentDim : "#0f0b1a", border: `1px solid ${expandedBatch === r.id ? C.accent + "40" : C.border}`, borderRadius: expandedBatch === r.id ? "10px 10px 0 0" : "10px", cursor: "pointer", transition: "all 0.15s" }}
@@ -728,11 +782,13 @@ export default function ProduksiPage() {
                       Batch #{r.id}
                       {r.operator && <span style={{ fontSize: "12px", color: C.muted, marginLeft: 10, fontWeight: 400 }}>· {r.operator}</span>}
                     </div>
-                    <div style={{ fontSize: "11px", color: C.muted, fontFamily: C.fontMono }}>
-                      {tanggalFmt(r.created_at)}
-                      {r.total_kg_output > 0 && <span style={{ marginLeft: 8 }}>· {r.total_kg_output} kg output</span>}
-                      {r.gaji_operator > 0 && <span style={{ color: C.success, marginLeft: 8 }}>· gaji {rupiahFmt(r.gaji_operator)}</span>}
-                      {r.biaya_gas > 0 && <span style={{ color: C.orange, marginLeft: 8 }}>· gas {rupiahFmt(r.biaya_gas)}</span>}
+                    <div style={{ fontSize: "11px", color: C.muted, fontFamily: C.fontMono, display: "flex", flexWrap: "wrap", gap: "0 12px" }}>
+                      <span>{tanggalFmt(r.created_at)}</span>
+                      {r.total_kg_output > 0 && <span>· {r.total_kg_output} kg output</span>}
+                      {r.gaji_operator > 0 && <span style={{ color: C.success }}>· op: {rupiahFmt(r.gaji_operator)}</span>}
+                      {r.gaji_packing > 0 && <span style={{ color: C.success }}>· packing: {rupiahFmt(r.gaji_packing)}</span>}
+                      {r.gaji_borongan > 0 && <span style={{ color: C.yellow }}>· borongan: {rupiahFmt(r.gaji_borongan)}</span>}
+                      {r.biaya_gas > 0 && <span style={{ color: C.orange }}>· gas: {rupiahFmt(r.biaya_gas)}</span>}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -741,17 +797,16 @@ export default function ProduksiPage() {
                   </div>
                 </div>
 
-                {/* Detail output per varian */}
                 {expandedBatch === r.id && (
                   <div style={{ background: "#0f0b1a", border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: "14px 18px" }}>
                     {!outputCache[r.id] ? (
                       <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Memuat detail...</div>
                     ) : outputCache[r.id].length === 0 ? (
-                      <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 12, fontStyle: "italic" }}>Tidak ada data output (batch lama)</div>
+                      <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 12, fontStyle: "italic" }}>Tidak ada data output</div>
                     ) : (
                       <>
                         <div style={{ fontSize: "10px", color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 10, fontWeight: 700 }}>OUTPUT VARIAN:</div>
-                        {outputCache[r.id].map((o, i) => (
+                        {outputCache[r.id].map((o) => (
                           <div key={o.id} style={{ marginBottom: 12, padding: "12px 14px", background: C.card, borderRadius: 8, border: `1px solid ${C.border}` }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: o.kemasan && o.kemasan.length > 0 ? 8 : 0 }}>
                               <div>
@@ -780,10 +835,7 @@ export default function ProduksiPage() {
                         ))}
                       </>
                     )}
-
-                    {/* Bahan baku batch ini (dari detail_produksi_bahan) */}
                     <BahanDetail batchId={r.id} />
-
                     {r.catatan && (
                       <div style={{ fontSize: "11px", color: C.muted, marginTop: 8, fontStyle: "italic" }}>📝 {r.catatan}</div>
                     )}
@@ -806,7 +858,6 @@ export default function ProduksiPage() {
   );
 }
 
-// Sub-komponen: load & tampilkan bahan baku dari batch
 function BahanDetail({ batchId }: { batchId: number }) {
   const [data, setData] = useState<any[] | null>(null);
   useEffect(() => {
@@ -817,11 +868,10 @@ function BahanDetail({ batchId }: { batchId: number }) {
       .then(({ data }) => setData(data || []));
   }, [batchId]);
 
-  if (!data) return null;
-  if (data.length === 0) return null;
+  if (!data || data.length === 0) return null;
 
   return (
-    <div style={{ marginTop: 8, borderTop: `1px dashed #2a1f3d`, paddingTop: 8 }}>
+    <div style={{ marginTop: 8, borderTop: "1px dashed #2a1f3d", paddingTop: 8 }}>
       <div style={{ fontSize: "10px", color: "#7c6d8a", fontFamily: "'DM Mono', monospace", letterSpacing: 1, marginBottom: 6, fontWeight: 700 }}>BAHAN BAKU:</div>
       {data.map((d: any, i: number) => (
         <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#c0aed4", padding: "2px 0", fontFamily: "'DM Mono', monospace" }}>

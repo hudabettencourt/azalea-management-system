@@ -13,10 +13,9 @@ type Produk = {
   harga_jual: number;
   satuan: string;
   berat_kg: number | null;
-  kemasan_bahan_id: number | null;
-  kemasan_nama?: string | null;
 };
 type BahanBaku = { id: number; nama: string; satuan: string; kategori: string };
+type PresetKemasan = { id: number; stok_barang_id: number; bahan_baku_id: number; berat_gram: number; nama_bahan?: string; satuan_bahan?: string };
 type Toko = { id: number; nama: string; platform: string; aktif: boolean; created_at: string };
 type Supplier = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
 type Pelanggan = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
@@ -26,7 +25,7 @@ type Toast = { msg: string; type: "success" | "error" | "info" };
 const T = {
   bg: "#100c16", bgCard: "rgba(255,255,255,0.02)", sidebar: "#130d1a",
   border: "rgba(232,115,138,0.12)", borderStrong: "rgba(232,115,138,0.28)",
-  accent: "#e8738a", accentDim: "rgba(232,115,138,0.12)", accentGlow: "rgba(232,115,138,0.25)",
+  accent: "#e8738a", accentDim: "rgba(232,115,138,0.12)",
   text: "#f0e6e9", textMid: "#c0a8b4", textDim: "#7a6880",
   green: "#6fcf97", yellow: "#f2c94c", red: "#eb5757",
   purple: "#a78bfa", blue: "#60a5fa", orange: "#fb923c",
@@ -45,7 +44,7 @@ const ROLES = [
   { value: "admin_penjualan", label: "Admin Penjualan", color: "#f59e0b", desc: "Kelola penjualan & laporan sales" },
 ];
 
-const SATUAN_OPTIONS = ["pcs", "kg", "gr", "pack", "box", "lusin", "set", "botol", "sachet"];
+const SATUAN_OPTIONS = ["pcs", "kg", "gr", "pack", "box", "lusin", "bal", "set", "botol", "sachet"];
 const PLATFORM_OPTIONS = ["Shopee", "TikTok", "Lazada", "Tokopedia", "Website", "Offline", "Lainnya"];
 const PLATFORM_COLORS: Record<string, string> = {
   Shopee: "#f97316", TikTok: "#a78bfa", Lazada: "#60a5fa",
@@ -58,23 +57,12 @@ const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 const formatIDR = (val: string) => val.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 const toAngka = (str: string) => parseInt(str.replace(/\./g, "")) || 0;
 
-type ProdukForm = {
-  nama_produk: string;
-  sku: string;
-  harga_jual: string;
-  jumlah_stok: string;
-  satuan: string;
-  berat_kg: string;
-  kemasan_bahan_id: string;
-};
+type ProdukForm = { nama_produk: string; sku: string; harga_jual: string; jumlah_stok: string; satuan: string; berat_kg: string };
 type TokoForm = { nama: string; platform: string; aktif: boolean };
 type SupplierForm = { nama: string; telepon: string; alamat: string; catatan: string };
 type PelangganForm = { nama: string; telepon: string; alamat: string; catatan: string };
 
-const emptyProdukForm = (): ProdukForm => ({
-  nama_produk: "", sku: "", harga_jual: "", jumlah_stok: "0", satuan: "pcs",
-  berat_kg: "", kemasan_bahan_id: "",
-});
+const emptyProdukForm = (): ProdukForm => ({ nama_produk: "", sku: "", harga_jual: "", jumlah_stok: "0", satuan: "pcs", berat_kg: "" });
 const emptyTokoForm = (): TokoForm => ({ nama: "", platform: "Shopee", aktif: true });
 const emptySupplierForm = (): SupplierForm => ({ nama: "", telepon: "", alamat: "", catatan: "" });
 const emptyPelangganForm = (): PelangganForm => ({ nama: "", telepon: "", alamat: "", catatan: "" });
@@ -120,9 +108,19 @@ export default function AdminPage() {
   const [confirmDeleteProdukId, setConfirmDeleteProdukId] = useState<number | null>(null);
   const [deletingProdukId, setDeletingProdukId] = useState<number | null>(null);
 
-  // ── BAHAN BAKU (untuk dropdown kemasan) ──
+  // ── BAHAN BAKU ──
   const [bahanBakuList, setBahanBakuList] = useState<BahanBaku[]>([]);
   const [bahanBakuLoading, setBahanBakuLoading] = useState(false);
+
+  // ── PRESET KEMASAN ──
+  const [kemasanPanel, setKemasanPanel] = useState<number | null>(null); // produk_id
+  const [kemasanList, setKemasanList] = useState<PresetKemasan[]>([]);
+  const [kemasanLoading, setKemasanLoading] = useState(false);
+  const [newKemasanBahanId, setNewKemasanBahanId] = useState("");
+  const [newKemasanBeratGram, setNewKemasanBeratGram] = useState("");
+  const [savingKemasan, setSavingKemasan] = useState(false);
+  const [editingKemasanId, setEditingKemasanId] = useState<number | null>(null);
+  const [editKemasanBerat, setEditKemasanBerat] = useState("");
 
   // ── TOKO ──
   const [tokoList, setTokoList] = useState<Toko[]>([]);
@@ -186,14 +184,13 @@ export default function AdminPage() {
   }, []);
 
   const fetchBahanBaku = useCallback(async () => {
-    if (bahanBakuList.length > 0) return; // sudah di-fetch sebelumnya
+    if (bahanBakuList.length > 0) return;
     setBahanBakuLoading(true);
     const { data, error } = await supabase
       .from("bahan_baku")
       .select("id, nama, satuan, kategori")
       .or("aktif.eq.true,aktif.is.null")
-      .order("kategori")
-      .order("nama");
+      .order("kategori").order("nama");
     if (error) showToast("Gagal load bahan: " + error.message, "error");
     else setBahanBakuList(data || []);
     setBahanBakuLoading(false);
@@ -201,16 +198,12 @@ export default function AdminPage() {
 
   const fetchProduk = useCallback(async () => {
     setProdukLoading(true);
-    // Join ke bahan_baku untuk ambil nama kemasan
     const { data, error } = await supabase
       .from("stok_barang")
-      .select("id, nama_produk, sku, jumlah_stok, harga_jual, satuan, berat_kg, kemasan_bahan_id, bahan_baku(nama)")
+      .select("id, nama_produk, sku, jumlah_stok, harga_jual, satuan, berat_kg")
       .order("nama_produk");
     if (error) showToast("Gagal load produk: " + error.message, "error");
-    else setProdukList((data || []).map((r: any) => ({
-      ...r,
-      kemasan_nama: r.bahan_baku?.nama ?? null,
-    })));
+    else setProdukList(data || []);
     setProdukLoading(false);
   }, []);
 
@@ -243,12 +236,63 @@ export default function AdminPage() {
     const { data, error } = await supabase
       .from("pelanggan_harga")
       .select("id, pelanggan_id, produk_id, harga, stok_barang(nama_produk)")
-      .eq("pelanggan_id", pelangganId)
-      .order("produk_id");
+      .eq("pelanggan_id", pelangganId).order("produk_id");
     if (error) showToast("Gagal load harga: " + error.message, "error");
     else setHargaList((data || []).map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk })));
     setHargaLoading(false);
   }, []);
+
+  // ── FETCH PRESET KEMASAN ──
+  const fetchPresetKemasan = useCallback(async (produkId: number) => {
+    setKemasanLoading(true);
+    const { data, error } = await supabase
+      .from("produk_kemasan_default")
+      .select("id, stok_barang_id, bahan_baku_id, berat_gram, bahan_baku(nama, satuan)")
+      .eq("stok_barang_id", produkId)
+      .order("id");
+    if (error) showToast("Gagal load kemasan: " + error.message, "error");
+    else setKemasanList((data || []).map((r: any) => ({
+      ...r,
+      nama_bahan: r.bahan_baku?.nama,
+      satuan_bahan: r.bahan_baku?.satuan,
+    })));
+    setKemasanLoading(false);
+  }, []);
+
+  const bukaKemasanPanel = async (produkId: number) => {
+    if (kemasanPanel === produkId) { setKemasanPanel(null); return; }
+    setKemasanPanel(produkId);
+    setNewKemasanBahanId(""); setNewKemasanBeratGram(""); setEditingKemasanId(null);
+    await fetchPresetKemasan(produkId);
+    if (bahanBakuList.length === 0) await fetchBahanBaku();
+  };
+
+  const simpanPresetKemasan = async (produkId: number) => {
+    if (!newKemasanBahanId) return showToast("Pilih bahan kemasan!", "error");
+    if (!newKemasanBeratGram || parseFloat(newKemasanBeratGram) <= 0) return showToast("Isi berat gram!", "error");
+    setSavingKemasan(true);
+    const { error } = await supabase.from("produk_kemasan_default").insert([{
+      stok_barang_id: produkId,
+      bahan_baku_id: parseInt(newKemasanBahanId),
+      berat_gram: parseFloat(newKemasanBeratGram),
+    }]);
+    if (error) showToast("Gagal simpan: " + error.message, "error");
+    else { showToast("✓ Preset kemasan disimpan!"); setNewKemasanBahanId(""); setNewKemasanBeratGram(""); await fetchPresetKemasan(produkId); }
+    setSavingKemasan(false);
+  };
+
+  const updatePresetKemasan = async (kemasanId: number, produkId: number) => {
+    if (!editKemasanBerat || parseFloat(editKemasanBerat) <= 0) return showToast("Isi berat!", "error");
+    const { error } = await supabase.from("produk_kemasan_default").update({ berat_gram: parseFloat(editKemasanBerat) }).eq("id", kemasanId);
+    if (error) showToast("Gagal update: " + error.message, "error");
+    else { showToast("✓ Kemasan diupdate!"); setEditingKemasanId(null); await fetchPresetKemasan(produkId); }
+  };
+
+  const hapusPresetKemasan = async (kemasanId: number, produkId: number) => {
+    const { error } = await supabase.from("produk_kemasan_default").delete().eq("id", kemasanId);
+    if (error) showToast("Gagal hapus: " + error.message, "error");
+    else { showToast("🗑 Kemasan dihapus"); await fetchPresetKemasan(produkId); }
+  };
 
   const bukaHargaPanel = async (pelangganId: number) => {
     if (hargaPanel === pelangganId) { setHargaPanel(null); return; }
@@ -283,12 +327,7 @@ export default function AdminPage() {
   };
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
-  useEffect(() => {
-    if (activeSection === "produk") {
-      fetchProduk();
-      fetchBahanBaku();
-    }
-  }, [activeSection, fetchProduk, fetchBahanBaku]);
+  useEffect(() => { if (activeSection === "produk") { fetchProduk(); fetchBahanBaku(); } }, [activeSection, fetchProduk, fetchBahanBaku]);
   useEffect(() => { if (activeSection === "toko") fetchToko(); }, [activeSection, fetchToko]);
   useEffect(() => { if (activeSection === "supplier") fetchSupplier(); }, [activeSection, fetchSupplier]);
   useEffect(() => { if (activeSection === "pelanggan") { fetchPelanggan(); fetchProduk(); } }, [activeSection, fetchPelanggan, fetchProduk]);
@@ -317,7 +356,6 @@ export default function AdminPage() {
     jumlah_stok: parseInt(f.jumlah_stok) || 0,
     satuan: f.satuan,
     berat_kg: f.berat_kg ? parseFloat(f.berat_kg.replace(",", ".")) : null,
-    kemasan_bahan_id: f.kemasan_bahan_id ? parseInt(f.kemasan_bahan_id) : null,
   });
 
   const handleTambahProduk = async () => {
@@ -434,32 +472,14 @@ export default function AdminPage() {
     setDeletingPelangganId(null);
   };
 
-  // ── FILTERED LISTS ──
-  const produkFiltered = produkList.filter(p =>
-    searchProduk === "" ||
-    p.nama_produk?.toLowerCase().includes(searchProduk.toLowerCase()) ||
-    (p.sku || "").toLowerCase().includes(searchProduk.toLowerCase())
-  );
-  const supplierFiltered = supplierList.filter(s =>
-    searchSupplier === "" ||
-    s.nama?.toLowerCase().includes(searchSupplier.toLowerCase()) ||
-    (s.telepon || "").includes(searchSupplier)
-  );
-  const usersFiltered = users.filter(u =>
-    search === "" ||
-    u.nama?.toLowerCase().includes(search.toLowerCase()) ||
-    u.email?.toLowerCase().includes(search.toLowerCase()) ||
-    u.role?.toLowerCase().includes(search.toLowerCase())
-  );
-  const pelangganFiltered = pelangganList.filter(p =>
-    searchPelanggan === "" ||
-    p.nama?.toLowerCase().includes(searchPelanggan.toLowerCase()) ||
-    (p.telepon || "").includes(searchPelanggan)
-  );
-
+  // ── FILTERED ──
+  const produkFiltered = produkList.filter(p => searchProduk === "" || p.nama_produk?.toLowerCase().includes(searchProduk.toLowerCase()) || (p.sku || "").toLowerCase().includes(searchProduk.toLowerCase()));
+  const supplierFiltered = supplierList.filter(s => searchSupplier === "" || s.nama?.toLowerCase().includes(searchSupplier.toLowerCase()) || (s.telepon || "").includes(searchSupplier));
+  const usersFiltered = users.filter(u => search === "" || u.nama?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()) || u.role?.toLowerCase().includes(search.toLowerCase()));
+  const pelangganFiltered = pelangganList.filter(p => searchPelanggan === "" || p.nama?.toLowerCase().includes(searchPelanggan.toLowerCase()) || (p.telepon || "").includes(searchPelanggan));
   const produkBelumDiset = produkList.filter(p => !hargaList.some(h => h.produk_id === p.id));
 
-  // Kelompokkan bahan baku per kategori untuk dropdown
+  // Bahan baku dipakai kemasan (hanya kategori plastik/packaging) — tampilkan semua, user pilih
   const bahanByKategori = bahanBakuList.reduce<Record<string, BahanBaku[]>>((acc, b) => {
     const cat = b.kategori || "Lainnya";
     if (!acc[cat]) acc[cat] = [];
@@ -467,18 +487,14 @@ export default function AdminPage() {
     return acc;
   }, {});
 
+  // Bahan yang belum ada di preset kemasan produk aktif
+  const bahanBelumDiKemasan = bahanBakuList.filter(b => !kemasanList.some(k => k.bahan_baku_id === b.id));
+
   const inputStyle: React.CSSProperties = {
-    padding: "8px 12px",
-    background: "rgba(255,255,255,0.04)",
-    border: `1.5px solid rgba(232,115,138,0.2)`,
-    borderRadius: 8,
-    color: T.text,
-    fontFamily: T.fontSans,
-    fontSize: 13,
-    outline: "none",
-    transition: "border-color 0.2s",
-    width: "100%",
-    boxSizing: "border-box",
+    padding: "8px 12px", background: "rgba(255,255,255,0.04)",
+    border: `1.5px solid rgba(232,115,138,0.2)`, borderRadius: 8,
+    color: T.text, fontFamily: T.fontSans, fontSize: 13, outline: "none",
+    transition: "border-color 0.2s", width: "100%", boxSizing: "border-box",
   };
 
   const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
@@ -506,33 +522,6 @@ export default function AdminPage() {
     </Sidebar>
   );
 
-  // Reusable dropdown kemasan
-  const KemasanSelect = ({
-    value,
-    onChange,
-  }: {
-    value: string;
-    onChange: (v: string) => void;
-  }) => (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      style={{ ...inputStyle, cursor: "pointer" }}
-      disabled={bahanBakuLoading}
-    >
-      <option value="">— Tanpa kemasan —</option>
-      {Object.entries(bahanByKategori).map(([kat, items]) => (
-        <optgroup key={kat} label={kat}>
-          {items.map(b => (
-            <option key={b.id} value={b.id}>
-              {b.nama} ({b.satuan})
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-  );
-
   return (
     <Sidebar>
       <style>{`
@@ -554,7 +543,7 @@ export default function AdminPage() {
       )}
 
       <div style={{ display: "flex", minHeight: "100vh", background: T.bg, fontFamily: T.fontSans, color: T.text }}>
-        {/* ── SIDE NAV ── */}
+        {/* SIDE NAV */}
         <nav style={{ width: 220, background: T.sidebar, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", padding: "24px 0", flexShrink: 0 }}>
           <div style={{ padding: "0 20px 20px", borderBottom: `1px solid ${T.border}`, marginBottom: 8 }}>
             <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 2, textTransform: "uppercase" }}>Azalea ERP</div>
@@ -562,13 +551,11 @@ export default function AdminPage() {
           </div>
           {NAV_ITEMS.map(item => (
             <button key={item.id} onClick={() => setActiveSection(item.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", border: "none", background: activeSection === item.id ? T.accentDim : "transparent", color: activeSection === item.id ? T.accent : T.textDim, cursor: "pointer", fontFamily: T.fontSans, fontSize: 13, fontWeight: activeSection === item.id ? 700 : 400, borderLeft: `3px solid ${activeSection === item.id ? T.accent : "transparent"}`, transition: "all 0.15s", textAlign: "left" }}>
-              <span style={{ fontSize: 15 }}>{item.icon}</span>
-              {item.label}
+              <span style={{ fontSize: 15 }}>{item.icon}</span>{item.label}
             </button>
           ))}
         </nav>
 
-        {/* ── MAIN CONTENT ── */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <header style={{ padding: "16px 32px", borderBottom: `1px solid ${T.border}`, background: "rgba(12,8,22,0.9)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 100 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -614,7 +601,7 @@ export default function AdminPage() {
                             <div style={{ fontSize: 12, color: T.textDim, fontFamily: T.fontMono }}>{user.email}</div>
                             <div><span style={{ padding: "3px 10px", borderRadius: 20, background: `${rInfo.color}20`, color: rInfo.color, fontSize: 11, fontWeight: 700, fontFamily: T.fontMono }}>{rInfo.label}</span></div>
                             <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>{tanggalFmt(user.created_at)}</div>
-                            <button className="btn-edit" onClick={() => { setEditingId(user.id); setEditRole(user.role); setEditNama(user.nama || ""); }} style={{ background: T.accentDim, border: `1px solid ${T.accent}30`, color: T.accent, padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
+                            <button className="btn-edit" onClick={() => { setEditingId(user.id); setEditRole(user.role); setEditNama(user.nama || ""); }} style={{ background: T.accentDim, border: `1px solid ${T.accent}30`, color: T.accent, padding: "5px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
                           </div>
                         ) : (
                           <div style={{ padding: "16px 24px" }}>
@@ -658,56 +645,20 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* ── FORM TAMBAH PRODUK ── */}
                 {showTambahProduk && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ PRODUK BARU</div>
-                    {/* Row 1: nama, sku, harga, stok, satuan */}
-                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                      <div>
-                        <Label>NAMA PRODUK *</Label>
-                        <input value={tambahProduk.nama_produk} onChange={e => setTambahProduk(p => ({ ...p, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus />
-                      </div>
-                      <div>
-                        <Label>SKU</Label>
-                        <input value={tambahProduk.sku} onChange={e => setTambahProduk(p => ({ ...p, sku: e.target.value }))} placeholder="SKU-001" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} />
-                      </div>
-                      <div>
-                        <Label>HARGA JUAL *</Label>
-                        <input value={tambahProduk.harga_jual} onChange={e => setTambahProduk(p => ({ ...p, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} />
-                      </div>
-                      <div>
-                        <Label>STOK AWAL</Label>
-                        <input type="number" value={tambahProduk.jumlah_stok} onChange={e => setTambahProduk(p => ({ ...p, jumlah_stok: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} />
-                      </div>
-                      <div>
-                        <Label>SATUAN</Label>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+                      <div><Label>NAMA PRODUK *</Label><input value={tambahProduk.nama_produk} onChange={e => setTambahProduk(p => ({ ...p, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus /></div>
+                      <div><Label>SKU</Label><input value={tambahProduk.sku} onChange={e => setTambahProduk(p => ({ ...p, sku: e.target.value }))} placeholder="SKU-001" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} /></div>
+                      <div><Label>HARGA JUAL *</Label><input value={tambahProduk.harga_jual} onChange={e => setTambahProduk(p => ({ ...p, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
+                      <div><Label>STOK AWAL</Label><input type="number" value={tambahProduk.jumlah_stok} onChange={e => setTambahProduk(p => ({ ...p, jumlah_stok: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
+                      <div><Label>SATUAN</Label>
                         <select value={tambahProduk.satuan} onChange={e => setTambahProduk(p => ({ ...p, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
                           {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
-                    </div>
-                    {/* Row 2: berat, kemasan */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginBottom: 16 }}>
-                      <div>
-                        <Label>BERAT (kg)</Label>
-                        <input
-                          type="number"
-                          value={tambahProduk.berat_kg}
-                          onChange={e => setTambahProduk(p => ({ ...p, berat_kg: e.target.value }))}
-                          placeholder="0.25"
-                          step="0.001"
-                          min="0"
-                          style={{ ...inputStyle, fontFamily: T.fontMono }}
-                        />
-                      </div>
-                      <div>
-                        <Label>KEMASAN BAHAN {bahanBakuLoading ? "(memuat...)" : ""}</Label>
-                        <KemasanSelect
-                          value={tambahProduk.kemasan_bahan_id}
-                          onChange={v => setTambahProduk(p => ({ ...p, kemasan_bahan_id: v }))}
-                        />
-                      </div>
+                      <div><Label>BERAT (kg)</Label><input type="number" value={tambahProduk.berat_kg} onChange={e => setTambahProduk(p => ({ ...p, berat_kg: e.target.value }))} placeholder="0.25" step="0.001" min="0" style={{ ...inputStyle, fontFamily: T.fontMono }} /></div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <BtnPrimary onClick={handleTambahProduk} disabled={savingProduk}>{savingProduk ? "Menyimpan..." : "✓ Simpan Produk"}</BtnPrimary>
@@ -716,61 +667,158 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                {/* ── TABEL PRODUK ── */}
+                {/* TABEL PRODUK */}
                 <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 0.8fr 1fr 0.7fr 0.8fr 1.2fr 130px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
-                    {["PRODUK", "SKU", "STOK", "HARGA JUAL", "SATUAN", "BERAT", "KEMASAN", "AKSI"].map(h => (
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 0.8fr 1fr 0.7fr 0.8fr 150px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
+                    {["PRODUK", "SKU", "STOK", "HARGA JUAL", "SATUAN", "BERAT", "AKSI"].map(h => (
                       <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>
                     ))}
                   </div>
                   {produkLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
                   {!produkLoading && produkFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada produk</div>}
                   {!produkLoading && produkFiltered.map(p => (
-                    <div key={p.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, transition: "background 0.15s" }}>
+                    <div key={p.id} style={{ borderBottom: `1px solid ${kemasanPanel === p.id ? T.purple + "40" : T.border}`, transition: "border-color 0.2s" }}>
                       {editingProdukId !== p.id ? (
-                        <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 0.8fr 1fr 0.7fr 0.8fr 1.2fr 130px", gap: 8, padding: "12px 24px", alignItems: "center" }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama_produk}</div>
-                          <div style={{ fontSize: 11, color: p.sku ? T.yellow : T.textDim, fontFamily: T.fontMono }}>{p.sku || "—"}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: p.jumlah_stok > 0 ? T.green : T.red, fontFamily: T.fontMono }}>{p.jumlah_stok}</div>
-                          <div style={{ fontSize: 12, color: T.textMid, fontFamily: T.fontMono }}>{rupiahFmt(p.harga_jual)}</div>
-                          <div style={{ fontSize: 11, color: T.textDim }}>{p.satuan}</div>
-                          <div style={{ fontSize: 12, color: p.berat_kg ? T.blue : T.textDim, fontFamily: T.fontMono }}>
-                            {p.berat_kg != null ? `${p.berat_kg} kg` : "—"}
+                        <>
+                          <div className="data-row" style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 0.8fr 1fr 0.7fr 0.8fr 150px", gap: 8, padding: "12px 24px", alignItems: "center", transition: "background 0.15s" }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: T.textMid }}>{p.nama_produk}</div>
+                            <div style={{ fontSize: 11, color: p.sku ? T.yellow : T.textDim, fontFamily: T.fontMono }}>{p.sku || "—"}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: p.jumlah_stok > 0 ? T.green : T.red, fontFamily: T.fontMono }}>{p.jumlah_stok}</div>
+                            <div style={{ fontSize: 12, color: T.textMid, fontFamily: T.fontMono }}>{rupiahFmt(p.harga_jual)}</div>
+                            <div style={{ fontSize: 11, color: T.textDim }}>{p.satuan}</div>
+                            <div style={{ fontSize: 12, color: p.berat_kg ? T.blue : T.textDim, fontFamily: T.fontMono }}>{p.berat_kg != null ? `${p.berat_kg} kg` : "—"}</div>
+                            <div style={{ display: "flex", gap: 5 }}>
+                              {confirmDeleteProdukId === p.id ? (
+                                <>
+                                  <button onClick={() => hapusProduk(p.id, p.nama_produk)} disabled={deletingProdukId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingProdukId === p.id ? "..." : "Hapus"}</button>
+                                  <button onClick={() => setConfirmDeleteProdukId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "5px 7px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
+                                </>
+                              ) : (
+                                <>
+                                  {/* Tombol preset kemasan */}
+                                  <button onClick={() => { bukaKemasanPanel(p.id); setEditingProdukId(null); }} style={{ background: kemasanPanel === p.id ? `${T.purple}30` : `${T.purple}10`, border: `1px solid ${T.purple}40`, color: T.purple, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 10, fontFamily: T.fontMono, fontWeight: 700, whiteSpace: "nowrap" }}>
+                                    🎁 {kemasanPanel === p.id ? "▲" : "▼"}
+                                  </button>
+                                  <button className="btn-edit" onClick={() => { setEditingProdukId(p.id); setEditProdukForm({ nama_produk: p.nama_produk, sku: p.sku || "", harga_jual: formatIDR(String(p.harga_jual)), jumlah_stok: String(p.jumlah_stok), satuan: p.satuan, berat_kg: p.berat_kg != null ? String(p.berat_kg) : "" }); setShowTambahProduk(false); setKemasanPanel(null); }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
+                                  <button className="btn-del" onClick={() => setConfirmDeleteProdukId(p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>🗑</button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 11, color: p.kemasan_nama ? T.orange : T.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {p.kemasan_nama || "—"}
-                          </div>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {confirmDeleteProdukId === p.id ? (
-                              <>
-                                <button onClick={() => hapusProduk(p.id, p.nama_produk)} disabled={deletingProdukId === p.id} style={{ background: T.red, border: "none", color: "#fff", padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>{deletingProdukId === p.id ? "..." : "Hapus"}</button>
-                                <button onClick={() => setConfirmDeleteProdukId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
-                              </>
-                            ) : (
-                              <>
-                                <button className="btn-edit" onClick={() => {
-                                  setEditingProdukId(p.id);
-                                  setEditProdukForm({
-                                    nama_produk: p.nama_produk,
-                                    sku: p.sku || "",
-                                    harga_jual: formatIDR(String(p.harga_jual)),
-                                    jumlah_stok: String(p.jumlah_stok),
-                                    satuan: p.satuan,
-                                    berat_kg: p.berat_kg != null ? String(p.berat_kg) : "",
-                                    kemasan_bahan_id: p.kemasan_bahan_id != null ? String(p.kemasan_bahan_id) : "",
-                                  });
-                                  setShowTambahProduk(false);
-                                }} style={{ background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>Edit</button>
-                                <button className="btn-del" onClick={() => setConfirmDeleteProdukId(p.id)} style={{ background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700, transition: "background 0.15s" }}>🗑</button>
-                              </>
-                            )}
-                          </div>
-                        </div>
+
+                          {/* ── PANEL PRESET KEMASAN ── */}
+                          {kemasanPanel === p.id && (
+                            <div style={{ borderTop: `1px solid ${T.purple}30`, background: "rgba(167,139,250,0.03)", padding: "16px 24px", animation: "slideDown 0.2s ease" }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, fontFamily: T.fontMono, letterSpacing: 1, marginBottom: 14 }}>
+                                🎁 PRESET KEMASAN — {p.nama_produk}
+                                <span style={{ fontSize: 10, color: T.textDim, fontWeight: 400, marginLeft: 8 }}>berat kemasan per unit produk ini (auto pre-fill di form produksi, bisa diedit)</span>
+                              </div>
+
+                              {kemasanLoading ? (
+                                <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, marginBottom: 12 }}>Memuat...</div>
+                              ) : kemasanList.length === 0 ? (
+                                <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 12, marginBottom: 12, fontStyle: "italic" }}>Belum ada preset kemasan untuk produk ini</div>
+                              ) : (
+                                <div style={{ marginBottom: 14 }}>
+                                  {kemasanList.map(k => (
+                                    <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid ${T.border}` }}>
+                                      <div style={{ flex: 1, fontSize: 12, color: T.textMid, fontWeight: 600 }}>
+                                        {k.nama_bahan || `Bahan #${k.bahan_baku_id}`}
+                                        <span style={{ fontSize: 10, color: T.textDim, marginLeft: 6 }}>({k.satuan_bahan})</span>
+                                      </div>
+                                      {editingKemasanId === k.id ? (
+                                        <>
+                                          <input
+                                            type="number"
+                                            value={editKemasanBerat}
+                                            onChange={e => setEditKemasanBerat(e.target.value)}
+                                            placeholder="gram"
+                                            step="0.1"
+                                            style={{ ...inputStyle, width: 100, fontFamily: T.fontMono, fontSize: 12 }}
+                                            autoFocus
+                                            onKeyDown={e => e.key === "Enter" && updatePresetKemasan(k.id, p.id)}
+                                          />
+                                          <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono }}>gr</span>
+                                          <button onClick={() => updatePresetKemasan(k.id, p.id)} style={{ padding: "5px 12px", background: T.green + "20", border: `1px solid ${T.green}40`, color: T.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>✓</button>
+                                          <button onClick={() => setEditingKemasanId(null)} style={{ padding: "5px 8px", background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <div style={{ fontSize: 13, fontWeight: 700, color: T.orange, fontFamily: T.fontMono, minWidth: 80, textAlign: "right" }}>{k.berat_gram} gr</div>
+                                          <button onClick={() => { setEditingKemasanId(k.id); setEditKemasanBerat(String(k.berat_gram)); }} style={{ padding: "4px 10px", background: `${T.purple}15`, border: `1px solid ${T.purple}30`, color: T.purple, borderRadius: 5, cursor: "pointer", fontSize: 10, fontFamily: T.fontMono, fontWeight: 700 }}>Edit</button>
+                                          <button onClick={() => hapusPresetKemasan(k.id, p.id)} style={{ padding: "4px 8px", background: `${T.red}15`, border: `1px solid ${T.red}25`, color: T.red, borderRadius: 5, cursor: "pointer", fontSize: 10, fontFamily: T.fontMono, fontWeight: 700 }}>🗑</button>
+                                        </>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Form tambah kemasan baru */}
+                              {bahanBelumDiKemasan.length > 0 ? (
+                                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                                  <div style={{ flex: 2 }}>
+                                    <Label>BAHAN KEMASAN {bahanBakuLoading ? "(memuat...)" : ""}</Label>
+                                    <select value={newKemasanBahanId} onChange={e => setNewKemasanBahanId(e.target.value)} style={{ ...inputStyle, fontSize: 12, cursor: "pointer" }}>
+                                      <option value="">— Pilih Bahan —</option>
+                                      {Object.entries(bahanByKategori).map(([kat, items]) => (
+                                        <optgroup key={kat} label={kat}>
+                                          {items.filter(b => !kemasanList.some(k => k.bahan_baku_id === b.id)).map(b => (
+                                            <option key={b.id} value={b.id}>{b.nama} ({b.satuan})</option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <Label>BERAT (gram)</Label>
+                                    <input
+                                      type="number"
+                                      value={newKemasanBeratGram}
+                                      onChange={e => setNewKemasanBeratGram(e.target.value)}
+                                      placeholder="0"
+                                      step="0.1"
+                                      min="0"
+                                      style={{ ...inputStyle, fontFamily: T.fontMono, fontSize: 12 }}
+                                      onKeyDown={e => e.key === "Enter" && simpanPresetKemasan(p.id)}
+                                    />
+                                  </div>
+                                  <button onClick={() => simpanPresetKemasan(p.id)} disabled={savingKemasan} style={{ padding: "8px 16px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap", marginBottom: 1 }}>
+                                    {savingKemasan ? "..." : "+ Simpan"}
+                                  </button>
+                                </div>
+                              ) : kemasanList.length > 0 ? (
+                                <div style={{ fontSize: 11, color: T.green, fontFamily: T.fontMono }}>✓ Semua bahan kemasan sudah diset untuk produk ini</div>
+                              ) : (
+                                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                                  <div style={{ flex: 2 }}>
+                                    <Label>BAHAN KEMASAN {bahanBakuLoading ? "(memuat...)" : ""}</Label>
+                                    <select value={newKemasanBahanId} onChange={e => setNewKemasanBahanId(e.target.value)} style={{ ...inputStyle, fontSize: 12, cursor: "pointer" }}>
+                                      <option value="">— Pilih Bahan —</option>
+                                      {Object.entries(bahanByKategori).map(([kat, items]) => (
+                                        <optgroup key={kat} label={kat}>
+                                          {items.map(b => (
+                                            <option key={b.id} value={b.id}>{b.nama} ({b.satuan})</option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <Label>BERAT (gram)</Label>
+                                    <input type="number" value={newKemasanBeratGram} onChange={e => setNewKemasanBeratGram(e.target.value)} placeholder="0" step="0.1" min="0" style={{ ...inputStyle, fontFamily: T.fontMono, fontSize: 12 }} onKeyDown={e => e.key === "Enter" && simpanPresetKemasan(p.id)} />
+                                  </div>
+                                  <button onClick={() => simpanPresetKemasan(p.id)} disabled={savingKemasan} style={{ padding: "8px 16px", background: `linear-gradient(135deg, #7c3aed, ${T.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono, whiteSpace: "nowrap", marginBottom: 1 }}>
+                                    {savingKemasan ? "..." : "+ Simpan"}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
                       ) : (
-                        /* ── INLINE EDIT ROW ── */
                         <div style={{ padding: "14px 24px", background: "rgba(167,139,250,0.04)" }}>
-                          {/* Row 1 */}
-                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
                             <input value={editProdukForm.nama_produk} onChange={e => setEditProdukForm(f => ({ ...f, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus />
                             <input value={editProdukForm.sku} onChange={e => setEditProdukForm(f => ({ ...f, sku: e.target.value }))} placeholder="SKU" style={{ ...inputStyle, fontFamily: T.fontMono, textTransform: "uppercase" }} />
                             <input value={editProdukForm.harga_jual} onChange={e => setEditProdukForm(f => ({ ...f, harga_jual: formatIDR(e.target.value) }))} placeholder="Harga" style={{ ...inputStyle, fontFamily: T.fontMono }} />
@@ -778,27 +826,9 @@ export default function AdminPage() {
                             <select value={editProdukForm.satuan} onChange={e => setEditProdukForm(f => ({ ...f, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>
                               {SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
-                          </div>
-                          {/* Row 2: berat + kemasan */}
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, marginBottom: 12 }}>
                             <div>
                               <Label>BERAT (kg)</Label>
-                              <input
-                                type="number"
-                                value={editProdukForm.berat_kg}
-                                onChange={e => setEditProdukForm(f => ({ ...f, berat_kg: e.target.value }))}
-                                placeholder="0.25"
-                                step="0.001"
-                                min="0"
-                                style={{ ...inputStyle, fontFamily: T.fontMono }}
-                              />
-                            </div>
-                            <div>
-                              <Label>KEMASAN BAHAN</Label>
-                              <KemasanSelect
-                                value={editProdukForm.kemasan_bahan_id}
-                                onChange={v => setEditProdukForm(f => ({ ...f, kemasan_bahan_id: v }))}
-                              />
+                              <input type="number" value={editProdukForm.berat_kg} onChange={e => setEditProdukForm(f => ({ ...f, berat_kg: e.target.value }))} placeholder="0.25" step="0.001" min="0" style={{ ...inputStyle, fontFamily: T.fontMono }} />
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: 8 }}>
@@ -812,9 +842,9 @@ export default function AdminPage() {
                 </div>
 
                 <div style={{ marginTop: 16, background: `${T.purple}08`, border: `1px solid ${T.purple}20`, borderRadius: 10, padding: "14px 20px", fontSize: 12, color: T.purple, fontFamily: T.fontMono }}>
-                  📦 <strong>SKU</strong> harus sesuai kolom <em>SKU Induk</em> di Excel Shopee. Produk tanpa SKU tidak terdeteksi saat upload. &nbsp;·&nbsp;
-                  ⚖ <strong>Berat</strong> digunakan untuk kalkulasi ongkir & borongan. &nbsp;·&nbsp;
-                  🎁 <strong>Kemasan</strong> merujuk ke bahan baku packaging yang dipakai per produk.
+                  📦 <strong>SKU</strong> sesuai kolom SKU Induk di Excel Shopee. &nbsp;·&nbsp;
+                  ⚖ <strong>Berat</strong> wajib diisi — dipakai untuk hitung HPP/unit di produksi. &nbsp;·&nbsp;
+                  🎁 <strong>Preset Kemasan</strong> (tombol 🎁) — set berat plastik per unit, auto pre-fill di form produksi.
                 </div>
               </div>
             )}
@@ -941,7 +971,7 @@ export default function AdminPage() {
                     {["NAMA", "TELEPON", "ALAMAT", "CATATAN", "AKSI"].map(h => <div key={h} style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1.5, fontWeight: 700 }}>{h}</div>)}
                   </div>
                   {supplierLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
-                  {!supplierLoading && supplierFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.fontMono }}>Belum ada supplier</div>}
+                  {!supplierLoading && supplierFiltered.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Belum ada supplier</div>}
                   {!supplierLoading && supplierFiltered.map(s => (
                     <div key={s.id} className="data-row" style={{ borderBottom: `1px solid ${T.border}`, background: editingSupplierId === s.id ? "rgba(96,165,250,0.04)" : "transparent", transition: "background 0.15s" }}>
                       {editingSupplierId !== s.id ? (
@@ -999,7 +1029,6 @@ export default function AdminPage() {
                     </button>
                   </div>
                 </div>
-
                 {showTambahPelanggan && (
                   <div style={{ background: "rgba(232,115,138,0.04)", border: `1px solid ${T.borderStrong}`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: T.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ PELANGGAN BARU</div>
@@ -1012,7 +1041,6 @@ export default function AdminPage() {
                     <div style={{ display: "flex", gap: 8 }}><BtnPrimary onClick={handleTambahPelanggan} disabled={savingPelanggan}>{savingPelanggan ? "Menyimpan..." : "✓ Simpan Pelanggan"}</BtnPrimary><BtnSecondary onClick={() => setShowTambahPelanggan(false)}>Batal</BtnSecondary></div>
                   </div>
                 )}
-
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {pelangganLoading && <div style={{ padding: 40, textAlign: "center", color: T.textDim, fontFamily: T.fontMono }}>Memuat...</div>}
                   {!pelangganLoading && pelangganFiltered.length === 0 && (
@@ -1024,9 +1052,7 @@ export default function AdminPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 20px" }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: T.textMid }}>{p.nama}</div>
-                            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>
-                              {p.telepon || "—"} {p.alamat ? `· ${p.alamat}` : ""}
-                            </div>
+                            <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{p.telepon || "—"} {p.alamat ? `· ${p.alamat}` : ""}</div>
                           </div>
                           <div style={{ display: "flex", gap: 6 }}>
                             <button onClick={() => bukaHargaPanel(p.id)} style={{ padding: "5px 12px", background: hargaPanel === p.id ? `${T.purple}25` : `${T.purple}10`, border: `1px solid ${T.purple}40`, color: T.purple, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: T.fontMono, fontWeight: 700 }}>
@@ -1050,7 +1076,6 @@ export default function AdminPage() {
                           </div>
                         </div>
                       )}
-
                       {confirmDeletePelangganId === p.id && (
                         <div style={{ padding: "10px 20px 14px", background: `${T.red}08`, borderTop: `1px solid ${T.red}20`, display: "flex", alignItems: "center", gap: 12 }}>
                           <span style={{ fontSize: 12, color: T.red, fontFamily: T.fontMono }}>⚠ Hapus "{p.nama}"?</span>
@@ -1058,7 +1083,6 @@ export default function AdminPage() {
                           <button onClick={() => setConfirmDeletePelangganId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.textDim, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: T.fontMono }}>Batal</button>
                         </div>
                       )}
-
                       {hargaPanel === p.id && (
                         <div style={{ borderTop: `1px solid ${T.purple}30`, background: "rgba(167,139,250,0.04)", padding: "16px 20px", animation: "slideDown 0.2s ease" }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: T.purple, fontFamily: T.fontMono, letterSpacing: 1, marginBottom: 14 }}>
@@ -1097,9 +1121,7 @@ export default function AdminPage() {
                                 <Label>PRODUK</Label>
                                 <select value={hargaProdukId} onChange={e => setHargaProdukId(e.target.value)} style={{ ...inputStyle, fontSize: 12 }}>
                                   <option value="">— Pilih Produk —</option>
-                                  {produkBelumDiset.map(pr => (
-                                    <option key={pr.id} value={pr.id}>{pr.nama_produk} (master: {rupiahFmt(pr.harga_jual)})</option>
-                                  ))}
+                                  {produkBelumDiset.map(pr => <option key={pr.id} value={pr.id}>{pr.nama_produk} (master: {rupiahFmt(pr.harga_jual)})</option>)}
                                 </select>
                               </div>
                               <div style={{ flex: 1 }}>

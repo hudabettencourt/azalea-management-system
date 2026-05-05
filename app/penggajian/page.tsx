@@ -297,18 +297,14 @@ export default function PenggajianPage() {
 
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Karyawan</label>
               <select value={karyawanId} onChange={e => handlePilihKaryawan(e.target.value)} style={inp}>
-                <option value="">— Pilih Karyawan —</option>
-                <optgroup label="⚙️ HPP — Produksi">
-                  {karyawanList.filter(k => getTipeBeban(k.tipe) === "HPP").map(k => (
-                    <option key={k.id} value={k.id}>{k.nama} · {k.tipe}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="📋 Operasional">
-                  {karyawanList.filter(k => getTipeBeban(k.tipe) === "Operasional").map(k => (
-                    <option key={k.id} value={k.id}>{k.nama} · {k.tipe}</option>
-                  ))}
-                </optgroup>
-              </select>
+  <option value="">— Pilih Karyawan —</option>
+  {karyawanList.filter(k => getTipeBeban(k.tipe) === "Operasional").map(k => (
+    <option key={k.id} value={k.id}>{k.nama} · {k.tipe}</option>
+  ))}
+</select>
+<div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 10 }}>
+  ℹ Gaji Operator Produksi, Packing & Pencetak diinput per batch di modul Produksi
+</div>
 
               {selectedKaryawan && (
                 <div style={{

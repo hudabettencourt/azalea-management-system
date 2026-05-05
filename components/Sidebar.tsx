@@ -19,6 +19,7 @@ const MENU_GROUPS: MenuGroup[] = [
       { label: "Pembelian Reseller", href: "/pembelian",       icon: "📦" },
       { label: "Kas",                href: "/kas",             icon: "💰" },
       { label: "Fee Platform",       href: "/fee-platform",    icon: "💰" },
+      { label: "Rekap Saldo Shopee", href: "/rekap-saldo",     icon: "💳" },
     ],
   },
   {

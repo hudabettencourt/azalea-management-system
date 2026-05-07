@@ -333,7 +333,7 @@ export default function Sidebar({ children, pageTitle, pageSubtitle, actions }: 
           minWidth: collapsed ? 64 : 220,
           background: C.sidebar,
           borderRight: `1px solid ${C.sidebarBorder}`,
-          position: "relative" as const, top: 0, height: "100vh",
+          position: "sticky" as const, top: 0, height: "100vh",
           overflowY: "auto" as const, overflowX: "hidden" as const,
           transition: "width 0.2s ease, min-width 0.2s ease",
           flexShrink: 0,

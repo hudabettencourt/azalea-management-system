@@ -296,29 +296,64 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-            {/* ── Stat Cards ── */}
+                   {/* ── Stat Cards ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
               {statCards.map((s, i) => (
                 <a key={i} href={s.href} className="stat-card" style={{
                   background: isDark ? C.card : s.bg,
-                  border: `1px solid ${isDark ? C.border : s.color + "25"}`,
-                  borderRadius: 14, padding: "16px 18px",
+                  border: `1px solid ${isDark ? C.border : s.color + "30"}`,
+                  borderRadius: 16, padding: "18px 18px 14px",
                   position: "relative", overflow: "hidden",
                   animationDelay: `${i * 40}ms`,
                   boxShadow: C.shadow, color: "inherit",
                 }}>
-                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${s.color}, ${s.color}40)`, borderRadius: "14px 14px 0 0" }} />
-                  <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, background: `radial-gradient(circle at top right, ${s.color}20, transparent 70%)` }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, marginTop: 4 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: C.fontMono }}>{s.label}</div>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: s.dim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: s.color }}>{s.icon}</div>
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: C.text, marginBottom: 3, lineHeight: 1.15 }}>{s.value}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontFamily: C.fontMono }}>{s.sub}</div>
-                  <div style={{ fontSize: 10, color: s.color, fontWeight: 700, fontFamily: C.fontMono }}>{s.hint}</div>
+                  {/* Top accent bar */}
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, right: 0, height: 4,
+                    background: s.color,
+                    borderRadius: "16px 16px 0 0",
+                  }} />
+
+                  {/* Icon circle ala RAPID */}
+                  <div style={{
+                    width: 42, height: 42, borderRadius: 12,
+                    background: isDark ? s.dim : s.color + "20",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20, marginBottom: 10, marginTop: 4,
+                  }}>{s.icon}</div>
+
+                  {/* Label */}
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, color: C.muted,
+                    letterSpacing: "0.04em", textTransform: "uppercase",
+                    fontFamily: "'Nunito', sans-serif", marginBottom: 4,
+                  }}>{s.label}</div>
+
+                  {/* Angka — Nunito 900, besar, rounded */}
+                  <div style={{
+                    fontSize: 26, fontWeight: 900,
+                    color: isDark ? "#ffffff" : s.color,
+                    fontFamily: "'Nunito', sans-serif",
+                    letterSpacing: "-0.03em",
+                    lineHeight: 1.1, marginBottom: 4,
+                  }}>{s.value}</div>
+
+                  {/* Sub */}
+                  <div style={{
+                    fontSize: 11, color: C.muted,
+                    fontFamily: "'Nunito', sans-serif",
+                    marginBottom: 8,
+                  }}>{s.sub}</div>
+
+                  {/* Hint link */}
+                  <div style={{
+                    fontSize: 11, color: s.color, fontWeight: 800,
+                    fontFamily: "'Nunito', sans-serif",
+                  }}>{s.hint}</div>
                 </a>
               ))}
             </div>
+
 
             {/* ── Charts Row ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 0.65fr", gap: 12, marginBottom: 16 }}>

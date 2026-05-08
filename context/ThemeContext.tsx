@@ -18,10 +18,12 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("light");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("azalea-theme") as Theme | null;
     if (saved === "dark" || saved === "light") setTheme(saved);
+    setMounted(true);
   }, []);
 
   const toggleTheme = () => {
@@ -32,8 +34,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const resolvedTheme = mounted ? theme : "light";
+
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, isDark: theme === "dark" }}>
+    <ThemeContext.Provider value={{ theme: resolvedTheme, toggleTheme, isDark: resolvedTheme === "dark" }}>
       {children}
     </ThemeContext.Provider>
   );

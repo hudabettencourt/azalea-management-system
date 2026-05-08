@@ -30,11 +30,35 @@ const rupiahShort = (n: number) => {
 const tanggalFmt = (s: string) =>
   new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", timeZone: "Asia/Jakarta" });
 
+// Warna card pastel hardcoded — tidak bergantung pada theme
+const CARD_COLORS = [
+  { bg: "#ccfbf1", color: "#0f9e8a", border: "#99f6e4" }, // teal
+  { bg: "#ccfbf1", color: "#14b8a6", border: "#99f6e4" }, // teal
+  { bg: "#dbeafe", color: "#3b82f6", border: "#bfdbfe" }, // blue
+  { bg: "#dcfce7", color: "#22c55e", border: "#bbf7d0" }, // green (laba)
+  { bg: "#fef9c3", color: "#f59e0b", border: "#fde68a" }, // yellow
+  { bg: "#ffedd5", color: "#f97316", border: "#fed7aa" }, // orange
+  { bg: "#ede9fe", color: "#a855f7", border: "#ddd6fe" }, // purple
+  { bg: "#fee2e2", color: "#ef4444", border: "#fecaca" }, // red (stok kritis)
+];
+
+const CARD_COLORS_DARK = [
+  { bg: "rgba(45,212,191,0.15)", color: "#2dd4bf", border: "rgba(45,212,191,0.3)" },
+  { bg: "rgba(20,184,166,0.15)", color: "#14b8a6", border: "rgba(20,184,166,0.3)" },
+  { bg: "rgba(96,165,250,0.15)", color: "#60a5fa", border: "rgba(96,165,250,0.3)" },
+  { bg: "rgba(74,222,128,0.15)", color: "#4ade80", border: "rgba(74,222,128,0.3)" },
+  { bg: "rgba(251,191,36,0.15)", color: "#fbbf24", border: "rgba(251,191,36,0.3)" },
+  { bg: "rgba(251,146,60,0.15)", color: "#fb923c", border: "rgba(251,146,60,0.3)" },
+  { bg: "rgba(192,132,252,0.15)", color: "#c084fc", border: "rgba(192,132,252,0.3)" },
+  { bg: "rgba(248,113,113,0.15)", color: "#f87171", border: "rgba(248,113,113,0.3)" },
+];
+
 export default function DashboardPage() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
+  const CC = isDark ? CARD_COLORS_DARK : CARD_COLORS;
 
-  const DONUT_COLORS = [C.accent, C.green, C.blue, C.yellow, C.orange, C.purple];
+  const DONUT_COLORS = ["#2dd4bf", "#4ade80", "#60a5fa", "#fbbf24", "#fb923c", "#c084fc"];
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -104,8 +128,6 @@ export default function DashboardPage() {
       ]);
 
       const kasAll: KasRow[] = resKasAll.data || [];
-
-      // Saldo
       setSaldo(kasAll.reduce((a, k) => k.tipe === "Masuk" ? a + k.nominal : a - k.nominal, 0));
       setOmzetHariIni((resKasHariIni.data || []).reduce((a: number, k: any) => a + k.nominal, 0));
 
@@ -121,13 +143,11 @@ export default function DashboardPage() {
         .reduce((a: number, g: GajiRow) => a + g.nominal, 0);
       setLabaBulanIni(omzetBln - hppBulan - gajiBulanHPP - bebanBln);
 
-      // Piutang online
       const totalNominal = (resPiutangOnline.data || []).reduce((a: number, p: any) => a + (p.total_nominal || 0), 0);
       const totalDitarik = (resPiutangOnline.data || []).reduce((a: number, p: any) => a + (p.total_ditarik || 0), 0);
       const totalRetur = (resRetur.data || []).reduce((a: number, r: any) => a + (r.nominal || 0), 0);
       const totalFee = (resFee.data || []).reduce((a: number, f: any) => a + (f.total_fee || 0), 0);
       setPiutangOnline(Math.max(totalNominal - totalDitarik - totalRetur - totalFee, 0));
-
       setPiutangOffline((resPiutangOffline.data || []).reduce((a: number, p: any) => a + p.nominal, 0));
       setHutangTotal((resHutang.data || []).reduce((a: number, h: any) => a + h.nominal, 0));
       setGajiHariIni((resGaji.data || []).filter((g: GajiRow) => g.tanggal === hariIni).reduce((a: number, g: GajiRow) => a + g.nominal, 0));
@@ -139,7 +159,6 @@ export default function DashboardPage() {
       if (user?.user_metadata?.name) setUserName(user.user_metadata.name);
       else if (user?.email) setUserName(user.email.split("@")[0]);
 
-      // Chart 12 bulan
       const bulanChart: any[] = [];
       for (let i = 11; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -153,7 +172,6 @@ export default function DashboardPage() {
       }
       setChartBulanan(bulanChart);
 
-      // Chart L/R 6 bulan
       const lrChart: any[] = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -210,125 +228,98 @@ export default function DashboardPage() {
   const stokKritis = stokBarang.filter(s => s.jumlah_stok <= 10);
   const piutangTotal = piutangOnline + piutangOffline;
 
+  // Stat cards pakai CC (warna hardcoded per index, tidak bergantung isDark logic)
   const statCards = [
-    { label: "Saldo Kas", value: rupiahShort(saldo), sub: "Total kas bersih", color: C.accent, dim: C.accentGlow, icon: "◈", href: "/kas", hint: "Lihat kas →", bg: "#99f6e4" },
-    { label: "Omzet Hari Ini", value: rupiahShort(omzetHariIni), sub: "Kas masuk hari ini", color: C.teal, dim: C.tealDim, icon: "↑", href: "/penjualan", hint: "Lihat penjualan →", bg: "#99f6e4" },
-    { label: "Omzet Bulan Ini", value: rupiahShort(omzetBulanIni), sub: "Bulan berjalan", color: C.blue, dim: C.blueDim, icon: "📈", href: "/penjualan", hint: "Lihat penjualan →", bg: "#bfdbfe" },
-    { label: "Laba Bersih", value: rupiahShort(labaBulanIni), sub: labaBulanIni >= 0 ? "Profit bulan ini 🎉" : "Rugi bulan ini ⚠", color: labaBulanIni >= 0 ? C.green : C.red, dim: labaBulanIni >= 0 ? C.greenDim : C.redDim, icon: labaBulanIni >= 0 ? "✓" : "!", href: "/laporan", hint: "Lihat laporan →", bg: labaBulanIni >= 0 ? "#bbf7d0" : "#fecaca" },
-    { label: "Piutang", value: rupiahShort(piutangTotal), sub: "Online + Offline", color: C.yellow, dim: C.yellowDim, icon: "📝", href: "/penjualan", hint: "Lihat piutang →", bg: "#fde68a" },
-    { label: "Hutang Supplier", value: rupiahShort(hutangTotal), sub: "Belum dibayar", color: C.orange, dim: C.orangeDim, icon: "⚠", href: "/pembelian-bahan", hint: "Lihat hutang →", bg: "#fed7aa" },
-    { label: "Gaji Hari Ini", value: rupiahFmt(gajiHariIni), sub: "Total dibayarkan", color: C.purple, dim: C.purpleDim, icon: "👥", href: "/penggajian", hint: "Lihat gaji →", bg: "#ddd6fe" },
-    { label: "Stok Kritis", value: `${stokKritis.length} produk`, sub: stokKritis.length > 0 ? stokKritis.map(s => s.nama_produk).slice(0, 2).join(", ") : "Semua aman ✓", color: stokKritis.length > 0 ? C.red : C.green, dim: stokKritis.length > 0 ? C.redDim : C.greenDim, icon: "📦", href: "/produksi", hint: "Lihat stok →", bg: stokKritis.length > 0 ? "#fecaca" : "#bbf7d0" },
+    { label: "Saldo Kas",       value: rupiahShort(saldo),         sub: "Total kas bersih",        icon: "◈",  href: "/kas",           hint: "Lihat kas →",        ci: 0 },
+    { label: "Omzet Hari Ini",  value: rupiahShort(omzetHariIni),  sub: "Kas masuk hari ini",      icon: "↑",  href: "/penjualan",     hint: "Lihat penjualan →",  ci: 1 },
+    { label: "Omzet Bulan Ini", value: rupiahShort(omzetBulanIni), sub: "Bulan berjalan",          icon: "📈", href: "/penjualan",     hint: "Lihat penjualan →",  ci: 2 },
+    { label: "Laba Bersih",     value: rupiahShort(labaBulanIni),  sub: labaBulanIni >= 0 ? "Profit bulan ini 🎉" : "Rugi bulan ini ⚠", icon: labaBulanIni >= 0 ? "✓" : "!", href: "/laporan", hint: "Lihat laporan →", ci: labaBulanIni >= 0 ? 3 : 7 },
+    { label: "Piutang",         value: rupiahShort(piutangTotal),  sub: "Online + Offline",        icon: "📝", href: "/penjualan",     hint: "Lihat piutang →",    ci: 4 },
+    { label: "Hutang Supplier", value: rupiahShort(hutangTotal),   sub: "Belum dibayar",           icon: "⚠",  href: "/pembelian-bahan", hint: "Lihat hutang →",   ci: 5 },
+    { label: "Gaji Hari Ini",   value: rupiahFmt(gajiHariIni),     sub: "Total dibayarkan",        icon: "👥", href: "/penggajian",    hint: "Lihat gaji →",       ci: 6 },
+    { label: "Stok Kritis",     value: `${stokKritis.length} produk`, sub: stokKritis.length > 0 ? stokKritis.map(s => s.nama_produk).slice(0, 2).join(", ") : "Semua aman ✓", icon: "📦", href: "/produksi", hint: "Lihat stok →", ci: stokKritis.length > 0 ? 7 : 3 },
   ];
 
   const quickLinks = [
-    { label: "Input Penjualan", href: "/penjualan", icon: "🛍️", color: C.accent },
-    { label: "Input Produksi", href: "/produksi", icon: "⚙️", color: C.blue },
-    { label: "Input Gaji", href: "/penggajian", icon: "👥", color: C.purple },
-    { label: "Catat Kas", href: "/kas", icon: "💰", color: C.green },
-    { label: "Lihat Laporan", href: "/laporan", icon: "📊", color: C.yellow },
-    { label: "Upload Shopee", href: "/penjualan", icon: "📤", color: C.orange },
+    { label: "Input Penjualan", href: "/penjualan", icon: "🛍️", ci: 0 },
+    { label: "Input Produksi",  href: "/produksi",  icon: "⚙️",  ci: 2 },
+    { label: "Input Gaji",      href: "/penggajian",icon: "👥",  ci: 6 },
+    { label: "Catat Kas",       href: "/kas",       icon: "💰",  ci: 3 },
+    { label: "Lihat Laporan",   href: "/laporan",   icon: "📊",  ci: 4 },
+    { label: "Upload Shopee",   href: "/penjualan", icon: "📤",  ci: 5 },
   ];
 
   return (
     <Sidebar>
       <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-        .stat-card {
-          animation: fadeUp 0.3s ease both;
-          transition: transform 0.18s ease, box-shadow 0.18s ease;
-          text-decoration: none !important;
-          display: block;
-        }
-        .stat-card:hover { transform: translateY(-3px); box-shadow: ${C.shadowHover} !important; }
+        .stat-card { animation: fadeUp 0.3s ease both; transition: transform 0.18s ease, box-shadow 0.18s ease; text-decoration: none !important; display: block; }
+        .stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important; }
         .quick-btn { transition: all 0.15s ease; text-decoration: none !important; }
         .quick-btn:hover { transform: translateY(-2px); filter: brightness(1.08); }
         .chart-card { transition: box-shadow 0.18s ease; }
-        .chart-card:hover { box-shadow: ${C.shadowMd} !important; }
+        .chart-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1) !important; }
         .trx-row { transition: background 0.12s; border-radius: 8px; }
-        .trx-row:hover { background: ${isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"} !important; }
+        .trx-row:hover { background: rgba(0,0,0,0.03) !important; }
         .filter-btn { cursor: pointer; transition: all 0.12s; border: none; }
       `}</style>
 
       <div style={{ background: C.bgPage, minHeight: "100vh", padding: "20px 24px", fontFamily: C.fontSans, color: C.text }}>
 
-        {/* ── Greeting ── */}
+        {/* Greeting */}
         <div style={{
-          background: C.card, borderRadius: 16, padding: "16px 20px",
-          marginBottom: 20, border: `1px solid ${C.border}`,
-          boxShadow: C.shadow,
+          background: C.card, borderRadius: 16, padding: "16px 20px", marginBottom: 20,
+          border: `1px solid ${C.border}`, boxShadow: C.shadow,
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <div>
             <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 3 }}>
               {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" })}
-              {jamSekarang && <span style={{ marginLeft: 8, color: C.accent, fontWeight: 700 }}>{jamSekarang} WIB</span>}
+              {jamSekarang && <span style={{ marginLeft: 8, color: CC[0].color, fontWeight: 700 }}>{jamSekarang} WIB</span>}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>
-              {greeting()}, <span style={{ color: C.accent }}>{userName}</span> 🌸
-            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{greeting()}, <span style={{ color: CC[0].color }}>{userName}</span> 🌸</div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Ringkasan bisnis Azalea hari ini</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <a href="/laporan" className="quick-btn" style={{
-              padding: "8px 16px", borderRadius: 10,
-              background: C.accentGlow, border: `1px solid ${C.accent}40`,
-              color: C.accent, fontWeight: 700, fontSize: 12, fontFamily: C.fontSans,
-            }}>📊 Laporan L/R</a>
-            <a href="/rekap-saldo" className="quick-btn" style={{
-              padding: "8px 16px", borderRadius: 10,
-              background: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
-              border: `1px solid ${C.border}`,
-              color: C.muted, fontWeight: 600, fontSize: 12, fontFamily: C.fontSans,
-            }}>Rekap Saldo</a>
+            <a href="/laporan" className="quick-btn" style={{ padding: "8px 16px", borderRadius: 10, background: CC[0].bg, border: `1px solid ${CC[0].border}`, color: CC[0].color, fontWeight: 700, fontSize: 12 }}>📊 Laporan L/R</a>
+            <a href="/rekap-saldo" className="quick-btn" style={{ padding: "8px 16px", borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 12 }}>Rekap Saldo</a>
           </div>
         </div>
 
         {loading ? (
           <div style={{ textAlign: "center", padding: "80px 0", color: C.muted }}>
-            <div style={{ fontSize: 36, marginBottom: 12, animation: "pulse 1.5s infinite", color: C.accent }}>◈</div>
+            <div style={{ fontSize: 36, marginBottom: 12, animation: "pulse 1.5s infinite", color: CC[0].color }}>◈</div>
             <div style={{ fontFamily: C.fontMono, fontSize: 13 }}>Memuat data bisnis...</div>
           </div>
         ) : (
           <>
-            {/* ── Stat Cards ── */}
+            {/* Stat Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-              {statCards.map((s, i) => (
-                <a key={i} href={s.href} className="stat-card" style={{
-                  background: s.bg,
-                  border: `1px solid ${isDark ? C.border : s.color + "25"}`,
-                  borderRadius: 14, padding: "16px 18px",
-                  position: "relative", overflow: "hidden",
-                  animationDelay: `${i * 40}ms`,
-                  boxShadow: C.shadow, color: "inherit",
-                }}>
-                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${s.color}, ${s.color}40)`, borderRadius: "14px 14px 0 0" }} />
-                  <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, background: `radial-gradient(circle at top right, ${s.color}20, transparent 70%)` }} />
-                  <div style={{ width: 44, height: 44, borderRadius: 14, background: isDark ? s.dim : s.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginBottom: 12 }}>{s.icon}</div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: C.fontSans, marginBottom: 6 }}>{s.label}</div>
-                  <div style={{ fontSize: 26, fontWeight: 900, color: isDark ? C.text : s.color, fontFamily: "'Nunito', sans-serif'", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>{s.value}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontFamily: C.fontSans }}>{s.sub}</div>
-                  <div style={{ fontSize: 11, color: s.color, fontWeight: 700, fontFamily: C.fontSans }}>{s.hint}</div>
-                  <div style={{ display: "none" }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: C.fontMono }}>{s.label}</div>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: s.dim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: s.color }}>{s.icon}</div>
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: C.text, marginBottom: 3, lineHeight: 1.15 }}>{s.value}</div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontFamily: C.fontMono }}>{s.sub}</div>
-                  <div style={{ fontSize: 10, color: s.color, fontWeight: 700, fontFamily: C.fontMono }}>{s.hint}</div>
-                </a>
-              ))}
+              {statCards.map((s, i) => {
+                const col = CC[s.ci];
+                return (
+                  <a key={i} href={s.href} className="stat-card" style={{
+                    background: col.bg,
+                    border: `1px solid ${col.border}`,
+                    borderRadius: 16, padding: "18px 18px 14px",
+                    position: "relative", overflow: "hidden",
+                    animationDelay: `${i * 40}ms`,
+                    boxShadow: C.shadow, color: "inherit",
+                  }}>
+                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: col.color, borderRadius: "16px 16px 0 0" }} />
+                    <div style={{ width: 40, height: 40, borderRadius: 12, background: `${col.color}25`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, marginBottom: 10, marginTop: 4 }}>{s.icon}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: col.color, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>{s.label}</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: col.color, letterSpacing: "-0.03em", lineHeight: 1.1, marginBottom: 4 }}>{s.value}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>{s.sub}</div>
+                    <div style={{ fontSize: 11, color: col.color, fontWeight: 800 }}>{s.hint}</div>
+                  </a>
+                );
+              })}
             </div>
 
-            {/* ── Charts Row ── */}
+            {/* Charts */}
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 0.65fr", gap: 12, marginBottom: 16 }}>
-
-              {/* Area Chart */}
               <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, boxShadow: C.shadow }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <div>
@@ -338,62 +329,64 @@ export default function DashboardPage() {
                   <div style={{ display: "flex", gap: 3, background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", borderRadius: 8, padding: 3 }}>
                     {(["3", "6", "12"] as const).map(f => (
                       <button key={f} className="filter-btn" onClick={() => setFilterChart(f)} style={{
-                        padding: "4px 10px", borderRadius: 6, fontSize: 11,
-                        fontFamily: C.fontMono, fontWeight: 700,
-                        background: filterChart === f ? C.accent : "transparent",
+                        padding: "4px 10px", borderRadius: 6, fontSize: 11, fontFamily: C.fontMono, fontWeight: 700,
+                        background: filterChart === f ? CC[0].color : "transparent",
                         color: filterChart === f ? "#fff" : C.muted,
                       }}>{f}B</button>
                     ))}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 14, marginBottom: 10, fontSize: 11, fontFamily: C.fontMono }}>
-                  <span style={{ color: C.accent }}>● Omzet</span>
-                  <span style={{ color: C.green }}>● Laba</span>
-                  <span style={{ color: C.red }}>● Beban</span>
+                  <span style={{ color: CC[0].color }}>● Omzet</span>
+                  <span style={{ color: CC[3].color }}>● Laba</span>
+                  <span style={{ color: CC[7].color }}>● Beban</span>
                 </div>
                 <ResponsiveContainer width="100%" height={170}>
                   <AreaChart data={filteredChart} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
                     <defs>
                       <linearGradient id="gO" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.accent} stopOpacity={0.2} />
-                        <stop offset="95%" stopColor={C.accent} stopOpacity={0} />
+                        <stop offset="5%" stopColor={CC[0].color} stopOpacity={0.2} />
+                        <stop offset="95%" stopColor={CC[0].color} stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="gL" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={C.green} stopOpacity={0.2} />
-                        <stop offset="95%" stopColor={C.green} stopOpacity={0} />
+                        <stop offset="5%" stopColor={CC[3].color} stopOpacity={0.2} />
+                        <stop offset="95%" stopColor={CC[3].color} stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.dim} vertical={false} />
                     <XAxis dataKey="bulan" tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} />
                     <YAxis tickFormatter={rupiahShort} tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} width={55} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Area type="monotone" dataKey="omzet" name="Omzet" stroke={C.accent} strokeWidth={2} fill="url(#gO)" dot={false} />
-                    <Area type="monotone" dataKey="laba" name="Laba" stroke={C.green} strokeWidth={2} fill="url(#gL)" dot={false} />
-                    <Line type="monotone" dataKey="beban" name="Beban" stroke={C.red} strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
+                    <Area type="monotone" dataKey="omzet" name="Omzet" stroke={CC[0].color} strokeWidth={2} fill="url(#gO)" dot={false} />
+                    <Area type="monotone" dataKey="laba" name="Laba" stroke={CC[3].color} strokeWidth={2} fill="url(#gL)" dot={false} />
+                    <Line type="monotone" dataKey="beban" name="Beban" stroke={CC[7].color} strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Bar Chart */}
               <a href="/laporan" style={{ textDecoration: "none" }}>
                 <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, height: "100%", cursor: "pointer", boxShadow: C.shadow }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 4 }}>Laba Rugi</div>
-                  <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 12 }}>6 bulan · klik untuk detail</div>
+                  <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 8 }}>6 bulan · klik untuk detail</div>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 10, fontSize: 11, fontFamily: C.fontMono }}>
+                    <span style={{ color: CC[2].color }}>● Laba Kotor</span>
+                    <span style={{ color: CC[3].color }}>● Bersih</span>
+                    <span style={{ color: CC[7].color }}>● HPP</span>
+                  </div>
                   <ResponsiveContainer width="100%" height={170}>
                     <BarChart data={chartLR} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={C.dim} vertical={false} />
                       <XAxis dataKey="bulan" tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} />
                       <YAxis tickFormatter={rupiahShort} tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} width={50} />
                       <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="Laba Kotor" fill={C.blue} radius={[3, 3, 0, 0]} opacity={0.85} />
-                      <Bar dataKey="Laba Bersih" fill={C.green} radius={[3, 3, 0, 0]} />
-                      <Bar dataKey="HPP" fill={C.red} radius={[3, 3, 0, 0]} opacity={0.65} />
+                      <Bar dataKey="Laba Kotor" fill={CC[2].color} radius={[3, 3, 0, 0]} opacity={0.85} />
+                      <Bar dataKey="Laba Bersih" fill={CC[3].color} radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="HPP" fill={CC[7].color} radius={[3, 3, 0, 0]} opacity={0.65} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </a>
 
-              {/* Donut */}
               <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, boxShadow: C.shadow }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 4 }}>Distribusi Beban</div>
                 <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 8 }}>Bulan ini</div>
@@ -425,20 +418,18 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ── Bottom Row ── */}
+            {/* Bottom Row */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-
-              {/* Stok Produk */}
               <a href="/produksi" style={{ textDecoration: "none", color: "inherit" }}>
                 <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, cursor: "pointer", boxShadow: C.shadow }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>Monitor Stok</div>
                       <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>
-                        {stokKritis.length > 0 ? <span style={{ color: C.red }}>{stokKritis.length} produk kritis ⚠</span> : <span style={{ color: C.green }}>semua aman ✓</span>}
+                        {stokKritis.length > 0 ? <span style={{ color: CC[7].color }}>{stokKritis.length} produk kritis ⚠</span> : <span style={{ color: CC[3].color }}>semua aman ✓</span>}
                       </div>
                     </div>
-                    <span style={{ fontSize: 11, color: C.accent, fontWeight: 700, fontFamily: C.fontMono }}>→</span>
+                    <span style={{ fontSize: 11, color: CC[0].color, fontWeight: 700 }}>→</span>
                   </div>
                   {stokBarang.slice(0, 5).map(s => {
                     const isKritis = s.jumlah_stok <= 10;
@@ -447,10 +438,10 @@ export default function DashboardPage() {
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 600, color: C.textMid }}>{s.nama_produk}</div>
                           <div style={{ height: 3, borderRadius: 2, background: C.dim, marginTop: 4, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${Math.min(100, s.jumlah_stok)}%`, background: isKritis ? C.red : C.green, borderRadius: 2 }} />
+                            <div style={{ height: "100%", width: `${Math.min(100, s.jumlah_stok)}%`, background: isKritis ? CC[7].color : CC[3].color, borderRadius: 2 }} />
                           </div>
                         </div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: isKritis ? C.red : C.green, textAlign: "right" }}>{s.jumlah_stok}</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: isKritis ? CC[7].color : CC[3].color, textAlign: "right" }}>{s.jumlah_stok}</div>
                         <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{s.satuan}</div>
                       </div>
                     );
@@ -458,12 +449,11 @@ export default function DashboardPage() {
                 </div>
               </a>
 
-              {/* Transaksi Terakhir */}
               <a href="/kas" style={{ textDecoration: "none", color: "inherit" }}>
                 <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, cursor: "pointer", boxShadow: C.shadow }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>Transaksi Terakhir</div>
-                    <span style={{ fontSize: 11, color: C.accent, fontWeight: 700, fontFamily: C.fontMono }}>→</span>
+                    <span style={{ fontSize: 11, color: CC[0].color, fontWeight: 700 }}>→</span>
                   </div>
                   {recentTrx.length === 0 ? (
                     <div style={{ color: C.muted, fontSize: 12, textAlign: "center", padding: "20px 0" }}>Belum ada transaksi</div>
@@ -473,7 +463,7 @@ export default function DashboardPage() {
                         <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{t.kategori}</div>
                         <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(t.created_at)}</div>
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: t.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: t.tipe === "Masuk" ? CC[3].color : CC[7].color, fontFamily: C.fontMono }}>
                         {t.tipe === "Masuk" ? "+" : "−"}{rupiahShort(t.nominal)}
                       </div>
                     </div>
@@ -481,24 +471,25 @@ export default function DashboardPage() {
                 </div>
               </a>
 
-              {/* Quick Actions */}
               <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, boxShadow: C.shadow }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 4 }}>Aksi Cepat</div>
                 <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 14 }}>Shortcut input data</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  {quickLinks.map((link, i) => (
-                    <a key={i} href={link.href} className="quick-btn" style={{
-                      display: "flex", alignItems: "center", gap: 7,
-                      padding: "10px 12px",
-                      background: isDark ? `${link.color}12` : `${link.color}12`,
-                      border: `1px solid ${link.color}25`,
-                      borderRadius: 10, color: link.color,
-                      fontWeight: 700, fontSize: 12, fontFamily: C.fontSans,
-                    }}>
-                      <span style={{ fontSize: 15 }}>{link.icon}</span>
-                      <span>{link.label}</span>
-                    </a>
-                  ))}
+                  {quickLinks.map((link, i) => {
+                    const col = CC[link.ci];
+                    return (
+                      <a key={i} href={link.href} className="quick-btn" style={{
+                        display: "flex", alignItems: "center", gap: 7,
+                        padding: "10px 12px", background: col.bg,
+                        border: `1px solid ${col.border}`,
+                        borderRadius: 10, color: col.color,
+                        fontWeight: 700, fontSize: 12,
+                      }}>
+                        <span style={{ fontSize: 15 }}>{link.icon}</span>
+                        <span>{link.label}</span>
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             </div>

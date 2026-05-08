@@ -211,14 +211,14 @@ export default function DashboardPage() {
   const piutangTotal = piutangOnline + piutangOffline;
 
   const statCards = [
-    { label: "Saldo Kas", value: rupiahShort(saldo), sub: "Total kas bersih", color: C.accent, dim: C.accentGlow, icon: "◈", href: "/kas", hint: "Lihat kas →", bg: C.cardTeal },
-    { label: "Omzet Hari Ini", value: rupiahShort(omzetHariIni), sub: "Kas masuk hari ini", color: C.teal, dim: C.tealDim, icon: "↑", href: "/penjualan", hint: "Lihat penjualan →", bg: C.cardTeal },
-    { label: "Omzet Bulan Ini", value: rupiahShort(omzetBulanIni), sub: "Bulan berjalan", color: C.blue, dim: C.blueDim, icon: "📈", href: "/penjualan", hint: "Lihat penjualan →", bg: C.cardBlue },
-    { label: "Laba Bersih", value: rupiahShort(labaBulanIni), sub: labaBulanIni >= 0 ? "Profit bulan ini 🎉" : "Rugi bulan ini ⚠", color: labaBulanIni >= 0 ? C.green : C.red, dim: labaBulanIni >= 0 ? C.greenDim : C.redDim, icon: labaBulanIni >= 0 ? "✓" : "!", href: "/laporan", hint: "Lihat laporan →", bg: labaBulanIni >= 0 ? C.cardGreen : C.cardRed },
-    { label: "Piutang", value: rupiahShort(piutangTotal), sub: "Online + Offline", color: C.yellow, dim: C.yellowDim, icon: "📝", href: "/penjualan", hint: "Lihat piutang →", bg: C.cardYellow },
-    { label: "Hutang Supplier", value: rupiahShort(hutangTotal), sub: "Belum dibayar", color: C.orange, dim: C.orangeDim, icon: "⚠", href: "/pembelian-bahan", hint: "Lihat hutang →", bg: C.cardOrange },
-    { label: "Gaji Hari Ini", value: rupiahFmt(gajiHariIni), sub: "Total dibayarkan", color: C.purple, dim: C.purpleDim, icon: "👥", href: "/penggajian", hint: "Lihat gaji →", bg: C.cardPurple },
-    { label: "Stok Kritis", value: `${stokKritis.length} produk`, sub: stokKritis.length > 0 ? stokKritis.map(s => s.nama_produk).slice(0, 2).join(", ") : "Semua aman ✓", color: stokKritis.length > 0 ? C.red : C.green, dim: stokKritis.length > 0 ? C.redDim : C.greenDim, icon: "📦", href: "/produksi", hint: "Lihat stok →", bg: stokKritis.length > 0 ? C.cardRed : C.cardGreen },
+    { label: "Saldo Kas", value: rupiahShort(saldo), sub: "Total kas bersih", color: C.accent, dim: C.accentGlow, icon: "◈", href: "/kas", hint: "Lihat kas →", bg: "#99f6e4" },
+    { label: "Omzet Hari Ini", value: rupiahShort(omzetHariIni), sub: "Kas masuk hari ini", color: C.teal, dim: C.tealDim, icon: "↑", href: "/penjualan", hint: "Lihat penjualan →", bg: "#99f6e4" },
+    { label: "Omzet Bulan Ini", value: rupiahShort(omzetBulanIni), sub: "Bulan berjalan", color: C.blue, dim: C.blueDim, icon: "📈", href: "/penjualan", hint: "Lihat penjualan →", bg: "#bfdbfe" },
+    { label: "Laba Bersih", value: rupiahShort(labaBulanIni), sub: labaBulanIni >= 0 ? "Profit bulan ini 🎉" : "Rugi bulan ini ⚠", color: labaBulanIni >= 0 ? C.green : C.red, dim: labaBulanIni >= 0 ? C.greenDim : C.redDim, icon: labaBulanIni >= 0 ? "✓" : "!", href: "/laporan", hint: "Lihat laporan →", bg: "#bbf7d0" : "#fecaca" },
+    { label: "Piutang", value: rupiahShort(piutangTotal), sub: "Online + Offline", color: C.yellow, dim: C.yellowDim, icon: "📝", href: "/penjualan", hint: "Lihat piutang →", bg: "#fde68a" },
+    { label: "Hutang Supplier", value: rupiahShort(hutangTotal), sub: "Belum dibayar", color: C.orange, dim: C.orangeDim, icon: "⚠", href: "/pembelian-bahan", hint: "Lihat hutang →", bg: "#fed7aa" },
+    { label: "Gaji Hari Ini", value: rupiahFmt(gajiHariIni), sub: "Total dibayarkan", color: C.purple, dim: C.purpleDim, icon: "👥", href: "/penggajian", hint: "Lihat gaji →", bg: "#ddd6fe" },
+    { label: "Stok Kritis", value: `${stokKritis.length} produk`, sub: stokKritis.length > 0 ? stokKritis.map(s => s.nama_produk).slice(0, 2).join(", ") : "Semua aman ✓", color: stokKritis.length > 0 ? C.red : C.green, dim: stokKritis.length > 0 ? C.redDim : C.greenDim, icon: "📦", href: "/produksi", hint: "Lihat stok →", bg: stokKritis.length > 0 ? "#fecaca" : "#bbf7d0" },
   ];
 
   const quickLinks = [
@@ -296,64 +296,34 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-                   {/* ── Stat Cards ── */}
+            {/* ── Stat Cards ── */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
               {statCards.map((s, i) => (
                 <a key={i} href={s.href} className="stat-card" style={{
                   background: isDark ? C.card : s.bg,
-                  border: `1px solid ${isDark ? C.border : s.color + "30"}`,
-                  borderRadius: 16, padding: "18px 18px 14px",
+                  border: `1px solid ${isDark ? C.border : s.color + "25"}`,
+                  borderRadius: 14, padding: "16px 18px",
                   position: "relative", overflow: "hidden",
                   animationDelay: `${i * 40}ms`,
                   boxShadow: C.shadow, color: "inherit",
                 }}>
-                  {/* Top accent bar */}
-                  <div style={{
-                    position: "absolute", top: 0, left: 0, right: 0, height: 4,
-                    background: s.color,
-                    borderRadius: "16px 16px 0 0",
-                  }} />
-
-                  {/* Icon circle ala RAPID */}
-                  <div style={{
-                    width: 42, height: 42, borderRadius: 12,
-                    background: isDark ? s.dim : s.color + "20",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 20, marginBottom: 10, marginTop: 4,
-                  }}>{s.icon}</div>
-
-                  {/* Label */}
-                  <div style={{
-                    fontSize: 11, fontWeight: 700, color: C.muted,
-                    letterSpacing: "0.04em", textTransform: "uppercase",
-                    fontFamily: "'Nunito', sans-serif", marginBottom: 4,
-                  }}>{s.label}</div>
-
-                  {/* Angka — Nunito 900, besar, rounded */}
-                  <div style={{
-                    fontSize: 26, fontWeight: 900,
-                    color: isDark ? "#ffffff" : s.color,
-                    fontFamily: "'Nunito', sans-serif",
-                    letterSpacing: "-0.03em",
-                    lineHeight: 1.1, marginBottom: 4,
-                  }}>{s.value}</div>
-
-                  {/* Sub */}
-                  <div style={{
-                    fontSize: 11, color: C.muted,
-                    fontFamily: "'Nunito', sans-serif",
-                    marginBottom: 8,
-                  }}>{s.sub}</div>
-
-                  {/* Hint link */}
-                  <div style={{
-                    fontSize: 11, color: s.color, fontWeight: 800,
-                    fontFamily: "'Nunito', sans-serif",
-                  }}>{s.hint}</div>
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${s.color}, ${s.color}40)`, borderRadius: "14px 14px 0 0" }} />
+                  <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, background: `radial-gradient(circle at top right, ${s.color}20, transparent 70%)` }} />
+                  <div style={{ width: 44, height: 44, borderRadius: 14, background: isDark ? s.dim : s.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, marginBottom: 12 }}>{s.icon}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", fontFamily: C.fontSans, marginBottom: 6 }}>{s.label}</div>
+                  <div style={{ fontSize: 26, fontWeight: 900, color: isDark ? C.text : s.color, fontFamily: "'Nunito', sans-serif'", letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 4 }}>{s.value}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 10, fontFamily: C.fontSans }}>{s.sub}</div>
+                  <div style={{ fontSize: 11, color: s.color, fontWeight: 700, fontFamily: C.fontSans }}>{s.hint}</div>
+                  <div style={{ display: "none" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: C.fontMono }}>{s.label}</div>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: s.dim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: s.color }}>{s.icon}</div>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.text, marginBottom: 3, lineHeight: 1.15 }}>{s.value}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontFamily: C.fontMono }}>{s.sub}</div>
+                  <div style={{ fontSize: 10, color: s.color, fontWeight: 700, fontFamily: C.fontMono }}>{s.hint}</div>
                 </a>
               ))}
             </div>
-
 
             {/* ── Charts Row ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 0.65fr", gap: 12, marginBottom: 16 }}>

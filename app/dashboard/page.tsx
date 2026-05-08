@@ -300,7 +300,7 @@ export default function DashboardPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
               {statCards.map((s, i) => (
                 <a key={i} href={s.href} className="stat-card" style={{
-                  background: isDark ? C.card : s.bg,
+                  background: s.bg,
                   border: `1px solid ${isDark ? C.border : s.color + "25"}`,
                   borderRadius: 14, padding: "16px 18px",
                   position: "relative", overflow: "hidden",

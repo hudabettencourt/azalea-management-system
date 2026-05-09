@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
+import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import * as XLSX from "xlsx";
 
 type Toko = { id: number; nama: string; username_shopee: string | null };
@@ -16,6 +17,9 @@ type RekapHeader = {
   total_pesanan?: number;
   total_pending?: number;
   total_masuk?: number;
+  total_batal?: number;
+  nilai_pending?: number;
+  nilai_masuk?: number;
 };
 type RekapDetail = {
   id: number;
@@ -27,27 +31,36 @@ type RekapDetail = {
   total_bayar: number;
   nominal_diterima: number;
   tgl_masuk_saldo: string | null;
-  status_saldo: string;
+  status_saldo: string; // "Pending" | "Masuk" | "Batal"
 };
 type Toast = { msg: string; type: "success" | "error" | "info" };
+type FilterSaldo = "Semua" | "Pending" | "Masuk" | "Batal";
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
+const rupiahShort = (n: number) => {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)}M`;
+  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)}jt`;
+  if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)}rb`;
+  return rupiahFmt(abs);
+};
 const tanggalFmt = (s: string | null) => {
   if (!s) return "-";
   return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
 };
 
-const C = {
-  bg: "#100c16", card: "#1a1425", border: "#2a1f3d",
-  text: "#e2d9f3", textMid: "#c0aed4", muted: "#7c6d8a", dim: "#3d3050",
-  accent: "#a78bfa", success: "#34d399", danger: "#f87171",
-  yellow: "#fbbf24", orange: "#fb923c", blue: "#60a5fa",
-  fontDisplay: "'DM Serif Display', serif",
-  fontMono: "'DM Mono', monospace",
-  fontSans: "'DM Sans', sans-serif",
-};
-
 export default function RekapSaldoPage() {
+  const { isDark } = useTheme();
+  const C = isDark ? DARK : LIGHT;
+
+  const CC = {
+    pending: { bg: isDark ? "rgba(251,191,36,0.12)" : "#fef9c3", color: "#f59e0b", border: isDark ? "rgba(251,191,36,0.25)" : "#fde68a" },
+    masuk:   { bg: isDark ? "rgba(34,197,94,0.12)"  : "#dcfce7", color: "#22c55e", border: isDark ? "rgba(34,197,94,0.25)"  : "#bbf7d0" },
+    batal:   { bg: isDark ? "rgba(239,68,68,0.12)"  : "#fee2e2", color: "#ef4444", border: isDark ? "rgba(239,68,68,0.25)"  : "#fecaca" },
+    total:   { bg: isDark ? "rgba(96,165,250,0.12)" : "#dbeafe", color: "#3b82f6", border: isDark ? "rgba(96,165,250,0.25)" : "#bfdbfe" },
+  };
+
   const [tokoList, setTokoList] = useState<Toko[]>([]);
   const [riwayat, setRiwayat] = useState<RekapHeader[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,11 +77,14 @@ export default function RekapSaldoPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
 
+  // Filter preview
+  const [filterPreview, setFilterPreview] = useState<FilterSaldo>("Semua");
+
   // Riwayat state
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailCache, setDetailCache] = useState<Record<number, RekapDetail[]>>({});
+  const [filterDetailSaldo, setFilterDetailSaldo] = useState<Record<number, FilterSaldo>>({});
   const [filterToko, setFilterToko] = useState("Semua");
-  const [filterStatus, setFilterStatus] = useState("Semua");
 
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
@@ -83,21 +99,16 @@ export default function RekapSaldoPage() {
       ]);
       setTokoList(resToko.data || []);
 
-      // Enrich dengan count
-      const headers = (resRekap.data || []).map((r: any) => ({
-        ...r,
-        nama_toko: r.toko_online?.nama,
-      }));
-
-      // Fetch counts per rekap
+      const headers = (resRekap.data || []).map((r: any) => ({ ...r, nama_toko: r.toko_online?.nama }));
       const enriched = await Promise.all(headers.map(async (h: any) => {
-        const { data: details } = await supabase
-          .from("rekap_saldo_detail")
-          .select("status_saldo")
-          .eq("rekap_id", h.id);
+        const { data: details } = await supabase.from("rekap_saldo_detail").select("status_saldo, total_bayar, nominal_diterima").eq("rekap_id", h.id);
         const total = details?.length || 0;
         const pending = details?.filter(d => d.status_saldo === "Pending").length || 0;
-        return { ...h, total_pesanan: total, total_pending: pending, total_masuk: total - pending };
+        const masuk = details?.filter(d => d.status_saldo === "Masuk").length || 0;
+        const batal = details?.filter(d => d.status_saldo === "Batal").length || 0;
+        const nilaiPending = details?.filter(d => d.status_saldo === "Pending").reduce((a, d) => a + (d.total_bayar || 0), 0) || 0;
+        const nilaiMasuk = details?.filter(d => d.status_saldo === "Masuk").reduce((a, d) => a + (d.nominal_diterima || 0), 0) || 0;
+        return { ...h, total_pesanan: total, total_pending: pending, total_masuk: masuk, total_batal: batal, nilai_pending: nilaiPending, nilai_masuk: nilaiMasuk };
       }));
       setRiwayat(enriched);
     } catch (err: any) {
@@ -109,7 +120,6 @@ export default function RekapSaldoPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Parse Excel ──
   const parseExcel = (file: File): Promise<any[][]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -120,9 +130,7 @@ export default function RekapSaldoPage() {
           const ws = wb.Sheets[wb.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][];
           resolve(rows);
-        } catch (err) {
-          reject(err);
-        }
+        } catch (err) { reject(err); }
       };
       reader.onerror = reject;
       reader.readAsArrayBuffer(file);
@@ -135,29 +143,22 @@ export default function RekapSaldoPage() {
     return isNaN(n) ? 0 : n;
   };
 
-  // ── Proses kedua file ──
   const prosesFile = async () => {
     if (!fileOrder || !fileBalance) return showToast("Upload kedua file dulu!", "error");
     setProcessing(true);
     setPreview(null);
     setDetectedToko(null);
+    setFilterPreview("Semua");
     try {
-      const [orderRows, balanceRows] = await Promise.all([
-        parseExcel(fileOrder),
-        parseExcel(fileBalance),
-      ]);
+      const [orderRows, balanceRows] = await Promise.all([parseExcel(fileOrder), parseExcel(fileBalance)]);
 
-      // ── Parse balance ──
-      // Username di row 5 (index 5), col 1
+      // ── Parse balance header info ──
       const usernameShopee = String(balanceRows[5]?.[1] || "").trim().toLowerCase();
       const periodeFrom = String(balanceRows[6]?.[1] || "").trim();
       const periodeTo = String(balanceRows[7]?.[1] || "").trim();
+      if (periodeFrom && periodeTo) setDetectedPeriode({ dari: periodeFrom, ke: periodeTo });
 
-      if (periodeFrom && periodeTo) {
-        setDetectedPeriode({ dari: periodeFrom, ke: periodeTo });
-      }
-
-      // Auto detect toko
+      // Auto detect toko dari username_shopee
       const toko = tokoList.find(t => t.username_shopee?.toLowerCase() === usernameShopee);
       if (toko) {
         setDetectedToko(toko);
@@ -165,14 +166,13 @@ export default function RekapSaldoPage() {
         showToast(`Username "${usernameShopee}" tidak ditemukan di Master Toko. Pilih manual.`, "info");
       }
 
-      // Header balance di row 17 (index 17)
+      // ── Parse balance transactions ── header di row 17 (index 17)
       const balHeaderRow = balanceRows[17];
       const colNoOrder = balHeaderRow?.findIndex((h: any) => String(h || "").includes("No. Pesanan"));
       const colTipe = balHeaderRow?.findIndex((h: any) => String(h || "").includes("Tipe Transaksi"));
       const colJumlah = balHeaderRow?.findIndex((h: any) => String(h || "").toLowerCase().includes("jumlah"));
       const colTanggal = balHeaderRow?.findIndex((h: any) => String(h || "").includes("Tanggal Transaksi"));
 
-      // Set no pesanan yang sudah masuk saldo
       const sudahMasuk: Record<string, { jumlah: number; tanggal: string }> = {};
       for (let i = 18; i < balanceRows.length; i++) {
         const row = balanceRows[i];
@@ -190,9 +190,9 @@ export default function RekapSaldoPage() {
 
       // ── Parse orders ──
       const orderHeader = orderRows[0];
-      const colOrderNo = orderHeader?.findIndex((h: any) => String(h || "") === "No. Pesanan");
-      const colStatus = orderHeader?.findIndex((h: any) => String(h || "") === "Status Pesanan");
-      const colMetode = orderHeader?.findIndex((h: any) => String(h || "") === "Metode Pembayaran");
+      const colOrderNo   = orderHeader?.findIndex((h: any) => String(h || "") === "No. Pesanan");
+      const colStatus    = orderHeader?.findIndex((h: any) => String(h || "") === "Status Pesanan");
+      const colMetode    = orderHeader?.findIndex((h: any) => String(h || "") === "Metode Pembayaran");
       const colTglDibuat = orderHeader?.findIndex((h: any) => String(h || "") === "Waktu Pesanan Dibuat");
       const colTglSelesai = orderHeader?.findIndex((h: any) => String(h || "") === "Waktu Pesanan Selesai");
       const colTotalBayar = orderHeader?.findIndex((h: any) => String(h || "") === "Total Pembayaran");
@@ -214,29 +214,38 @@ export default function RekapSaldoPage() {
             total_bayar: 0,
           };
         }
-        // Sum total bayar (karena bisa multi baris per pesanan)
         pesananMap[noPesanan].total_bayar += parseNumber(row[colTotalBayar]);
       }
 
-      // Build detail
-      const details: RekapDetail[] = Object.values(pesananMap)
-        .filter((p: any) => p.status_pesanan !== "Dibatalkan")
-        .map((p: any, idx: number) => {
-          const masuk = sudahMasuk[p.no_pesanan];
-          return {
-            id: idx,
-            no_pesanan: p.no_pesanan,
-            status_pesanan: p.status_pesanan,
-            metode_bayar: p.metode_bayar,
-            tgl_pesanan: p.tgl_pesanan,
-            tgl_selesai: p.tgl_selesai,
-            total_bayar: Math.round(p.total_bayar * 1000), // × 1000 karena Shopee dalam ribuan
-            nominal_diterima: masuk ? masuk.jumlah : 0,
-            tgl_masuk_saldo: masuk ? masuk.tanggal : null,
-            status_saldo: masuk ? "Masuk" : "Pending",
-          };
-        })
-        .sort((a, b) => (a.status_saldo === "Pending" ? -1 : 1));
+      // Build detail — simpan SEMUA termasuk Batal
+      const STATUS_BATAL = ["Batal", "Dibatalkan", "Cancelled", "Batalkan"];
+      const details: RekapDetail[] = Object.values(pesananMap).map((p: any, idx: number) => {
+        const masuk = sudahMasuk[p.no_pesanan];
+        const isBatal = STATUS_BATAL.some(s => p.status_pesanan?.toLowerCase().includes(s.toLowerCase()));
+        let statusSaldo: string;
+        if (masuk) {
+          statusSaldo = "Masuk";
+        } else if (isBatal) {
+          statusSaldo = "Batal";
+        } else {
+          statusSaldo = "Pending";
+        }
+        return {
+          id: idx,
+          no_pesanan: p.no_pesanan,
+          status_pesanan: p.status_pesanan,
+          metode_bayar: p.metode_bayar,
+          tgl_pesanan: p.tgl_pesanan,
+          tgl_selesai: p.tgl_selesai,
+          total_bayar: Math.round(p.total_bayar * 1000),
+          nominal_diterima: masuk ? masuk.jumlah : 0,
+          tgl_masuk_saldo: masuk ? masuk.tanggal : null,
+          status_saldo: statusSaldo,
+        };
+      }).sort((a, b) => {
+        const order = { Pending: 0, Masuk: 1, Batal: 2 };
+        return (order[a.status_saldo as keyof typeof order] ?? 3) - (order[b.status_saldo as keyof typeof order] ?? 3);
+      });
 
       setPreview(details);
     } catch (err: any) {
@@ -246,26 +255,21 @@ export default function RekapSaldoPage() {
     }
   };
 
-  // ── Simpan ke Supabase ──
+  // ── Simpan dengan upsert by no_pesanan ──
   const simpanRekap = async () => {
     if (!preview) return;
     const tokoId = detectedToko?.id || parseInt(tokoManual);
     if (!tokoId) return showToast("Toko tidak terdeteksi. Pilih manual!", "error");
     if (!detectedPeriode) return showToast("Periode tidak terdeteksi!", "error");
-
     setSaving(true);
     try {
       const { data: rekapData, error: errRekap } = await supabase
         .from("rekap_saldo_shopee")
-        .insert([{
-          toko_id: tokoId,
-          periode_dari: detectedPeriode.dari,
-          periode_ke: detectedPeriode.ke,
-        }])
+        .insert([{ toko_id: tokoId, periode_dari: detectedPeriode.dari, periode_ke: detectedPeriode.ke }])
         .select().single();
       if (errRekap) throw new Error("Gagal simpan rekap: " + errRekap.message);
 
-      // Batch insert detail
+      // Upsert detail by no_pesanan — update status kalau sudah ada
       const batchSize = 50;
       for (let i = 0; i < preview.length; i += batchSize) {
         const batch = preview.slice(i, i + batchSize).map(d => ({
@@ -280,7 +284,7 @@ export default function RekapSaldoPage() {
           tgl_masuk_saldo: d.tgl_masuk_saldo,
           status_saldo: d.status_saldo,
         }));
-        const { error } = await supabase.from("rekap_saldo_detail").insert(batch);
+        const { error } = await supabase.from("rekap_saldo_detail").upsert(batch, { onConflict: "no_pesanan" });
         if (error) throw new Error("Gagal simpan detail: " + error.message);
       }
 
@@ -296,7 +300,6 @@ export default function RekapSaldoPage() {
     }
   };
 
-  // ── Expand riwayat ──
   const toggleDetail = async (id: number) => {
     if (expandedId === id) { setExpandedId(null); return; }
     setExpandedId(id);
@@ -310,41 +313,80 @@ export default function RekapSaldoPage() {
     setDetailCache(prev => ({ ...prev, [id]: data || [] }));
   };
 
-  const pendingCount = preview?.filter(d => d.status_saldo === "Pending").length || 0;
-  const masukCount = preview?.filter(d => d.status_saldo === "Masuk").length || 0;
-  const pendingTotal = preview?.filter(d => d.status_saldo === "Pending").reduce((a, d) => a + d.total_bayar, 0) || 0;
-  const masukTotal = preview?.filter(d => d.status_saldo === "Masuk").reduce((a, d) => a + d.nominal_diterima, 0) || 0;
+  // Stats dari preview
+  const pendingList  = preview?.filter(d => d.status_saldo === "Pending") || [];
+  const masukList    = preview?.filter(d => d.status_saldo === "Masuk") || [];
+  const batalList    = preview?.filter(d => d.status_saldo === "Batal") || [];
+  const pendingTotal = pendingList.reduce((a, d) => a + d.total_bayar, 0);
+  const masukTotal   = masukList.reduce((a, d) => a + d.nominal_diterima, 0);
+  const batalTotal   = batalList.reduce((a, d) => a + d.total_bayar, 0);
 
-  const riwayatFiltered = riwayat.filter(r => {
-    if (filterToko !== "Semua" && String(r.toko_id) !== filterToko) return false;
-    return true;
-  });
+  const previewFiltered = filterPreview === "Semua" ? (preview || []) : (preview || []).filter(d => d.status_saldo === filterPreview);
+  const riwayatFiltered = riwayat.filter(r => filterToko === "Semua" || String(r.toko_id) === filterToko);
 
   const inputS: React.CSSProperties = {
-    width: "100%", padding: "9px 12px", background: "#0f0b1a",
-    border: `1.5px solid ${C.border}`, borderRadius: "8px",
-    color: C.text, fontFamily: C.fontSans, fontSize: "13px",
+    width: "100%", padding: "9px 12px",
+    background: isDark ? "rgba(255,255,255,0.05)" : "#f8fffe",
+    border: `1.5px solid ${C.border}`, borderRadius: 10,
+    color: C.text, fontFamily: C.fontSans, fontSize: 13,
     boxSizing: "border-box", outline: "none",
   };
 
-  const tabBtn = (active: boolean, color: string): React.CSSProperties => ({
-    flex: 1, padding: "10px 8px", borderRadius: "8px",
-    border: `1px solid ${active ? color + "60" : C.border}`,
-    background: active ? color + "20" : "transparent",
+  const tabStyle = (active: boolean, color: string): React.CSSProperties => ({
+    flex: 1, padding: "10px 8px", borderRadius: 10,
+    border: `1.5px solid ${active ? color + "60" : C.border}`,
+    background: active ? color + "15" : "transparent",
     color: active ? color : C.muted,
-    fontWeight: 600, cursor: "pointer", fontSize: "13px",
+    fontWeight: 700, cursor: "pointer", fontSize: 13,
     fontFamily: C.fontSans, transition: "all 0.15s",
   });
 
-  const Lbl = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: "10px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: "5px", textTransform: "uppercase" as const }}>{children}</div>
+  const StatusBadge = ({ status }: { status: string }) => {
+    const col = status === "Masuk" ? CC.masuk : status === "Batal" ? CC.batal : CC.pending;
+    const label = status === "Masuk" ? "✅ Masuk" : status === "Batal" ? "✕ Batal" : "⏳ Pending";
+    return (
+      <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: col.bg, color: col.color, border: `1px solid ${col.border}`, whiteSpace: "nowrap" as const }}>
+        {label}
+      </span>
+    );
+  };
+
+  const TableHeader = () => (
+    <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.2fr 0.9fr 0.9fr 1.1fr 1fr", gap: 8, padding: "8px 14px", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 8, marginBottom: 4 }}>
+      {["NO. PESANAN", "STATUS", "METODE BAYAR", "TGL PESANAN", "TGL SELESAI", "TOTAL BAYAR", "STATUS SALDO"].map(h => (
+        <div key={h} style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.06em", textTransform: "uppercase" as const }}>{h}</div>
+      ))}
+    </div>
+  );
+
+  const TableRow = ({ d }: { d: RekapDetail }) => (
+    <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.2fr 0.9fr 0.9fr 1.1fr 1fr", gap: 8, padding: "9px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center" }}>
+      <div style={{ fontSize: 12, color: CC.total.color, fontFamily: C.fontMono, fontWeight: 700 }}>{d.no_pesanan}</div>
+      <div style={{ fontSize: 11, color: C.textMid }}>{d.status_pesanan}</div>
+      <div style={{ fontSize: 11, color: C.muted }}>{d.metode_bayar}</div>
+      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_pesanan)}</div>
+      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_selesai)}</div>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(d.total_bayar)}</div>
+        {d.status_saldo === "Masuk" && d.nominal_diterima > 0 && (
+          <div style={{ fontSize: 10, color: CC.masuk.color, fontFamily: C.fontMono, marginTop: 1 }}>+{rupiahShort(d.nominal_diterima)}</div>
+        )}
+      </div>
+      <div>
+        <StatusBadge status={d.status_saldo} />
+        {d.status_saldo === "Masuk" && d.tgl_masuk_saldo && (
+          <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 3 }}>{tanggalFmt(d.tgl_masuk_saldo)}</div>
+        )}
+      </div>
+    </div>
   );
 
   if (loading) return (
     <Sidebar>
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
-          <div style={{ fontSize: 28, marginBottom: 12 }}>◈</div>Memuat...
+      <div style={{ minHeight: "100vh", background: C.bgPage, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: C.fontSans }}>
+        <div style={{ textAlign: "center", color: C.muted }}>
+          <div style={{ fontSize: 28, marginBottom: 12, color: CC.total.color }}>◈</div>
+          <div style={{ fontSize: 13 }}>Memuat...</div>
         </div>
       </div>
     </Sidebar>
@@ -353,36 +395,26 @@ export default function RekapSaldoPage() {
   return (
     <Sidebar>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-        input:focus, select:focus { border-color: #a78bfa80 !important; outline: none; }
-        select option { background: #1a1020; color: #e2d9f3; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #2a1f3d; border-radius: 2px; }
+        input:focus, select:focus { border-color: ${CC.total.color} !important; outline: none; }
+        select option { background: ${isDark ? "#172218" : "#fff"}; color: ${C.text}; }
+        .row-hover:hover { background: ${isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"} !important; }
+        .card-click { transition: transform 0.15s, box-shadow 0.15s; cursor: pointer; }
+        .card-click:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .card-click.active { outline: 2.5px solid currentColor; outline-offset: 2px; }
       `}</style>
 
       {toast && (
-        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: "#1a1020", border: `1px solid ${toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue}44`, color: toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue, padding: "14px 18px", borderRadius: "10px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", fontFamily: C.fontMono, fontWeight: 600, fontSize: 13, maxWidth: 400 }}>
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: toast.type === "success" ? "#22c55e" : toast.type === "error" ? "#ef4444" : "#3b82f6", color: "#fff", padding: "12px 20px", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)", fontFamily: C.fontSans, fontWeight: 700, fontSize: 14 }}>
           {toast.msg}
         </div>
       )}
 
-      <div style={{ padding: "28px 24px", fontFamily: C.fontSans, background: C.bg, minHeight: "100vh", maxWidth: "1100px", margin: "0 auto" }}>
-
-        {/* Header */}
-        <div style={{ marginBottom: "28px" }}>
-          <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: "26px", color: "#f0eaff", fontWeight: 400 }}>
-            💳 Rekap Saldo Shopee
-          </h1>
-          <p style={{ margin: "4px 0 0", fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>
-            Upload Order All + Balance → cek pesanan pending vs sudah masuk saldo
-          </p>
-        </div>
+      <div style={{ padding: 24, fontFamily: C.fontSans, background: C.bgPage, minHeight: "100vh" }}>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
-          <button onClick={() => setActiveTab("upload")} style={tabBtn(activeTab === "upload", C.accent)}>📤 Upload & Analisis</button>
-          <button onClick={() => setActiveTab("riwayat")} style={tabBtn(activeTab === "riwayat", C.blue)}>📋 Riwayat Rekap ({riwayat.length})</button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <button onClick={() => setActiveTab("upload")} style={tabStyle(activeTab === "upload", CC.total.color)}>📤 Upload & Analisis</button>
+          <button onClick={() => setActiveTab("riwayat")} style={tabStyle(activeTab === "riwayat", CC.masuk.color)}>📋 Riwayat Rekap ({riwayat.length})</button>
         </div>
 
         {/* ══ TAB UPLOAD ══ */}
@@ -390,59 +422,37 @@ export default function RekapSaldoPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* Upload area */}
-            <div style={{ background: C.card, padding: "24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 16, letterSpacing: 1 }}>📁 UPLOAD FILE SHOPEE</div>
-
+            <div style={{ background: C.card, padding: 24, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 16 }}>Upload File Shopee</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
                 {/* File Order */}
                 <div>
-                  <Lbl>FILE ORDER ALL (.xlsx)</Lbl>
-                  <label style={{
-                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    padding: "24px 16px", border: `2px dashed ${fileOrder ? C.success + "60" : C.border}`,
-                    borderRadius: "10px", cursor: "pointer", background: fileOrder ? C.success + "08" : "#0f0b1a",
-                    transition: "all 0.2s",
-                  }}>
-                    <input type="file" accept=".xlsx,.xls" style={{ display: "none" }}
-                      onChange={e => { setFileOrder(e.target.files?.[0] || null); setPreview(null); }} />
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>File Order All (.xlsx)</div>
+                  <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px", border: `2px dashed ${fileOrder ? CC.masuk.color + "80" : C.border}`, borderRadius: 12, cursor: "pointer", background: fileOrder ? CC.masuk.bg : isDark ? "rgba(255,255,255,0.03)" : "#f8fffe", transition: "all 0.2s" }}>
+                    <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={e => { setFileOrder(e.target.files?.[0] || null); setPreview(null); }} />
                     <div style={{ fontSize: 28, marginBottom: 8 }}>{fileOrder ? "✅" : "📊"}</div>
-                    <div style={{ fontSize: 12, color: fileOrder ? C.success : C.muted, textAlign: "center", fontFamily: C.fontMono }}>
-                      {fileOrder ? fileOrder.name : "Klik untuk upload\nOrder_all_*.xlsx"}
-                    </div>
+                    <div style={{ fontSize: 12, color: fileOrder ? CC.masuk.color : C.muted, textAlign: "center", fontFamily: C.fontMono }}>{fileOrder ? fileOrder.name : "Klik untuk upload\nOrder_all_*.xlsx"}</div>
                   </label>
                 </div>
-
                 {/* File Balance */}
                 <div>
-                  <Lbl>FILE BALANCE TRANSACTION (.xlsx)</Lbl>
-                  <label style={{
-                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    padding: "24px 16px", border: `2px dashed ${fileBalance ? C.success + "60" : C.border}`,
-                    borderRadius: "10px", cursor: "pointer", background: fileBalance ? C.success + "08" : "#0f0b1a",
-                    transition: "all 0.2s",
-                  }}>
-                    <input type="file" accept=".xlsx,.xls" style={{ display: "none" }}
-                      onChange={e => { setFileBalance(e.target.files?.[0] || null); setPreview(null); }} />
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>File Balance Transaction (.xlsx)</div>
+                  <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px", border: `2px dashed ${fileBalance ? CC.masuk.color + "80" : C.border}`, borderRadius: 12, cursor: "pointer", background: fileBalance ? CC.masuk.bg : isDark ? "rgba(255,255,255,0.03)" : "#f8fffe", transition: "all 0.2s" }}>
+                    <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={e => { setFileBalance(e.target.files?.[0] || null); setPreview(null); }} />
                     <div style={{ fontSize: 28, marginBottom: 8 }}>{fileBalance ? "✅" : "💳"}</div>
-                    <div style={{ fontSize: 12, color: fileBalance ? C.success : C.muted, textAlign: "center", fontFamily: C.fontMono }}>
-                      {fileBalance ? fileBalance.name : "Klik untuk upload\nmy_balance_*.xlsx"}
-                    </div>
+                    <div style={{ fontSize: 12, color: fileBalance ? CC.masuk.color : C.muted, textAlign: "center", fontFamily: C.fontMono }}>{fileBalance ? fileBalance.name : "Klik untuk upload\nmy_balance_*.xlsx"}</div>
                   </label>
                 </div>
               </div>
 
-              <button
-                onClick={prosesFile}
-                disabled={!fileOrder || !fileBalance || processing}
-                style={{
-                  width: "100%", padding: "12px", borderRadius: "10px",
-                  background: (!fileOrder || !fileBalance || processing) ? "transparent" : C.accent + "25",
-                  border: `1px solid ${(!fileOrder || !fileBalance || processing) ? C.dim : C.accent + "60"}`,
-                  color: (!fileOrder || !fileBalance || processing) ? C.dim : C.accent,
-                  fontWeight: 700, cursor: (!fileOrder || !fileBalance || processing) ? "not-allowed" : "pointer",
-                  fontFamily: C.fontSans, fontSize: "14px",
-                }}
-              >
+              <button onClick={prosesFile} disabled={!fileOrder || !fileBalance || processing} style={{
+                width: "100%", padding: 12, borderRadius: 12,
+                background: (!fileOrder || !fileBalance || processing) ? "transparent" : CC.total.bg,
+                border: `1.5px solid ${(!fileOrder || !fileBalance || processing) ? C.border : CC.total.color}`,
+                color: (!fileOrder || !fileBalance || processing) ? C.muted : CC.total.color,
+                fontWeight: 800, cursor: (!fileOrder || !fileBalance || processing) ? "not-allowed" : "pointer",
+                fontFamily: C.fontSans, fontSize: 14, transition: "all 0.15s",
+              }}>
                 {processing ? "⏳ Memproses..." : "🔍 Analisis Saldo"}
               </button>
             </div>
@@ -451,15 +461,15 @@ export default function RekapSaldoPage() {
             {preview && (
               <>
                 {/* Info toko + periode */}
-                <div style={{ background: C.card, padding: "16px 20px", borderRadius: "12px", border: `1px solid ${C.border}`, display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ background: C.card, padding: "14px 20px", borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: C.shadow, display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.08em", marginBottom: 4 }}>TOKO TERDETEKSI</div>
+                    <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>Toko Terdeteksi</div>
                     {detectedToko ? (
-                      <div style={{ fontSize: 14, fontWeight: 700, color: C.success }}>{detectedToko.nama}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: CC.masuk.color }}>{detectedToko.nama}</div>
                     ) : (
                       <div>
-                        <div style={{ fontSize: 12, color: C.danger, marginBottom: 6 }}>⚠ Toko tidak terdeteksi — pilih manual:</div>
-                        <select value={tokoManual} onChange={e => setTokoManual(e.target.value)} style={{ ...inputS, width: "200px" }}>
+                        <div style={{ fontSize: 12, color: CC.batal.color, marginBottom: 6, fontWeight: 600 }}>⚠ Toko tidak terdeteksi — pilih manual:</div>
+                        <select value={tokoManual} onChange={e => setTokoManual(e.target.value)} style={{ ...inputS, width: 200 }}>
                           <option value="">— Pilih Toko —</option>
                           {tokoList.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
                         </select>
@@ -468,77 +478,69 @@ export default function RekapSaldoPage() {
                   </div>
                   {detectedPeriode && (
                     <div>
-                      <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.08em", marginBottom: 4 }}>PERIODE</div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: C.textMid, fontFamily: C.fontMono }}>
-                        {detectedPeriode.dari} → {detectedPeriode.ke}
-                      </div>
+                      <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>Periode</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{detectedPeriode.dari} → {detectedPeriode.ke}</div>
                     </div>
                   )}
-                </div>
-
-                {/* Summary cards */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                  <div style={{ background: C.card, padding: "18px 20px", borderRadius: "12px", border: `1px solid ${C.yellow}40`, borderLeft: `4px solid ${C.yellow}` }}>
-                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontFamily: C.fontMono, textTransform: "uppercase", letterSpacing: "0.08em" }}>⏳ Pending / Belum Masuk Saldo</div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: C.yellow, fontFamily: C.fontDisplay }}>{pendingCount} pesanan</div>
-                    <div style={{ fontSize: 13, color: C.textMid, fontFamily: C.fontMono, marginTop: 4 }}>{rupiahFmt(pendingTotal)}</div>
-                  </div>
-                  <div style={{ background: C.card, padding: "18px 20px", borderRadius: "12px", border: `1px solid ${C.success}40`, borderLeft: `4px solid ${C.success}` }}>
-                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontFamily: C.fontMono, textTransform: "uppercase", letterSpacing: "0.08em" }}>✅ Sudah Masuk Saldo</div>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: C.success, fontFamily: C.fontDisplay }}>{masukCount} pesanan</div>
-                    <div style={{ fontSize: 13, color: C.textMid, fontFamily: C.fontMono, marginTop: 4 }}>{rupiahFmt(masukTotal)}</div>
+                  <div>
+                    <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.08em", marginBottom: 4, textTransform: "uppercase" }}>Total</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{preview.length} pesanan</div>
                   </div>
                 </div>
 
-                {/* Tabel detail */}
-                <div style={{ background: C.card, borderRadius: "14px", border: `1px solid ${C.border}`, overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.4fr 1fr 1fr 1.2fr 1fr", gap: 8, padding: "10px 16px", background: "#0f0b1a", borderBottom: `1px solid ${C.border}` }}>
-                    {["NO. PESANAN", "STATUS", "METODE BAYAR", "TGL PESANAN", "TGL SELESAI", "TOTAL BAYAR", "STATUS SALDO"].map(h => (
-                      <div key={h} style={{ fontSize: 9, fontWeight: 700, color: C.dim, letterSpacing: "0.08em" }}>{h}</div>
-                    ))}
-                  </div>
+                {/* ── 3 Summary Cards — clickable filter ── */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  {[
+                    { key: "Pending" as FilterSaldo, label: "Pending / Belum Masuk", icon: "⏳", count: pendingList.length, nilai: pendingTotal, col: CC.pending, desc: "Belum cair ke saldo" },
+                    { key: "Batal" as FilterSaldo, label: "Pesanan Batal", icon: "✕", count: batalList.length, nilai: batalTotal, col: CC.batal, desc: "Tidak akan cair" },
+                    { key: "Masuk" as FilterSaldo, label: "Sudah Masuk Saldo", icon: "✅", count: masukList.length, nilai: masukTotal, col: CC.masuk, desc: "Sudah cair ke saldo" },
+                  ].map(s => (
+                    <div key={s.key}
+                      className={`card-click ${filterPreview === s.key ? "active" : ""}`}
+                      onClick={() => setFilterPreview(filterPreview === s.key ? "Semua" : s.key)}
+                      style={{
+                        background: filterPreview === s.key ? s.col.bg : C.card,
+                        border: `1.5px solid ${filterPreview === s.key ? s.col.color : s.col.border}`,
+                        borderRadius: 14, padding: "18px 20px",
+                        position: "relative", overflow: "hidden",
+                        boxShadow: C.shadow,
+                        color: s.col.color,
+                      }}>
+                      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: s.col.color, borderRadius: "14px 14px 0 0" }} />
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: s.col.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, marginBottom: 10, marginTop: 4, border: `1px solid ${s.col.border}` }}>{s.icon}</div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{s.label}</div>
+                      <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 3 }}>{s.count} pesanan</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, fontFamily: C.fontMono }}>{rupiahShort(s.nilai)}</div>
+                      <div style={{ fontSize: 11, color: C.muted }}>{s.desc}</div>
+                      {filterPreview === s.key && (
+                        <div style={{ fontSize: 11, fontWeight: 800, marginTop: 6 }}>▼ Filter aktif · klik lagi untuk reset</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
 
+                {/* Tabel detail preview */}
+                <div style={{ background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden", boxShadow: C.shadow }}>
+                  <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+                      {filterPreview === "Semua" ? `Semua Pesanan (${preview.length})` : `${filterPreview} (${previewFiltered.length})`}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>Klik card di atas untuk filter</div>
+                  </div>
+                  <TableHeader />
                   <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                    {preview.map((d, i) => {
-                      const isPending = d.status_saldo === "Pending";
-                      return (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.4fr 1fr 1fr 1.2fr 1fr", gap: 8, padding: "10px 16px", borderBottom: `1px solid ${C.border}20`, alignItems: "center" }}>
-                          <div style={{ fontSize: 11, color: C.accent, fontFamily: C.fontMono, fontWeight: 600 }}>{d.no_pesanan}</div>
-                          <div style={{ fontSize: 11, color: C.textMid }}>{d.status_pesanan}</div>
-                          <div style={{ fontSize: 11, color: C.muted }}>{d.metode_bayar}</div>
-                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_pesanan)}</div>
-                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_selesai)}</div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "#f0eaff", fontFamily: C.fontMono }}>{rupiahFmt(d.total_bayar)}</div>
-                          <div>
-                            <span style={{
-                              padding: "3px 8px", borderRadius: "4px", fontSize: 10, fontWeight: 700,
-                              background: isPending ? C.yellow + "20" : C.success + "20",
-                              color: isPending ? C.yellow : C.success,
-                            }}>
-                              {isPending ? "⏳ Pending" : "✅ Masuk"}
-                            </span>
-                            {!isPending && d.tgl_masuk_saldo && (
-                              <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{tanggalFmt(d.tgl_masuk_saldo)}</div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {previewFiltered.map((d, i) => <TableRow key={i} d={d} />)}
                   </div>
                 </div>
 
                 {/* Tombol simpan */}
-                <button
-                  onClick={simpanRekap}
-                  disabled={saving || (!detectedToko && !tokoManual)}
-                  style={{
-                    width: "100%", padding: "13px", borderRadius: "10px",
-                    background: (saving || (!detectedToko && !tokoManual)) ? "transparent" : C.success + "25",
-                    border: `1px solid ${(saving || (!detectedToko && !tokoManual)) ? C.dim : C.success + "60"}`,
-                    color: (saving || (!detectedToko && !tokoManual)) ? C.dim : C.success,
-                    fontWeight: 700, cursor: "pointer", fontFamily: C.fontSans, fontSize: "14px",
-                  }}
-                >
+                <button onClick={simpanRekap} disabled={saving || (!detectedToko && !tokoManual)} style={{
+                  width: "100%", padding: 13, borderRadius: 12,
+                  background: (saving || (!detectedToko && !tokoManual)) ? "transparent" : CC.masuk.bg,
+                  border: `1.5px solid ${(saving || (!detectedToko && !tokoManual)) ? C.border : CC.masuk.color}`,
+                  color: (saving || (!detectedToko && !tokoManual)) ? C.muted : CC.masuk.color,
+                  fontWeight: 800, cursor: "pointer", fontFamily: C.fontSans, fontSize: 15, transition: "all 0.15s",
+                }}>
                   {saving ? "Menyimpan..." : `💾 Simpan Rekap (${preview.length} pesanan)`}
                 </button>
               </>
@@ -549,77 +551,83 @@ export default function RekapSaldoPage() {
         {/* ══ TAB RIWAYAT ══ */}
         {activeTab === "riwayat" && (
           <div>
-            {/* Filter */}
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-              <select value={filterToko} onChange={e => setFilterToko(e.target.value)} style={{ ...inputS, width: "200px" }}>
+              <select value={filterToko} onChange={e => setFilterToko(e.target.value)} style={{ ...inputS, width: 200 }}>
                 <option value="Semua">Semua Toko</option>
                 {tokoList.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
               </select>
             </div>
 
             {riwayatFiltered.length === 0 && (
-              <div style={{ textAlign: "center", color: C.muted, padding: 60, fontFamily: C.fontMono, fontSize: 13 }}>
-                Belum ada riwayat rekap
-              </div>
+              <div style={{ textAlign: "center", color: C.muted, padding: 60, fontFamily: C.fontMono, fontSize: 13 }}>Belum ada riwayat rekap</div>
             )}
 
             {riwayatFiltered.map(r => (
-              <div key={r.id} style={{ marginBottom: 10 }}>
-                <div
-                  onClick={() => toggleDetail(r.id)}
-                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: expandedId === r.id ? C.accent + "10" : "#0f0b1a", border: `1px solid ${expandedId === r.id ? C.accent + "40" : C.border}`, borderRadius: expandedId === r.id ? "10px 10px 0 0" : "10px", cursor: "pointer", transition: "all 0.15s" }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: C.text, marginBottom: 4 }}>
-                      {r.nama_toko}
-                      <span style={{ fontSize: 11, color: C.muted, marginLeft: 10, fontFamily: C.fontMono, fontWeight: 400 }}>
-                        {r.periode_dari} → {r.periode_ke}
-                      </span>
+              <div key={r.id} style={{ marginBottom: 12 }}>
+
+                {/* Rekap header — clickable expand */}
+                <div onClick={() => toggleDetail(r.id)} style={{
+                  background: C.card, border: `1px solid ${expandedId === r.id ? CC.total.border : C.border}`,
+                  borderRadius: expandedId === r.id ? "14px 14px 0 0" : 14,
+                  padding: "16px 20px", cursor: "pointer", boxShadow: C.shadow,
+                  transition: "all 0.15s",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 4 }}>
+                        {r.nama_toko}
+                        <span style={{ fontSize: 12, color: C.muted, marginLeft: 10, fontFamily: C.fontMono, fontWeight: 400 }}>
+                          {r.periode_dari} → {r.periode_ke}
+                        </span>
+                      </div>
+                      {/* 3 stat badges */}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: CC.pending.bg, color: CC.pending.color, border: `1px solid ${CC.pending.border}` }}>
+                          ⏳ {r.total_pending || 0} pending · {rupiahShort(r.nilai_pending || 0)}
+                        </span>
+                        <span style={{ padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: CC.batal.bg, color: CC.batal.color, border: `1px solid ${CC.batal.border}` }}>
+                          ✕ {r.total_batal || 0} batal
+                        </span>
+                        <span style={{ padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: CC.masuk.bg, color: CC.masuk.color, border: `1px solid ${CC.masuk.border}` }}>
+                          ✅ {r.total_masuk || 0} masuk · {rupiahShort(r.nilai_masuk || 0)}
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, display: "flex", gap: 12 }}>
-                      <span>{r.total_pesanan} pesanan</span>
-                      {(r.total_pending || 0) > 0 && <span style={{ color: C.yellow }}>⏳ {r.total_pending} pending</span>}
-                      {(r.total_masuk || 0) > 0 && <span style={{ color: C.success }}>✅ {r.total_masuk} masuk</span>}
+                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, textAlign: "right" }}>
+                      <div>{new Date(r.created_at).toLocaleDateString("id-ID")}</div>
+                      <div style={{ marginTop: 4, fontSize: 14 }}>{expandedId === r.id ? "▲" : "▼"}</div>
                     </div>
-                  </div>
-                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>
-                    {new Date(r.created_at).toLocaleDateString("id-ID")} · {expandedId === r.id ? "▲" : "▼"}
                   </div>
                 </div>
 
+                {/* Detail expanded */}
                 {expandedId === r.id && (
-                  <div style={{ background: "#0f0b1a", border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                  <div style={{ background: C.card, border: `1px solid ${CC.total.border}`, borderTop: "none", borderRadius: "0 0 14px 14px", overflow: "hidden" }}>
+                    {/* Filter tabs dalam detail */}
+                    <div style={{ display: "flex", gap: 6, padding: "12px 14px", borderBottom: `1px solid ${C.border}` }}>
+                      {(["Semua", "Pending", "Batal", "Masuk"] as FilterSaldo[]).map(f => (
+                        <button key={f} onClick={() => setFilterDetailSaldo(prev => ({ ...prev, [r.id]: f }))} style={{
+                          padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                          border: `1.5px solid ${(filterDetailSaldo[r.id] || "Semua") === f ? (f === "Pending" ? CC.pending.color : f === "Batal" ? CC.batal.color : f === "Masuk" ? CC.masuk.color : CC.total.color) : C.border}`,
+                          background: (filterDetailSaldo[r.id] || "Semua") === f ? (f === "Pending" ? CC.pending.bg : f === "Batal" ? CC.batal.bg : f === "Masuk" ? CC.masuk.bg : CC.total.bg) : "transparent",
+                          color: (filterDetailSaldo[r.id] || "Semua") === f ? (f === "Pending" ? CC.pending.color : f === "Batal" ? CC.batal.color : f === "Masuk" ? CC.masuk.color : CC.total.color) : C.muted,
+                          cursor: "pointer", transition: "all 0.12s",
+                        }}>{f}</button>
+                      ))}
+                      <div style={{ marginLeft: "auto", fontSize: 11, color: C.muted, fontFamily: C.fontMono, alignSelf: "center" }}>
+                        {!detailCache[r.id] ? "..." : `${(detailCache[r.id].filter(d => (filterDetailSaldo[r.id] || "Semua") === "Semua" || d.status_saldo === filterDetailSaldo[r.id])).length} pesanan`}
+                      </div>
+                    </div>
+
                     {!detailCache[r.id] ? (
                       <div style={{ padding: 20, color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Memuat detail...</div>
                     ) : (
                       <>
-                        <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.4fr 1fr 1fr 1.2fr 1fr", gap: 8, padding: "8px 16px", background: C.border + "30", borderBottom: `1px solid ${C.border}` }}>
-                          {["NO. PESANAN", "STATUS", "METODE BAYAR", "TGL PESANAN", "TGL SELESAI", "TOTAL BAYAR", "STATUS SALDO"].map(h => (
-                            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: C.dim, letterSpacing: "0.08em" }}>{h}</div>
-                          ))}
-                        </div>
+                        <TableHeader />
                         <div style={{ maxHeight: 360, overflowY: "auto" }}>
-                          {detailCache[r.id].map((d, i) => {
-                            const isPending = d.status_saldo === "Pending";
-                            return (
-                              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1.4fr 1fr 1fr 1.2fr 1fr", gap: 8, padding: "9px 16px", borderBottom: `1px solid ${C.border}20`, alignItems: "center" }}>
-                                <div style={{ fontSize: 11, color: C.accent, fontFamily: C.fontMono, fontWeight: 600 }}>{d.no_pesanan}</div>
-                                <div style={{ fontSize: 11, color: C.textMid }}>{d.status_pesanan}</div>
-                                <div style={{ fontSize: 11, color: C.muted }}>{d.metode_bayar}</div>
-                                <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_pesanan)}</div>
-                                <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_selesai)}</div>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: "#f0eaff", fontFamily: C.fontMono }}>{rupiahFmt(d.total_bayar)}</div>
-                                <div>
-                                  <span style={{ padding: "3px 8px", borderRadius: "4px", fontSize: 10, fontWeight: 700, background: isPending ? C.yellow + "20" : C.success + "20", color: isPending ? C.yellow : C.success }}>
-                                    {isPending ? "⏳ Pending" : "✅ Masuk"}
-                                  </span>
-                                  {!isPending && d.tgl_masuk_saldo && (
-                                    <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{tanggalFmt(d.tgl_masuk_saldo)}</div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {detailCache[r.id]
+                            .filter(d => (filterDetailSaldo[r.id] || "Semua") === "Semua" || d.status_saldo === filterDetailSaldo[r.id])
+                            .map((d, i) => <TableRow key={i} d={d} />)}
                         </div>
                       </>
                     )}

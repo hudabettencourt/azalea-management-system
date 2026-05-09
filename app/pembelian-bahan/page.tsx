@@ -355,17 +355,21 @@ export default function PembelianBahanPage() {
         {/* Stats Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
           {[
-            { label: "Total Bahan Aktif", value: `${bahan.length} item`, sub: `${stokKritis} habis stok`, icon: "🧪", ...statCardColors[0] },
-            { label: "Hutang Supplier", value: rupiahShort(totalHutang), sub: `${hutang.length} supplier`, icon: "⚠️", ...statCardColors[1] },
-            { label: "Belanja Bulan Ini", value: rupiahShort(totalBelanjabulan), sub: `${riwayatBulanIni.length} transaksi`, icon: "🛒", ...statCardColors[2] },
-            { label: "Rata-rata Transaksi", value: rupiahShort(avgTransaksi), sub: `${riwayat.length} total`, icon: "📊", ...statCardColors[3] },
+            { label: "Total Bahan Aktif", value: `${bahan.length} item`, sub: `${stokKritis} habis stok`, icon: "🧪", tab: "stok" as const, hint: "Lihat stok →", ...statCardColors[0] },
+            { label: "Hutang Supplier", value: rupiahShort(totalHutang), sub: `${hutang.length} supplier`, icon: "⚠️", tab: "hutang" as const, hint: "Lihat hutang →", ...statCardColors[1] },
+            { label: "Belanja Bulan Ini", value: rupiahShort(totalBelanjabulan), sub: `${riwayatBulanIni.length} transaksi`, icon: "🛒", tab: "riwayat" as const, hint: "Lihat riwayat →", ...statCardColors[2] },
+            { label: "Rata-rata Transaksi", value: rupiahShort(avgTransaksi), sub: `${riwayat.length} total`, icon: "📊", tab: "riwayat" as const, hint: "Lihat semua →", ...statCardColors[3] },
           ].map((s, i) => (
-            <div key={i} style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden" }}>
+            <div key={i} onClick={() => setActiveTab(s.tab)}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
+              style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", cursor: "pointer", transition: "transform 0.15s, box-shadow 0.15s" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: s.color, borderRadius: "14px 14px 0 0" }} />
               <div style={{ width: 36, height: 36, borderRadius: 10, background: s.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, marginBottom: 10, marginTop: 4 }}>{s.icon}</div>
               <div style={{ fontSize: 10, fontWeight: 700, color: s.color, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{s.label}</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 3 }}>{s.value}</div>
-              <div style={{ fontSize: 11, color: C.muted }}>{s.sub}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>{s.sub}</div>
+              <div style={{ fontSize: 11, color: s.color, fontWeight: 800 }}>{s.hint}</div>
             </div>
           ))}
         </div>

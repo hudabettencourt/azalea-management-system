@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRole } from "@/hooks/useRole";
+import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type Profile = { id: string; email: string; nama: string; role: string; created_at: string };
 type Produk = {
@@ -101,6 +102,8 @@ export default function AdminPage() {
   const [activeSection, setActiveSection] = useState<Section>("users");
   const [toast, setToast] = useState<Toast | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isDark } = useTheme();
+  const C = isDark ? DARK : LIGHT;
 
   // ── USERS ──
   const [users, setUsers] = useState<Profile[]>([]);
@@ -608,14 +611,14 @@ export default function AdminPage() {
   ];
 
   if (roleLoading || loading) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg }}>
       <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 13 }}>Memuat...</div>
     </div>
   );
 
   if (!isOwner) return (
     <Sidebar>
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, flexDirection: "column", gap: 16 }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, flexDirection: "column", gap: 16 }}>
         <div style={{ fontSize: 48 }}>🔐</div>
         <div style={{ color: T.red, fontFamily: T.fontDisplay, fontSize: 22 }}>Akses Ditolak</div>
         <div style={{ color: T.textDim, fontFamily: T.fontMono, fontSize: 13 }}>Halaman ini hanya untuk Owner / Super Admin</div>
@@ -624,51 +627,56 @@ export default function AdminPage() {
     </Sidebar>
   );
 
-  return (
+ return (
     <Sidebar>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 2000px; } }
-        .data-row:hover { background: rgba(232,115,138,0.03) !important; }
-        .btn-edit:hover { background: rgba(167,139,250,0.2) !important; }
-        .btn-del:hover { background: rgba(235,87,87,0.2) !important; }
-        select option { background: #1a1020; color: #f0e6e9; }
-        select optgroup { background: #1a1020; color: #7a6880; font-style: normal; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+        .data-row:hover { background: ${isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"} !important; }
+        .btn-edit:hover { background: ${isDark ? "rgba(167,139,250,0.2)" : "rgba(167,139,250,0.15)"} !important; }
+        .btn-del:hover { background: ${isDark ? "rgba(235,87,87,0.2)" : "rgba(235,87,87,0.12)"} !important; }
+        select option { background: ${C.card}; color: ${C.text}; }
+        select optgroup { background: ${C.card}; color: ${C.muted}; font-style: normal; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+        input:focus, select:focus, textarea:focus { border-color: ${C.accent}80 !important; outline: none; }
+        input::placeholder, textarea::placeholder { color: ${C.muted} !important; }
       `}</style>
 
       {toast && (
-        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: "#1a1020", border: `1px solid ${toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.blue}44`, color: toast.type === "success" ? T.green : toast.type === "error" ? T.red : T.blue, borderRadius: 12, padding: "14px 20px", fontFamily: T.fontSans, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 32px rgba(0,0,0,0.4)", maxWidth: 360, animation: "fadeUp 0.2s ease" }}>
+        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: C.card, border: `1px solid ${toast.type === "success" ? C.green : toast.type === "error" ? C.red : C.blue}44`, color: toast.type === "success" ? C.green : toast.type === "error" ? C.red : C.blue, borderRadius: 12, padding: "14px 20px", fontFamily: C.fontSans, fontSize: 13, fontWeight: 600, boxShadow: C.shadowMd, maxWidth: 360, animation: "fadeUp 0.2s ease" }}>
           {toast.msg}
         </div>
       )}
 
-      <div style={{ display: "flex", minHeight: "100vh", background: T.bg, fontFamily: T.fontSans, color: T.text }}>
-        {/* SIDE NAV */}
-        <nav style={{ width: 220, background: T.sidebar, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", padding: "24px 0", flexShrink: 0 }}>
-          <div style={{ padding: "0 20px 20px", borderBottom: `1px solid ${T.border}`, marginBottom: 8 }}>
-            <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 2, textTransform: "uppercase" }}>Azalea ERP</div>
-            <div style={{ fontSize: 18, fontFamily: T.fontDisplay, color: T.text, marginTop: 4 }}>Admin Panel</div>
+      <div style={{ background: C.bg, minHeight: "100vh", fontFamily: C.fontSans, color: C.text }}>
+
+        {/* ── TAB BAR ── */}
+        <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 28px", position: "sticky", top: 58, zIndex: 90, boxShadow: isDark ? "none" : "0 1px 4px rgba(0,0,0,0.04)" }}>
+          <div style={{ display: "flex", gap: 2, overflowX: "auto" }}>
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7,
+                  padding: "13px 16px 11px",
+                  border: "none", background: "transparent",
+                  borderBottom: `2px solid ${activeSection === item.id ? C.accent : "transparent"}`,
+                  color: activeSection === item.id ? C.accent : C.muted,
+                  cursor: "pointer", fontFamily: C.fontSans, fontSize: 13,
+                  fontWeight: activeSection === item.id ? 700 : 500,
+                  whiteSpace: "nowrap", transition: "all 0.15s", flexShrink: 0,
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
           </div>
-          {NAV_ITEMS.map(item => (
-            <button key={item.id} onClick={() => setActiveSection(item.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 20px", border: "none", background: activeSection === item.id ? T.accentDim : "transparent", color: activeSection === item.id ? T.accent : T.textDim, cursor: "pointer", fontFamily: T.fontSans, fontSize: 13, fontWeight: activeSection === item.id ? 700 : 400, borderLeft: `3px solid ${activeSection === item.id ? T.accent : "transparent"}`, transition: "all 0.15s", textAlign: "left" }}>
-              <span style={{ fontSize: 15 }}>{item.icon}</span>{item.label}
-            </button>
-          ))}
-        </nav>
+        </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <header style={{ padding: "16px 32px", borderBottom: `1px solid ${T.border}`, background: "rgba(12,8,22,0.9)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 100 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1 }}>AZALEA /</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: T.text, fontFamily: T.fontDisplay, marginLeft: 4 }}>
-                {NAV_ITEMS.find(n => n.id === activeSection)?.icon} {NAV_ITEMS.find(n => n.id === activeSection)?.label}
-              </span>
-            </div>
-          </header>
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
+        {/* ── KONTEN ── */}
+        <div style={{ padding: "28px 28px" }}>
 
             {/* ══ USERS ══ */}
             {activeSection === "users" && (
@@ -683,7 +691,7 @@ export default function AdminPage() {
                 </div>
                 <div style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden" }}>
                   <div style={{ padding: "16px 24px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h3 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 18, color: T.text }}>Daftar User ({users.length})</h3>
+                    <h3 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 18, color: C.text }}>Daftar User ({users.length})</h3>
                     <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Cari..." style={{ ...inputStyle, width: 240 }} />
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px 120px 100px", gap: 8, padding: "10px 24px", borderBottom: `1px solid ${T.border}`, background: "rgba(232,115,138,0.04)" }}>
@@ -955,9 +963,9 @@ export default function AdminPage() {
                   {["Semua", ...KATEGORI_BAHAN_OPTIONS].map(k => (
                     <button key={k} onClick={() => setFilterKategoriBahan(k)} style={{
                       padding: "6px 14px", borderRadius: 20,
-                      border: `1px solid ${filterKategoriBahan === k ? T.accent + "60" : T.border}`,
+                      border: `1px solid ${filterKategoriBahan === k ? C.accent + "60" : T.border}`,
                       background: filterKategoriBahan === k ? T.accentDim : "transparent",
-                      color: filterKategoriBahan === k ? T.accent : T.textDim,
+                      color: filterKategoriBahan === k ? C.accent : T.textDim,
                       fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: T.fontSans,
                     }}>{k} {k !== "Semua" && `(${bahanList.filter(b => b.kategori === k).length})`}</button>
                   ))}
@@ -1099,7 +1107,7 @@ export default function AdminPage() {
                         <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px" }}>
                           <div style={{ width: 40, height: 40, borderRadius: 10, background: `${PLATFORM_COLORS[t.platform] || T.textDim}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏪</div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{t.nama}</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{t.nama}</div>
                             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                               <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: `${PLATFORM_COLORS[t.platform] || T.textDim}20`, color: PLATFORM_COLORS[t.platform] || T.textDim, fontWeight: 600 }}>{t.platform}</span>
                               <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: t.aktif ? `${T.green}15` : `${T.red}15`, color: t.aktif ? T.green : T.red, fontWeight: 600 }}>{t.aktif ? "Aktif" : "Nonaktif"}</span>
@@ -1352,7 +1360,7 @@ export default function AdminPage() {
               </div>
             )}
 
-          </div>
+          
         </div>
       </div>
     </Sidebar>

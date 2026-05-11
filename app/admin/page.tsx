@@ -651,7 +651,7 @@ export default function AdminPage() {
       <div style={{ background: C.bg, minHeight: "100vh", fontFamily: C.fontSans, color: C.text }}>
 
         {/* ── TAB BAR ── */}
-        <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 28px", position: "sticky", top: 58, zIndex: 90, boxShadow: isDark ? "none" : "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 28px", position: "sticky", top: 57, zIndex: 90, boxShadow: isDark ? "none" : "0 1px 4px rgba(0,0,0,0.04)" }}>
           <div style={{ display: "flex", gap: 2, overflowX: "auto" }}>
             {NAV_ITEMS.map(item => (
               <button
@@ -676,7 +676,7 @@ export default function AdminPage() {
         </div>
 
         {/* ── KONTEN ── */}
-        <div style={{ padding: "28px 28px" }}>
+        <div style={{ padding: "24px 28px 40px" }}>
 
             {/* ══ USERS ══ */}
             {activeSection === "users" && (

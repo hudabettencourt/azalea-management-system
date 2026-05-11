@@ -676,7 +676,7 @@ export default function AdminPage() {
         </div>
 
         {/* ── KONTEN ── */}
-        <div style={{ padding: "24px 28px 40px" }}>
+        <div style={{ padding: "28px 28px 40px", paddingTop: 74 }}>
 
             {/* ══ USERS ══ */}
             {activeSection === "users" && (

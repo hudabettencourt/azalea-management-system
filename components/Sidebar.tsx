@@ -41,9 +41,17 @@ interface SidebarProps {
   children: React.ReactNode;
   pageTitle?: string;
   pageSubtitle?: string;
-  /** Tombol aksi di section header — print, export, filter */
   actions?: React.ReactNode;
 }
+
+type Notif = {
+  id: string;
+  type: "warning" | "error" | "info";
+  icon: string;
+  title: string;
+  desc: string;
+  href: string;
+};
 
 export default function Sidebar({ children, pageTitle, pageSubtitle, actions }: SidebarProps) {
   const pathname = usePathname();
@@ -59,88 +67,87 @@ export default function Sidebar({ children, pageTitle, pageSubtitle, actions }: 
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // ── NOTIFIKASI ──
-type Notif = { id: string; type: "warning" | "error" | "info"; icon: string; title: string; desc: string; href: string };
-const [notifList, setNotifList] = useState<Notif[]>([]);
-const [notifOpen, setNotifOpen] = useState(false);
-const [notifLoading, setNotifLoading] = useState(false);
+  const [notifList, setNotifList] = useState<Notif[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
 
-const fetchNotifikasi = async () => {
-  setNotifLoading(true);
-  const notifs: Notif[] = [];
+  const fetchNotifikasi = async () => {
+    setNotifLoading(true);
+    const notifs: Notif[] = [];
 
-  // 1. Stok bahan baku kritis (stok <= 2)
-  const { data: bahanKritis } = await supabase
-    .from("bahan_baku")
-    .select("id, nama, stok, satuan")
-    .or("aktif.eq.true,aktif.is.null")
-    .lte("stok", 2);
-  (bahanKritis || []).forEach(b => {
-    notifs.push({
-      id: `bahan-${b.id}`,
-      type: b.stok <= 0 ? "error" : "warning",
-      icon: "🧪",
-      title: b.stok <= 0 ? `${b.nama} habis!` : `${b.nama} hampir habis`,
-      desc: `Stok tersisa: ${b.stok} ${b.satuan}`,
-      href: "/pembelian-bahan",
-    });
-  });
-
-  // 2. Stok produk habis
-  const { data: produkHabis } = await supabase
-    .from("stok_barang")
-    .select("id, nama_produk, jumlah_stok")
-    .lte("jumlah_stok", 0);
-  (produkHabis || []).forEach(p => {
-    notifs.push({
-      id: `produk-${p.id}`,
-      type: "error",
-      icon: "📦",
-      title: `${p.nama_produk} habis`,
-      desc: "Stok produk = 0, segera produksi",
-      href: "/produksi",
-    });
-  });
-
-  // 3. Hutang supplier belum lunas
-  const { data: hutang } = await supabase
-    .from("hutang_supplier")
-    .select("id, nominal, supplier_nama")
-    .eq("lunas", false);
-  if ((hutang || []).length > 0) {
-    const totalHutang = (hutang || []).reduce((s, h) => s + h.nominal, 0);
-    notifs.push({
-      id: "hutang-supplier",
-      type: "warning",
-      icon: "🏭",
-      title: `${hutang!.length} hutang supplier`,
-      desc: `Total: Rp ${totalHutang.toLocaleString("id-ID")}`,
-      href: "/pembelian-bahan",
-    });
-  }
-
-  // 4. Saldo kas rendah (< 500rb)
-  const { data: kasData } = await supabase
-    .from("kas")
-    .select("tipe, nominal");
-  if (kasData) {
-    const saldo = kasData.reduce((s, k) => k.tipe === "Masuk" ? s + k.nominal : s - k.nominal, 0);
-    if (saldo < 500000) {
+    // 1. Stok bahan baku kritis (stok <= 2)
+    const { data: bahanKritis } = await supabase
+      .from("bahan_baku")
+      .select("id, nama, stok, satuan")
+      .or("aktif.eq.true,aktif.is.null")
+      .lte("stok", 2);
+    (bahanKritis || []).forEach((b: any) => {
       notifs.push({
-        id: "kas-rendah",
-        type: saldo < 0 ? "error" : "warning",
-        icon: "💰",
-        title: saldo < 0 ? "Saldo kas minus!" : "Saldo kas rendah",
-        desc: `Saldo: Rp ${saldo.toLocaleString("id-ID")}`,
-        href: "/kas",
+        id: `bahan-${b.id}`,
+        type: b.stok <= 0 ? "error" : "warning",
+        icon: "🧪",
+        title: b.stok <= 0 ? `${b.nama} habis!` : `${b.nama} hampir habis`,
+        desc: `Stok tersisa: ${b.stok} ${b.satuan}`,
+        href: "/pembelian-bahan",
+      });
+    });
+
+    // 2. Stok produk habis
+    const { data: produkHabis } = await supabase
+      .from("stok_barang")
+      .select("id, nama_produk, jumlah_stok")
+      .lte("jumlah_stok", 0);
+    (produkHabis || []).forEach((p: any) => {
+      notifs.push({
+        id: `produk-${p.id}`,
+        type: "error",
+        icon: "📦",
+        title: `${p.nama_produk} habis`,
+        desc: "Stok produk = 0, segera produksi",
+        href: "/produksi",
+      });
+    });
+
+    // 3. Hutang supplier belum lunas
+    const { data: hutang } = await supabase
+      .from("hutang_supplier")
+      .select("id, nominal, supplier_nama")
+      .eq("lunas", false);
+    if ((hutang || []).length > 0) {
+      const totalHutang = (hutang || []).reduce((s: number, h: any) => s + h.nominal, 0);
+      notifs.push({
+        id: "hutang-supplier",
+        type: "warning",
+        icon: "🏭",
+        title: `${hutang!.length} hutang supplier`,
+        desc: `Total: Rp ${totalHutang.toLocaleString("id-ID")}`,
+        href: "/pembelian-bahan",
       });
     }
-  }
 
-  setNotifList(notifs);
-  setNotifLoading(false);
-};
+    // 4. Saldo kas rendah (< 500rb)
+    const { data: kasData } = await supabase
+      .from("kas")
+      .select("tipe, nominal");
+    if (kasData) {
+      const saldo = kasData.reduce((s: number, k: any) => k.tipe === "Masuk" ? s + k.nominal : s - k.nominal, 0);
+      if (saldo < 500000) {
+        notifs.push({
+          id: "kas-rendah",
+          type: saldo < 0 ? "error" : "warning",
+          icon: "💰",
+          title: saldo < 0 ? "Saldo kas minus!" : "Saldo kas rendah",
+          desc: `Saldo: Rp ${saldo.toLocaleString("id-ID")}`,
+          href: "/kas",
+        });
+      }
+    }
 
-useEffect(() => { fetchNotifikasi(); }, []);
+    setNotifList(notifs);
+    setNotifLoading(false);
+  };
+
+  useEffect(() => { fetchNotifikasi(); }, []);
 
   useEffect(() => {
     const fetchRole = async (userId: string, email: string) => {
@@ -167,7 +174,6 @@ useEffect(() => { fetchNotifikasi(); }, []);
     router.push("/login");
   };
 
-  // Derive page title from pathname if not provided
   const derivedTitle = pageTitle || (() => {
     const map: Record<string, string> = {
       "/": "Dashboard", "/dashboard": "Dashboard",
@@ -291,7 +297,6 @@ useEffect(() => { fetchNotifikasi(); }, []);
 
       {/* Footer */}
       <div style={{ borderTop: `1px solid ${C.sidebarBorder}`, paddingTop: 10, marginTop: 8 }}>
-        {/* Theme toggle */}
         <button onClick={toggleTheme} style={{
           display: "flex", alignItems: "center",
           justifyContent: collapsed ? "center" : "flex-start",
@@ -301,8 +306,7 @@ useEffect(() => { fetchNotifikasi(); }, []);
           borderRadius: 10, color: C.muted,
           fontSize: 13.5, fontWeight: 600,
           cursor: "pointer", fontFamily: C.fontSans,
-          marginBottom: 2,
-          transition: "all 0.15s",
+          marginBottom: 2, transition: "all 0.15s",
         }}
           onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"}
           onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
@@ -311,7 +315,6 @@ useEffect(() => { fetchNotifikasi(); }, []);
           {!collapsed && <span>{isDark ? "Light Mode" : "Dark Mode"}</span>}
         </button>
 
-        {/* User info */}
         {!collapsed && userEmail && (
           <div style={{
             padding: "8px 14px",
@@ -364,7 +367,7 @@ useEffect(() => { fetchNotifikasi(); }, []);
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; }
         body { font-family: 'Nunito', sans-serif; }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @media (max-width: 768px) {
           .sidebar-desktop { display: none !important; }
           .mobile-menu-btn {
@@ -382,8 +385,6 @@ useEffect(() => { fetchNotifikasi(); }, []);
           }
         }
         @media (min-width: 769px) { .mobile-menu-btn { display: none !important; } }
-
-        /* Collapse button shown only when collapsed */
         .expand-btn {
           position: absolute; right: -14px; top: 50%;
           transform: translateY(-50%);
@@ -395,7 +396,6 @@ useEffect(() => { fetchNotifikasi(); }, []);
           transition: all 0.15s;
         }
         .expand-btn:hover { color: ${C.accent}; border-color: ${C.accent}; }
-
         * { scrollbar-width: thin; scrollbar-color: ${C.dim} transparent; }
         *::-webkit-scrollbar { width: 4px; }
         *::-webkit-scrollbar-thumb { background: ${C.dim}; border-radius: 4px; }
@@ -504,126 +504,98 @@ useEffect(() => { fetchNotifikasi(); }, []);
               ))}
 
               {/* Notification */}
-<div style={{ position: "relative" }}>
-  <button
-    onClick={() => { setNotifOpen(v => !v); if (!notifOpen) fetchNotifikasi(); }}
-    style={{
-      width: 36, height: 36,
-      background: notifOpen ? C.accentGlow : isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-      border: `1px solid ${notifOpen ? C.accent : C.border}`,
-      borderRadius: 10, cursor: "pointer",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 15, position: "relative", transition: "all 0.15s",
-    }}
-  >
-    🔔
-    {notifList.length > 0 && (
-      <div style={{
-        position: "absolute", top: -4, right: -4,
-        minWidth: 16, height: 16, borderRadius: 8,
-        background: notifList.some(n => n.type === "error") ? C.red : C.yellow,
-        border: `2px solid ${C.bgNav}`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 9, fontWeight: 800, color: "#fff",
-        fontFamily: C.fontMono, padding: "0 3px",
-      }}>
-        {notifList.length}
-      </div>
-    )}
-  </button>
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={() => { setNotifOpen(v => !v); if (!notifOpen) fetchNotifikasi(); }}
+                  style={{
+                    width: 36, height: 36,
+                    background: notifOpen ? C.accentGlow : isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+                    border: `1px solid ${notifOpen ? C.accent : C.border}`,
+                    borderRadius: 10, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 15, position: "relative", transition: "all 0.15s",
+                  }}
+                >
+                  🔔
+                  {notifList.length > 0 && (
+                    <div style={{
+                      position: "absolute", top: -4, right: -4,
+                      minWidth: 16, height: 16, borderRadius: 8,
+                      background: notifList.some(n => n.type === "error") ? C.red : C.yellow,
+                      border: `2px solid ${C.bgNav}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 9, fontWeight: 800, color: "#fff",
+                      fontFamily: C.fontMono, padding: "0 3px",
+                    }}>
+                      {notifList.length}
+                    </div>
+                  )}
+                </button>
 
-  {/* Dropdown */}
-  {notifOpen && (
-    <>
-      {/* Backdrop */}
-      <div
-        onClick={() => setNotifOpen(false)}
-        style={{ position: "fixed", inset: 0, zIndex: 150 }}
-      />
-      <div style={{
-        position: "absolute", top: 44, right: 0, zIndex: 200,
-        width: 320, background: C.card,
-        border: `1px solid ${C.border}`,
-        borderRadius: 14, overflow: "hidden",
-        boxShadow: C.shadowMd,
-        animation: "fadeUp 0.15s ease",
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>
-            Notifikasi {notifList.length > 0 && (
-              <span style={{ fontSize: 11, color: C.muted, fontWeight: 500 }}>({notifList.length})</span>
-            )}
-          </div>
-          <button
-            onClick={fetchNotifikasi}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: C.muted, padding: "2px 6px", borderRadius: 6 }}
-            title="Refresh"
-          >🔄</button>
-        </div>
+                {/* Dropdown */}
+                {notifOpen && (
+                  <>
+                    <div onClick={() => setNotifOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />
+                    <div style={{
+                      position: "absolute", top: 44, right: 0, zIndex: 200,
+                      width: 320, background: C.card,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 14, overflow: "hidden",
+                      boxShadow: C.shadowMd,
+                      animation: "fadeUp 0.15s ease",
+                    }}>
+                      {/* Header */}
+                      <div style={{
+                        padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                      }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>
+                          Notifikasi{notifList.length > 0 && (
+                            <span style={{ fontSize: 11, color: C.muted, fontWeight: 500 }}> ({notifList.length})</span>
+                          )}
+                        </div>
+                        <button onClick={fetchNotifikasi} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: C.muted, padding: "2px 6px", borderRadius: 6 }} title="Refresh">🔄</button>
+                      </div>
 
-        {/* List */}
-        <div style={{ maxHeight: 360, overflowY: "auto" }}>
-          {notifLoading ? (
-            <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13, fontFamily: C.fontSans }}>
-              Memuat...
-            </div>
-          ) : notifList.length === 0 ? (
-            <div style={{ padding: 32, textAlign: "center" }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-              <div style={{ fontSize: 13, color: C.muted, fontFamily: C.fontSans }}>Semua aman, tidak ada notifikasi</div>
-            </div>
-          ) : (
-            notifList.map(n => {
-  const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
-  return (
-    
-notifList.map(n => {
-  const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
-  return (
-    key={n.id}
-    href={n.href}
-    onClick={() => setNotifOpen(false)}
-    style={{
-      display: "flex", gap: 12, padding: "12px 16px",
-      borderBottom: `1px solid ${C.border}`,
-      textDecoration: "none",
-      background: "transparent", transition: "background 0.15s",
-      cursor: "pointer",
-    }}
-    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"}
-    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-  >
-    <div style={{
-      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-      background: color + (isDark ? "20" : "15"),
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 16,
-    }}>{n.icon}</div>
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans, marginBottom: 2 }}>{n.title}</div>
-      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{n.desc}</div>
-    </div>
-    <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
-  </a>);
-})
-          )}
-        </div>
+                      {/* List */}
+                      <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                        {notifLoading ? (
+                          <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13, fontFamily: C.fontSans }}>Memuat...</div>
+                        ) : notifList.length === 0 ? (
+                          <div style={{ padding: 32, textAlign: "center" }}>
+                            <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+                            <div style={{ fontSize: 13, color: C.muted, fontFamily: C.fontSans }}>Semua aman, tidak ada notifikasi</div>
+                          </div>
+                        ) : (
+                          notifList.map(n => {
+                            const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
+                            return (
+                              <a key={n.id} href={n.href} onClick={() => setNotifOpen(false)}
+                                style={{ display: "flex", gap: 12, padding: "12px 16px", borderBottom: `1px solid ${C.border}`, textDecoration: "none", background: "transparent", transition: "background 0.15s", cursor: "pointer" }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
+                              >
+                                <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: color + (isDark ? "20" : "15"), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{n.icon}</div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans, marginBottom: 2 }}>{n.title}</div>
+                                  <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{n.desc}</div>
+                                </div>
+                                <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
+                              </a>
+                            );
+                          })
+                        )}
+                      </div>
 
-        {notifList.length > 0 && (
-          <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, textAlign: "center" }}>
-            <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-              Klik notif untuk ke halaman terkait
-            </span>
-          </div>
-        )}
-      </div>
-    </>
-  )}
-</div>
+                      {notifList.length > 0 && (
+                        <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}`, textAlign: "center" }}>
+                          <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>Klik notif untuk ke halaman terkait</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Avatar */}
               <div style={{
@@ -649,13 +621,9 @@ notifList.map(n => {
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 13, color: C.yellow }}>☆</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans }}>
-                  Item Overview
-                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans }}>Item Overview</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                {actions}
-              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>{actions}</div>
             </div>
           )}
 

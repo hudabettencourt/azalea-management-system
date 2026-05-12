@@ -581,33 +581,35 @@ useEffect(() => { fetchNotifikasi(); }, []);
   const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
   return (
     
-      key={n.id}
-                  href={n.href}
-                  onClick={() => setNotifOpen(false)}
-                  style={{
-                    display: "flex", gap: 12, padding: "12px 16px",
-                    borderBottom: `1px solid ${C.border}`,
-                    textDecoration: "none",
-                    background: "transparent", transition: "background 0.15s",
-                    cursor: "pointer",
-                  }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-                >
-                  <div style={{
-                    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                    background: color + (isDark ? "20" : "15"),
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 16,
-                  }}>{n.icon}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans, marginBottom: 2 }}>{n.title}</div>
-                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{n.desc}</div>
-                  </div>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
-                </a>
-              );
-            })
+notifList.map(n => {
+  const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
+  return (
+    key={n.id}
+    href={n.href}
+    onClick={() => setNotifOpen(false)}
+    style={{
+      display: "flex", gap: 12, padding: "12px 16px",
+      borderBottom: `1px solid ${C.border}`,
+      textDecoration: "none",
+      background: "transparent", transition: "background 0.15s",
+      cursor: "pointer",
+    }}
+    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"}
+    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
+  >
+    <div style={{
+      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+      background: color + (isDark ? "20" : "15"),
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: 16,
+    }}>{n.icon}</div>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans, marginBottom: 2 }}>{n.title}</div>
+      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{n.desc}</div>
+    </div>
+    <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, marginTop: 6 }} />
+  </a>);
+})
           )}
         </div>
 

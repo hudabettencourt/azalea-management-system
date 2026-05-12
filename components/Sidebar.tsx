@@ -578,10 +578,10 @@ useEffect(() => { fetchNotifikasi(); }, []);
             </div>
           ) : (
             notifList.map(n => {
-              const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
-              return (
-                
-                  key={n.id}
+  const color = n.type === "error" ? C.red : n.type === "warning" ? C.yellow : C.blue;
+  return (
+    
+      key={n.id}
                   href={n.href}
                   onClick={() => setNotifOpen(false)}
                   style={{

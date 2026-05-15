@@ -60,7 +60,7 @@ export default function AdminPage() {
     <Sidebar>
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, flexDirection: "column", gap: 16 }}>
         <div style={{ fontSize: 48 }}>🔐</div>
-        <div style={{ color: C.red, fontSize: 22, fontWeight: 800, color: C.text }}>Akses Ditolak</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>Akses Ditolak</div>
         <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Halaman ini hanya untuk Owner / Super Admin</div>
         <a href="/dashboard" style={{ color: C.accent, fontFamily: C.fontMono, fontSize: 13 }}>← Kembali ke Dashboard</a>
       </div>

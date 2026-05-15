@@ -15,8 +15,9 @@ const SupplierTab = lazy(() => import("./tabs/SupplierTab"));
 const PelangganTab = lazy(() => import("./tabs/PelangganTab"));
 const VarianBoronganTab = lazy(() => import("./tabs/VarianBoronganTab"));
 const MasterPLUTab = lazy(() => import("./tabs/MasterPLUTab"));
+const KaryawanTab = lazy(() => import("./tabs/KaryawanTab"));
 
-type Section = "users" | "produk" | "bahan" | "toko" | "supplier" | "pelanggan" | "varian_borongan" | "master_plu";
+type Section = "users" | "produk" | "bahan" | "toko" | "supplier" | "pelanggan" | "varian_borongan" | "master_plu" | "karyawan";
 
 const NAV_ITEMS: { id: Section; label: string; icon: string; group?: string }[] = [
   { id: "users",           label: "Manajemen User",   icon: "⊛" },
@@ -27,6 +28,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: string; group?: string }[] 
   { id: "pelanggan",       label: "Master Pelanggan", icon: "👤" },
   { id: "varian_borongan", label: "Varian Borongan",  icon: "⚖️" },
   { id: "master_plu",      label: "Master PLU",       icon: "🔢" },
+  { id: "karyawan",        label: "Master Karyawan",  icon: "👷" },
 ];
 
 function TabLoading({ C }: { C: any }) {
@@ -137,6 +139,9 @@ export default function AdminPage() {
             )}
             {activeSection === "master_plu" && (
               <MasterPLUTab C={C} isDark={isDark} showToast={showToast} />
+            )}
+            {activeSection === "karyawan" && (
+              <KaryawanTab C={C} isDark={isDark} showToast={showToast} />
             )}
           </Suspense>
         </div>

@@ -157,11 +157,11 @@ export default function KaryawanTab({ C, isDark, showToast }: Props) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 }}>
         {showBorongan(form.tipe) && (
-          <div>
-            <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" as const }}>TARIF BORONGAN (Rp/kg)</div>
-            <input value={form.tarif_borongan} onChange={e => setForm({ ...form, tarif_borongan: formatIDR(e.target.value) })} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} />
-          </div>
-        )}
+  <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: `${C.green}10`, border: `1px solid ${C.green}25`, borderRadius: 8, fontSize: 12, color: C.green, fontFamily: C.fontMono }}>
+    ⚖ Tarif borongan Pencetak ditentukan dari <strong>Varian Borongan</strong> (tab Master PLU). 
+    Atur PLU karyawan ini di tab <strong>Master PLU</strong>.
+  </div>
+)}
         {showHarian(form.tipe) && (
           <div>
             <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" as const }}>TARIF HARIAN (Rp/hari)</div>

@@ -14,6 +14,7 @@ type Kas = {
   keterangan: string;
   is_void?: boolean;
   void_reason?: string;
+  foto_url?: string;
 };
 
 type Toast = { msg: string; type: "success" | "error" | "info" };
@@ -54,9 +55,15 @@ export default function KasPage() {
   const [tanggalManual, setTanggalManual] = useState(
     new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" })
   );
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [uploadingFoto, setUploadingFoto] = useState(false);
 
   // Modal konfirmasi
   const [showKonfirmasi, setShowKonfirmasi] = useState(false);
+
+  // Modal detail
+  const [detailItem, setDetailItem] = useState<Kas | null>(null);
 
   // Modal edit
   const [editItem, setEditItem] = useState<Kas | null>(null);
@@ -70,7 +77,7 @@ export default function KasPage() {
   const [voidReason, setVoidReason] = useState("");
   const [savingVoid, setSavingVoid] = useState(false);
 
-  // Filter
+  // Filter — clickable cards set ini
   const [filterTipe, setFilterTipe] = useState("Semua");
   const [filterKategori, setFilterKategori] = useState("Semua");
   const [filterBulan, setFilterBulan] = useState(() => {
@@ -107,6 +114,34 @@ export default function KasPage() {
     setKategori(t === "Masuk" ? "Modal" : "Operasional");
   };
 
+  // ── Handle pilih foto ──
+  const handlePilihFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return showToast("Ukuran foto maksimal 5MB!", "error");
+    setFotoFile(file);
+    setFotoPreview(URL.createObjectURL(file));
+  };
+
+  // ── Upload foto ke Cloudinary via API route ──
+  const uploadFoto = async (): Promise<string | null> => {
+    if (!fotoFile) return null;
+    setUploadingFoto(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", fotoFile);
+      const res = await fetch("/api/upload-foto", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal upload foto");
+      return data.url;
+    } catch (err: any) {
+      showToast(err.message || "Gagal upload foto", "error");
+      return null;
+    } finally {
+      setUploadingFoto(false);
+    }
+  };
+
   // ── Validasi → tampil modal konfirmasi ──
   const handleClickSimpan = () => {
     if (toAngka(nominal) <= 0) return showToast("Isi nominal dengan benar!", "error");
@@ -120,16 +155,25 @@ export default function KasPage() {
     const nominalAngka = toAngka(nominal);
     setSubmitting(true);
     try {
+      // Upload foto dulu kalau ada
+      let fotoUrl: string | null = null;
+      if (fotoFile) {
+        fotoUrl = await uploadFoto();
+        if (!fotoUrl) { setSubmitting(false); return; }
+      }
+
       const waktuWIB = new Date(`${tanggalManual}T${new Date().toLocaleTimeString("sv", { timeZone: "Asia/Jakarta" })}+07:00`).toISOString();
       const { error } = await supabase.from("kas").insert([{
         tipe, kategori, nominal: nominalAngka,
         keterangan: keterangan.trim(),
         created_at: waktuWIB,
         is_void: false,
+        foto_url: fotoUrl,
       }]);
       if (error) throw new Error(error.message);
       showToast(`${tipe === "Masuk" ? "✓ Pemasukan" : "✓ Pengeluaran"} ${rupiahFmt(nominalAngka)} berhasil dicatat!`);
       setNominal(""); setKeterangan("");
+      setFotoFile(null); setFotoPreview(null);
       setTanggalManual(new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" }));
       setShowKonfirmasi(false);
       fetchData();
@@ -143,6 +187,7 @@ export default function KasPage() {
 
   // ── Edit ──
   const bukaEdit = (k: Kas) => {
+    setDetailItem(null);
     setEditItem(k);
     setEditNominal(formatIDR(String(k.nominal)));
     setEditKategori(k.kategori);
@@ -157,9 +202,7 @@ export default function KasPage() {
     setSavingEdit(true);
     try {
       const { error } = await supabase.from("kas").update({
-        nominal: nominalAngka,
-        kategori: editKategori,
-        keterangan: editKeterangan.trim(),
+        nominal: nominalAngka, kategori: editKategori, keterangan: editKeterangan.trim(),
       }).eq("id", editItem.id);
       if (error) throw new Error(error.message);
       showToast("✓ Transaksi berhasil diupdate!");
@@ -179,13 +222,11 @@ export default function KasPage() {
     setSavingVoid(true);
     try {
       const { error } = await supabase.from("kas").update({
-        is_void: true,
-        void_reason: voidReason.trim(),
+        is_void: true, void_reason: voidReason.trim(),
       }).eq("id", voidItem.id);
       if (error) throw new Error(error.message);
-      showToast(`🚫 Transaksi di-void: ${voidReason}`);
-      setVoidItem(null);
-      setVoidReason("");
+      showToast(`🚫 Transaksi di-void`);
+      setVoidItem(null); setVoidReason("");
       fetchData();
     } catch (err: any) {
       showToast(err.message || "Gagal void", "error");
@@ -240,6 +281,32 @@ export default function KasPage() {
     boxSizing: "border-box", outline: "none",
   };
 
+  // ── Stat cards config — clickable ──
+  const statCards = [
+    {
+      label: "Saldo Kas Total", value: rupiahFmt(saldoTotal),
+      color: saldoTotal >= 0 ? C.green : C.red, icon: "💰",
+      sub: "Semua waktu", onClick: () => { setFilterTipe("Semua"); setFilterBulan(""); setActiveTab("riwayat"); }
+    },
+    {
+      label: "Pemasukan", value: rupiahFmt(totalMasuk),
+      color: C.green, icon: "📈",
+      sub: filterBulan || "Periode dipilih", onClick: () => { setFilterTipe("Masuk"); setActiveTab("riwayat"); setCurrentPage(1); }
+    },
+    {
+      label: "Pengeluaran", value: rupiahFmt(totalKeluar),
+      color: C.red, icon: "📉",
+      sub: filterBulan || "Periode dipilih", onClick: () => { setFilterTipe("Keluar"); setActiveTab("riwayat"); setCurrentPage(1); }
+    },
+    {
+      label: "Selisih Periode", value: rupiahFmt(Math.abs(saldoBulanIni)),
+      color: saldoBulanIni >= 0 ? C.green : C.red,
+      icon: saldoBulanIni >= 0 ? "✅" : "⚠️",
+      sub: saldoBulanIni >= 0 ? "Surplus" : "Defisit",
+      onClick: () => { setFilterTipe("Semua"); setActiveTab("riwayat"); setCurrentPage(1); }
+    },
+  ];
+
   if (loading) return (
     <Sidebar>
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -256,7 +323,8 @@ export default function KasPage() {
         input:focus, select:focus, textarea:focus { border-color: ${C.accent}80 !important; outline: none; }
         input::placeholder, textarea::placeholder { color: ${C.muted} !important; }
         select option { background: ${C.card}; color: ${C.text}; }
-        .kas-row:hover { background: ${isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)"} !important; }
+        .kas-row:hover { background: ${isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"} !important; cursor: pointer; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important; }
       `}</style>
 
       {/* Toast */}
@@ -273,34 +341,105 @@ export default function KasPage() {
           <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 380, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans, animation: "fadeUp 0.15s ease" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>⚠️ Konfirmasi Transaksi</div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Pastikan data sudah benar sebelum disimpan</div>
-
-            <div style={{ background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 12, padding: "16px", marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 12, color: C.muted }}>Tipe</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: tipe === "Masuk" ? C.green : C.red }}>{tipe === "Masuk" ? "📈 Pemasukan" : "📉 Pengeluaran"}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 12, color: C.muted }}>Kategori</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{kategori}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 12, color: C.muted }}>Keterangan</span>
-                <span style={{ fontSize: 13, color: C.text, maxWidth: 200, textAlign: "right" }}>{keterangan}</span>
-              </div>
+            <div style={{ background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              {[
+                { label: "Tipe", value: tipe === "Masuk" ? "📈 Pemasukan" : "📉 Pengeluaran", color: tipe === "Masuk" ? C.green : C.red },
+                { label: "Kategori", value: kategori, color: C.text },
+                { label: "Keterangan", value: keterangan, color: C.text },
+                { label: "Tanggal", value: tanggalManual, color: C.muted },
+              ].map(row => (
+                <div key={row.label} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: C.muted }}>{row.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: row.color, maxWidth: 200, textAlign: "right" }}>{row.value}</span>
+                </div>
+              ))}
+              {fotoFile && <div style={{ fontSize: 12, color: C.accent, marginBottom: 10 }}>📎 Foto struk terlampir</div>}
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Nominal</span>
                 <span style={{ fontSize: 16, fontWeight: 800, color: tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{rupiahFmt(toAngka(nominal))}</span>
               </div>
             </div>
-
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setShowKonfirmasi(false)} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>
-                ✕ Koreksi Dulu
-              </button>
-              <button onClick={simpanKas} disabled={submitting} style={{ flex: 1, padding: "11px", background: tipe === "Masuk" ? `linear-gradient(135deg, #065f46, ${C.green})` : `linear-gradient(135deg, #7f1d1d, ${C.red})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: submitting ? 0.7 : 1 }}>
-                {submitting ? "Menyimpan..." : "✓ Ya, Simpan"}
+              <button onClick={() => setShowKonfirmasi(false)} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>✕ Koreksi Dulu</button>
+              <button onClick={simpanKas} disabled={submitting || uploadingFoto} style={{ flex: 1, padding: "11px", background: tipe === "Masuk" ? `linear-gradient(135deg, #065f46, ${C.green})` : `linear-gradient(135deg, #7f1d1d, ${C.red})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: (submitting || uploadingFoto) ? 0.7 : 1 }}>
+                {uploadingFoto ? "Upload foto..." : submitting ? "Menyimpan..." : "✓ Ya, Simpan"}
               </button>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Modal Detail ── */}
+      {detailItem && (
+        <>
+          <div onClick={() => setDetailItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 420, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans, animation: "fadeUp 0.15s ease", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>Detail Transaksi</div>
+                <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>#{detailItem.id}</div>
+              </div>
+              <button onClick={() => setDetailItem(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: "2px 6px" }}>×</button>
+            </div>
+
+            {/* Status badge */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: (detailItem.tipe === "Masuk" ? C.green : C.red) + "20", color: detailItem.tipe === "Masuk" ? C.green : C.red, fontWeight: 700, fontFamily: C.fontMono }}>
+                {detailItem.tipe === "Masuk" ? "📈 Pemasukan" : "📉 Pengeluaran"}
+              </span>
+              <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: `${C.accent}20`, color: C.accent, fontWeight: 700, fontFamily: C.fontMono }}>{detailItem.kategori}</span>
+              {detailItem.is_void && <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: `${C.red}20`, color: C.red, fontWeight: 700, fontFamily: C.fontMono }}>🚫 VOID</span>}
+            </div>
+
+            {/* Nominal besar */}
+            <div style={{ textAlign: "center", padding: "20px 0", marginBottom: 20, background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)", borderRadius: 12 }}>
+              <div style={{ fontSize: 28, fontWeight: 800, color: detailItem.is_void ? C.muted : detailItem.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono, textDecoration: detailItem.is_void ? "line-through" : "none" }}>
+                {detailItem.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(detailItem.nominal)}
+              </div>
+            </div>
+
+            {/* Info rows */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+              {[
+                { label: "Keterangan", value: detailItem.keterangan },
+                { label: "Tanggal", value: tanggalFmt(detailItem.created_at) },
+              ].map(row => (
+                <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderRadius: 8 }}>
+                  <span style={{ fontSize: 12, color: C.muted }}>{row.label}</span>
+                  <span style={{ fontSize: 13, color: C.text, fontWeight: 600, maxWidth: 240, textAlign: "right" }}>{row.value}</span>
+                </div>
+              ))}
+              {detailItem.is_void && detailItem.void_reason && (
+                <div style={{ padding: "10px 14px", background: `${C.red}10`, border: `1px solid ${C.red}25`, borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: C.red, fontFamily: C.fontMono, marginBottom: 4 }}>ALASAN VOID</div>
+                  <div style={{ fontSize: 13, color: C.red }}>{detailItem.void_reason}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Foto struk */}
+            {detailItem.foto_url ? (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Bukti Struk</div>
+                <img src={detailItem.foto_url} alt="Bukti struk" style={{ width: "100%", borderRadius: 10, border: `1px solid ${C.border}`, objectFit: "cover", maxHeight: 300 }} />
+                <a href={detailItem.foto_url} target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center", marginTop: 8, fontSize: 12, color: C.accent, fontFamily: C.fontMono }}>🔗 Buka foto ukuran penuh</a>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 20, padding: "14px", background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)", borderRadius: 10, textAlign: "center" }}>
+                <div style={{ fontSize: 24, marginBottom: 6 }}>📷</div>
+                <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>Tidak ada foto struk</div>
+              </div>
+            )}
+
+            {/* Aksi */}
+            {!detailItem.is_void && (
+              <div style={{ display: "flex", gap: 8 }}>
+                {isHariIni(detailItem.created_at) && (
+                  <button onClick={() => bukaEdit(detailItem)} style={{ flex: 1, padding: "10px", background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>✏️ Edit</button>
+                )}
+                <button onClick={() => { setVoidItem(detailItem); setDetailItem(null); setVoidReason(""); }} style={{ flex: 1, padding: "10px", background: `${C.red}10`, border: `1px solid ${C.red}25`, color: C.red, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>🚫 Void</button>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -312,26 +451,20 @@ export default function KasPage() {
           <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 400, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans, animation: "fadeUp 0.15s ease" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>✏️ Edit Transaksi</div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>{tanggalFmt(editItem.created_at)}</div>
-
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Kategori</div>
               <select value={editKategori} onChange={e => setEditKategori(e.target.value)} style={inputS}>
-                {(editItem.tipe === "Masuk" ? KATEGORI_MASUK : KATEGORI_KELUAR).map(k => (
-                  <option key={k} value={k}>{k}</option>
-                ))}
+                {(editItem.tipe === "Masuk" ? KATEGORI_MASUK : KATEGORI_KELUAR).map(k => <option key={k} value={k}>{k}</option>)}
               </select>
             </div>
-
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Nominal</div>
               <input value={editNominal} onChange={e => setEditNominal(formatIDR(e.target.value))} style={{ ...inputS, fontFamily: C.fontMono, fontWeight: 700 }} />
             </div>
-
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Keterangan</div>
               <input value={editKeterangan} onChange={e => setEditKeterangan(e.target.value)} style={inputS} />
             </div>
-
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setEditItem(null)} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>Batal</button>
               <button onClick={simpanEdit} disabled={savingEdit} style={{ flex: 1, padding: "11px", background: `linear-gradient(135deg, #7c3aed, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: savingEdit ? 0.7 : 1 }}>
@@ -348,21 +481,16 @@ export default function KasPage() {
           <div onClick={() => { setVoidItem(null); setVoidReason(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }} />
           <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 400, background: C.card, border: `1px solid ${C.red}40`, borderRadius: 16, padding: 24, fontFamily: C.fontSans, animation: "fadeUp 0.15s ease" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.red, marginBottom: 4 }}>🚫 Void Transaksi</div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Transaksi tidak akan dihapus — tetap muncul di riwayat tapi tidak dihitung di saldo</div>
-
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Transaksi tetap muncul di riwayat tapi tidak dihitung di saldo</div>
             <div style={{ background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{voidItem.keterangan}</div>
-              <div style={{ fontSize: 12, color: voidItem.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono, fontWeight: 700 }}>
-                {voidItem.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(voidItem.nominal)}
-              </div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: voidItem.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{voidItem.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(voidItem.nominal)}</div>
               <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>{tanggalFmt(voidItem.created_at)}</div>
             </div>
-
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Alasan Void *</div>
-              <input value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="Contoh: Salah input nominal, duplikat transaksi..." style={inputS} autoFocus />
+              <input value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="Contoh: Salah input nominal, duplikat..." style={inputS} autoFocus />
             </div>
-
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => { setVoidItem(null); setVoidReason(""); }} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>Batal</button>
               <button onClick={prosesVoid} disabled={savingVoid || !voidReason.trim()} style={{ flex: 1, padding: "11px", background: C.red, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: (savingVoid || !voidReason.trim()) ? 0.6 : 1 }}>
@@ -377,24 +505,20 @@ export default function KasPage() {
 
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>💰 Kas</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: C.text }}>💰 Kas</h1>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Kelola arus kas masuk & keluar Azalea</p>
         </div>
 
-        {/* Stat Cards */}
+        {/* Stat Cards — clickable */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 24 }}>
-          {[
-            { label: "Saldo Kas Total", value: rupiahFmt(saldoTotal), color: saldoTotal >= 0 ? C.green : C.red, icon: "💰", sub: "Semua waktu (diluar void)" },
-            { label: "Pemasukan", value: rupiahFmt(totalMasuk), color: C.green, icon: "📈", sub: filterBulan || "Periode dipilih" },
-            { label: "Pengeluaran", value: rupiahFmt(totalKeluar), color: C.red, icon: "📉", sub: filterBulan || "Periode dipilih" },
-            { label: "Selisih Periode", value: rupiahFmt(Math.abs(saldoBulanIni)), color: saldoBulanIni >= 0 ? C.green : C.red, icon: saldoBulanIni >= 0 ? "✅" : "⚠️", sub: saldoBulanIni >= 0 ? "Surplus" : "Defisit" },
-          ].map((s, i) => (
-            <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden", boxShadow: C.shadow }}>
+          {statCards.map((s, i) => (
+            <div key={i} className="stat-card" onClick={s.onClick} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden", boxShadow: C.shadow, cursor: "pointer", transition: "all 0.2s" }}>
               <div style={{ position: "absolute", top: 0, right: 0, width: 60, height: 60, background: s.color + "18", borderRadius: "0 14px 0 60px" }} />
               <div style={{ fontSize: 20, marginBottom: 8 }}>{s.icon}</div>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>{s.label}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: s.color, fontFamily: C.fontMono }}>{s.value}</div>
               <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{s.sub}</div>
+              <div style={{ position: "absolute", bottom: 10, right: 14, fontSize: 10, color: s.color, fontFamily: C.fontMono, opacity: 0.6 }}>klik untuk filter →</div>
             </div>
           ))}
         </div>
@@ -405,13 +529,7 @@ export default function KasPage() {
             { id: "input", label: "+ Input Transaksi", color: C.accent },
             { id: "riwayat", label: "📋 Riwayat Kas", color: C.blue },
           ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{
-              padding: "10px 24px", borderRadius: 10, border: `1px solid ${activeTab === tab.id ? tab.color + "60" : C.border}`,
-              background: activeTab === tab.id ? tab.color + "20" : "transparent",
-              color: activeTab === tab.id ? tab.color : C.muted,
-              fontWeight: 700, cursor: "pointer", fontSize: 13,
-              fontFamily: C.fontSans, transition: "all 0.15s",
-            }}>{tab.label}</button>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{ padding: "10px 24px", borderRadius: 10, border: `1px solid ${activeTab === tab.id ? tab.color + "60" : C.border}`, background: activeTab === tab.id ? tab.color + "20" : "transparent", color: activeTab === tab.id ? tab.color : C.muted, fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: C.fontSans, transition: "all 0.15s" }}>{tab.label}</button>
           ))}
         </div>
 
@@ -429,13 +547,7 @@ export default function KasPage() {
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>TIPE TRANSAKSI</div>
               <div style={{ display: "flex", gap: 8 }}>
                 {(["Masuk", "Keluar"] as const).map(t => (
-                  <button key={t} onClick={() => handleTipeChange(t)} style={{
-                    flex: 1, padding: "11px", borderRadius: 8,
-                    border: `1px solid ${tipe === t ? (t === "Masuk" ? C.green : C.red) + "60" : C.border}`,
-                    background: tipe === t ? (t === "Masuk" ? C.green : C.red) + "20" : "transparent",
-                    color: tipe === t ? (t === "Masuk" ? C.green : C.red) : C.muted,
-                    fontWeight: 700, cursor: "pointer", fontSize: 14, fontFamily: C.fontSans,
-                  }}>
+                  <button key={t} onClick={() => handleTipeChange(t)} style={{ flex: 1, padding: "11px", borderRadius: 8, border: `1px solid ${tipe === t ? (t === "Masuk" ? C.green : C.red) + "60" : C.border}`, background: tipe === t ? (t === "Masuk" ? C.green : C.red) + "20" : "transparent", color: tipe === t ? (t === "Masuk" ? C.green : C.red) : C.muted, fontWeight: 700, cursor: "pointer", fontSize: 14, fontFamily: C.fontSans }}>
                     {t === "Masuk" ? "📈 Pemasukan" : "📉 Pengeluaran"}
                   </button>
                 ))}
@@ -446,9 +558,7 @@ export default function KasPage() {
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>KATEGORI</div>
               <select value={kategori} onChange={e => setKategori(e.target.value)} style={inputS}>
-                {(tipe === "Masuk" ? KATEGORI_MASUK : KATEGORI_KELUAR).map(k => (
-                  <option key={k} value={k}>{k}</option>
-                ))}
+                {(tipe === "Masuk" ? KATEGORI_MASUK : KATEGORI_KELUAR).map(k => <option key={k} value={k}>{k}</option>)}
               </select>
             </div>
 
@@ -466,18 +576,33 @@ export default function KasPage() {
             </div>
 
             {/* Tanggal */}
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>TANGGAL</div>
               <input type="date" value={tanggalManual} onChange={e => setTanggalManual(e.target.value)} style={{ ...inputS, colorScheme: isDark ? "dark" : "light" }} />
               <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Default hari ini — ubah kalau input mundur</div>
             </div>
 
-            <button onClick={handleClickSimpan} style={{
-              width: "100%", padding: 13, border: "none", borderRadius: 10,
-              background: tipe === "Masuk" ? `linear-gradient(135deg, #065f46, ${C.green})` : `linear-gradient(135deg, #7f1d1d, ${C.red})`,
-              color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 14,
-              boxShadow: `0 4px 16px ${tipe === "Masuk" ? C.green : C.red}33`,
-            }}>
+            {/* Upload Foto Struk */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
+                FOTO STRUK <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(opsional)</span>
+              </div>
+              {fotoPreview ? (
+                <div style={{ position: "relative" }}>
+                  <img src={fotoPreview} alt="Preview" style={{ width: "100%", maxHeight: 200, objectFit: "cover", borderRadius: 10, border: `1px solid ${C.border}` }} />
+                  <button onClick={() => { setFotoFile(null); setFotoPreview(null); }} style={{ position: "absolute", top: 8, right: 8, background: C.red, border: "none", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>× Hapus</button>
+                </div>
+              ) : (
+                <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", border: `2px dashed ${C.border}`, borderRadius: 10, cursor: "pointer", gap: 8, background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
+                  <span style={{ fontSize: 28 }}>📷</span>
+                  <span style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>Klik untuk upload foto struk</span>
+                  <span style={{ fontSize: 11, color: C.dim }}>JPG, PNG, max 5MB</span>
+                  <input type="file" accept="image/*" onChange={handlePilihFoto} style={{ display: "none" }} />
+                </label>
+              )}
+            </div>
+
+            <button onClick={handleClickSimpan} style={{ width: "100%", padding: 13, border: "none", borderRadius: 10, background: tipe === "Masuk" ? `linear-gradient(135deg, #065f46, ${C.green})` : `linear-gradient(135deg, #7f1d1d, ${C.red})`, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 14, boxShadow: `0 4px 16px ${tipe === "Masuk" ? C.green : C.red}33` }}>
               {`✓ Simpan ${tipe === "Masuk" ? "Pemasukan" : "Pengeluaran"} ${nominal ? rupiahFmt(toAngka(nominal)) : ""}`}
             </button>
           </div>
@@ -488,7 +613,7 @@ export default function KasPage() {
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, boxShadow: C.shadow, animation: "fadeUp 0.2s ease" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: C.text }}>Riwayat Transaksi</h3>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
                   <input type="checkbox" checked={showVoid} onChange={e => setShowVoid(e.target.checked)} style={{ accentColor: C.red }} />
                   Tampilkan void
@@ -530,14 +655,9 @@ export default function KasPage() {
               <div style={{ textAlign: "center", color: C.muted, padding: "40px 0", fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada transaksi ditemukan</div>
             )}
 
-            {/* List */}
+            {/* List — klik untuk detail */}
             {kasPage.map(k => (
-              <div key={k.id} className="kas-row" style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "12px 8px", borderBottom: `1px solid ${C.border}`,
-                opacity: k.is_void ? 0.45 : 1, transition: "background 0.15s",
-                borderRadius: 6,
-              }}>
+              <div key={k.id} className="kas-row" onClick={() => setDetailItem(k)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 8px", borderBottom: `1px solid ${C.border}`, opacity: k.is_void ? 0.45 : 1, transition: "background 0.15s", borderRadius: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: k.is_void ? C.muted : k.tipe === "Masuk" ? C.green : C.red }} />
                   <div style={{ flex: 1 }}>
@@ -545,25 +665,16 @@ export default function KasPage() {
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: (k.is_void ? C.muted : k.tipe === "Masuk" ? C.green : C.red) + "20", color: k.is_void ? C.muted : k.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{k.kategori}</span>
                       <span style={{ fontSize: 13, color: k.is_void ? C.muted : C.textMid, fontWeight: 500, textDecoration: k.is_void ? "line-through" : "none" }}>{k.keterangan}</span>
                       {k.is_void && <span style={{ fontSize: 10, background: C.red + "20", color: C.red, padding: "2px 7px", borderRadius: 4, fontFamily: C.fontMono, fontWeight: 700 }}>VOID</span>}
+                      {k.foto_url && <span style={{ fontSize: 10, color: C.accent, fontFamily: C.fontMono }}>📷</span>}
                     </div>
-                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                      {tanggalFmt(k.created_at)}
-                      {k.is_void && k.void_reason && <span style={{ marginLeft: 8, color: C.red }}>· {k.void_reason}</span>}
-                    </div>
+                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(k.created_at)}</div>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontWeight: 700, fontSize: 14, fontFamily: C.fontMono, color: k.is_void ? C.muted : k.tipe === "Masuk" ? C.green : C.red, whiteSpace: "nowrap", textDecoration: k.is_void ? "line-through" : "none" }}>
                     {k.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(k.nominal)}
                   </span>
-                  {!k.is_void && (
-                    <>
-                      {isHariIni(k.created_at) && (
-                        <button onClick={() => bukaEdit(k)} style={{ padding: "5px 10px", background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700, whiteSpace: "nowrap" }}>✏️</button>
-                      )}
-                      <button onClick={() => { setVoidItem(k); setVoidReason(""); }} style={{ padding: "5px 10px", background: `${C.red}10`, border: `1px solid ${C.red}25`, color: C.red, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700, whiteSpace: "nowrap" }}>🚫</button>
-                    </>
-                  )}
+                  <span style={{ fontSize: 11, color: C.dim }}>›</span>
                 </div>
               </div>
             ))}
@@ -573,15 +684,15 @@ export default function KasPage() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>{kasFiltered.length} transaksi · hal {currentPage}/{totalPages}</div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, color: currentPage === 1 ? C.muted : C.text, cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: 12 }}>← Prev</button>
+                  <button onClick={e => { e.stopPropagation(); setCurrentPage(p => Math.max(1, p - 1)); }} disabled={currentPage === 1} style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, color: currentPage === 1 ? C.muted : C.text, cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: 12 }}>← Prev</button>
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     const page = currentPage <= 3 ? i + 1 : currentPage - 2 + i;
                     if (page < 1 || page > totalPages) return null;
                     return (
-                      <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: "6px 10px", background: page === currentPage ? C.accent + "20" : "transparent", border: `1px solid ${page === currentPage ? C.accent + "60" : C.border}`, borderRadius: 6, color: page === currentPage ? C.accent : C.muted, cursor: "pointer", fontSize: 12, fontWeight: page === currentPage ? 700 : 400 }}>{page}</button>
+                      <button key={page} onClick={e => { e.stopPropagation(); setCurrentPage(page); }} style={{ padding: "6px 10px", background: page === currentPage ? C.accent + "20" : "transparent", border: `1px solid ${page === currentPage ? C.accent + "60" : C.border}`, borderRadius: 6, color: page === currentPage ? C.accent : C.muted, cursor: "pointer", fontSize: 12, fontWeight: page === currentPage ? 700 : 400 }}>{page}</button>
                     );
                   })}
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, color: currentPage === totalPages ? C.muted : C.text, cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: 12 }}>Next →</button>
+                  <button onClick={e => { e.stopPropagation(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} disabled={currentPage === totalPages} style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, color: currentPage === totalPages ? C.muted : C.text, cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontSize: 12 }}>Next →</button>
                 </div>
               </div>
             )}

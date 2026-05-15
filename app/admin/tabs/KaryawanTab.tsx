@@ -123,16 +123,16 @@ export default function KaryawanTab({ C, isDark, showToast }: Props) {
     return matchSearch && matchTipe && matchStatus;
   });
 
-  // Group by tipe untuk summary
   const hppTypes = ["Operator Produksi", "Packing", "Pencetak"];
   const totalAktif = karyawanList.filter(k => k.status === "Aktif").length;
   const totalHPP = karyawanList.filter(k => k.status === "Aktif" && hppTypes.includes(k.tipe)).length;
   const totalOps = karyawanList.filter(k => k.status === "Aktif" && !hppTypes.includes(k.tipe)).length;
 
-  // Form fields berdasarkan tipe
+  // Field visibility per tipe
+  const showNoGaji = (tipe: string) => ["Operator Produksi", "Packing"].includes(tipe);
   const showBorongan = (tipe: string) => tipe === "Pencetak";
-  const showHarian = (tipe: string) => ["Operator Produksi", "Packing", "Packing Online"].includes(tipe);
-  const showBulanan = (tipe: string) => ["Host Live", "Admin Shopee", "Owner"].includes(tipe);
+  const showPackingOnline = (tipe: string) => tipe === "Packing Online";
+  const showBulanan = (tipe: string) => ["Admin Shopee", "Owner"].includes(tipe);
   const showLive = (tipe: string) => tipe === "Host Live";
 
   const FormFields = ({ form, setForm }: { form: KaryawanForm; setForm: (f: KaryawanForm) => void }) => (
@@ -156,35 +156,42 @@ export default function KaryawanTab({ C, isDark, showToast }: Props) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12 }}>
-        {showBorongan(form.tipe) && (
-  <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: `${C.green}10`, border: `1px solid ${C.green}25`, borderRadius: 8, fontSize: 12, color: C.green, fontFamily: C.fontMono }}>
-    ⚖ Tarif borongan Pencetak ditentukan dari <strong>Varian Borongan</strong> (tab Master PLU). 
-    Atur PLU karyawan ini di tab <strong>Master PLU</strong>.
-  </div>
-)}
-        {showHarian(form.tipe) && (
-          <div>
-            <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" as const }}>TARIF HARIAN (Rp/hari)</div>
-            <input value={form.tarif_harian} onChange={e => setForm({ ...form, tarif_harian: formatIDR(e.target.value) })} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} />
+        {/* Operator Produksi & Packing — gaji per batch, tidak ada field nominal */}
+        {showNoGaji(form.tipe) && (
+          <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: `${C.green}10`, border: `1px solid ${C.green}25`, borderRadius: 8, fontSize: 12, color: C.green, fontFamily: C.fontMono }}>
+            ⚙ Gaji <strong>{form.tipe}</strong> diinput per batch di modul <strong>Produksi</strong>. Tidak perlu set nominal di sini.
           </div>
         )}
+
+        {/* Pencetak — tarif dari Varian Borongan */}
+        {showBorongan(form.tipe) && (
+          <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: `${C.green}10`, border: `1px solid ${C.green}25`, borderRadius: 8, fontSize: 12, color: C.green, fontFamily: C.fontMono }}>
+            ⚖ Tarif borongan Pencetak ditentukan dari <strong>Varian Borongan</strong> (tab Master PLU).
+            Atur PLU karyawan ini di tab <strong>Master PLU</strong>.
+          </div>
+        )}
+
+        {/* Packing Online — tarif paket kecil & besar dari Varian Borongan */}
+        {showPackingOnline(form.tipe) && (
+          <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 8, fontSize: 12, color: C.blue, fontFamily: C.fontMono }}>
+            📦 Gaji Packing Online dihitung dari <strong>qty paket × tarif</strong> (paket kecil &amp; besar).
+            Atur tarif di tab <strong>Varian Borongan</strong>, input harian di modul <strong>Penggajian</strong>.
+          </div>
+        )}
+
+        {/* Admin Shopee & Owner — gaji bulanan */}
         {showBulanan(form.tipe) && (
           <div>
             <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" as const }}>GAJI BULANAN (Rp)</div>
             <input value={form.gaji_bulanan} onChange={e => setForm({ ...form, gaji_bulanan: formatIDR(e.target.value) })} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} />
           </div>
         )}
+
+        {/* Host Live — belum aktif */}
         {showLive(form.tipe) && (
-          <>
-            <div>
-              <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" as const }}>FEE PER SESI LIVE</div>
-              <input value={form.fee_live_sesi} onChange={e => setForm({ ...form, fee_live_sesi: formatIDR(e.target.value) })} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" as const }}>KOMISI LIVE (%)</div>
-              <input type="number" value={form.komisi_live_persen} onChange={e => setForm({ ...form, komisi_live_persen: e.target.value })} placeholder="0" step="0.1" min="0" max="100" style={{ ...inputStyle, fontFamily: C.fontMono }} />
-            </div>
-          </>
+          <div style={{ gridColumn: "1 / -1", padding: "10px 14px", background: `${C.purple}10`, border: `1px solid ${C.purple}25`, borderRadius: 8, fontSize: 12, color: C.purple, fontFamily: C.fontMono }}>
+            🎥 Modul <strong>Live Session</strong> belum aktif. Komisi &amp; fee akan diatur saat modul siap.
+          </div>
         )}
       </div>
 
@@ -310,12 +317,17 @@ export default function KaryawanTab({ C, isDark, showToast }: Props) {
 
                     {/* Tarif */}
                     <div style={{ textAlign: "right", minWidth: 140 }}>
-                      {k.tarif_borongan && <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(k.tarif_borongan)}<span style={{ fontSize: 10, fontWeight: 400, color: C.muted }}>/kg</span></div>}
-                      {k.tarif_harian && <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow, fontFamily: C.fontMono }}>{rupiahFmt(k.tarif_harian)}<span style={{ fontSize: 10, fontWeight: 400, color: C.muted }}>/hari</span></div>}
-                      {k.gaji_bulanan && <div style={{ fontSize: 13, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(k.gaji_bulanan)}<span style={{ fontSize: 10, fontWeight: 400, color: C.muted }}>/bulan</span></div>}
-                      {k.fee_live_sesi && <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.fee_live_sesi)}/sesi</div>}
-                      {k.komisi_live_persen && <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{k.komisi_live_persen}% komisi live</div>}
-                      {!k.tarif_borongan && !k.tarif_harian && !k.gaji_bulanan && (
+                      {k.gaji_bulanan ? (
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(k.gaji_bulanan)}<span style={{ fontSize: 10, fontWeight: 400, color: C.muted }}>/bulan</span></div>
+                      ) : k.tipe === "Pencetak" ? (
+                        <div style={{ fontSize: 11, color: C.green, fontFamily: C.fontMono, fontStyle: "italic" }}>⚖ Tarif dari Varian Borongan</div>
+                      ) : k.tipe === "Packing Online" ? (
+                        <div style={{ fontSize: 11, color: C.blue, fontFamily: C.fontMono, fontStyle: "italic" }}>📦 Tarif dari Varian Borongan</div>
+                      ) : k.tipe === "Host Live" ? (
+                        <div style={{ fontSize: 11, color: C.purple, fontFamily: C.fontMono, fontStyle: "italic" }}>🎥 Modul Live belum aktif</div>
+                      ) : ["Operator Produksi", "Packing"].includes(k.tipe) ? (
+                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, fontStyle: "italic" }}>⚙ Input per batch produksi</div>
+                      ) : (
                         <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, fontStyle: "italic" }}>Belum diset</div>
                       )}
                     </div>

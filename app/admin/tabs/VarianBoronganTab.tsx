@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { VarianBorongan, Toast, rupiahFmt, formatIDR, toAngka } from "./adminTypes";
+import { VarianBorongan, Toast, rupiahFmt, formatIDR, toAngka } from "../adminTypes";
 
 interface Props {
   C: any;

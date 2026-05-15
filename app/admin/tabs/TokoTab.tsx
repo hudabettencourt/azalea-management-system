@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Toko, Toast, PLATFORM_OPTIONS, PLATFORM_COLORS } from "./adminTypes";
+import { Toko, Toast, PLATFORM_OPTIONS, PLATFORM_COLORS } from "../adminTypes";
 
 interface Props { C: any; isDark: boolean; showToast: (msg: string, type?: Toast["type"]) => void; }
 type TokoForm = { nama: string; platform: string; aktif: boolean };

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { Profile, Toast, ROLES, roleInfo, tanggalFmt } from "./adminTypes";
+import { Profile, Toast, ROLES, roleInfo, tanggalFmt } from "../adminTypes";
 
 interface Props {
   currentUserId?: string;

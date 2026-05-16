@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
 
@@ -36,12 +36,29 @@ type VarianBorongan = {
   aktif: boolean;
 };
 
+// Data baris input borongan per varian
+type BoronganRow = {
+  varianId: number;
+  varianNama: string;
+  tarifPerKg: number;
+  qty: string; // kg untuk Pencetak, paket untuk Packing Online
+  kategori: string;
+};
+
+// Data slip yang akan diprint
+type SlipData = {
+  nama: string;
+  tipe: string;
+  tanggal: string;
+  rows: { label: string; qty: number; tarif: number; total: number }[];
+  totalNominal: number;
+};
+
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
 const getTipeBeban = (tipe: string): "HPP" | "Operasional" => {
-  const hppKeywords = ["operator produksi", "packing", "pencetak", "produksi"];
-  // Packing Online = Operasional, bukan HPP
   if (tipe.toLowerCase() === "packing online") return "Operasional";
+  const hppKeywords = ["operator produksi", "packing", "pencetak", "produksi"];
   return hppKeywords.some(k => tipe.toLowerCase().includes(k)) ? "HPP" : "Operasional";
 };
 
@@ -80,6 +97,47 @@ function ToastBar({ toast, onClose }: { toast: Toast | null; onClose: () => void
   );
 }
 
+// ── Komponen Slip Thermal (hidden, untuk print) ──
+function SlipThermal({ slip }: { slip: SlipData }) {
+  return (
+    <div id="slip-thermal" style={{ display: "none" }}>
+      <div className="slip-content">
+        <div className="slip-center slip-bold" style={{ fontSize: 14 }}>AZALEA</div>
+        <div className="slip-center" style={{ fontSize: 11 }}>Slip Gaji Harian</div>
+        <div className="slip-divider">================================</div>
+        <div className="slip-row"><span>Nama</span><span>: {slip.nama}</span></div>
+        <div className="slip-row"><span>Tipe</span><span>: {slip.tipe}</span></div>
+        <div className="slip-row"><span>Tanggal</span><span>: {tanggalFmt(slip.tanggal)}</span></div>
+        <div className="slip-divider">--------------------------------</div>
+        <div className="slip-row slip-header">
+          <span style={{ flex: 2 }}>Varian</span>
+          <span style={{ flex: 1, textAlign: "right" }}>{slip.tipe === "Pencetak" ? "Kg" : "Qty"}</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Tarif</span>
+          <span style={{ flex: 1, textAlign: "right" }}>Total</span>
+        </div>
+        <div className="slip-divider">--------------------------------</div>
+        {slip.rows.map((r, i) => (
+          <div key={i} className="slip-row" style={{ fontSize: 11 }}>
+            <span style={{ flex: 2 }}>{r.label}</span>
+            <span style={{ flex: 1, textAlign: "right" }}>{r.qty}</span>
+            <span style={{ flex: 1, textAlign: "right" }}>{r.tarif.toLocaleString("id-ID")}</span>
+            <span style={{ flex: 1, textAlign: "right" }}>{r.total.toLocaleString("id-ID")}</span>
+          </div>
+        ))}
+        <div className="slip-divider">--------------------------------</div>
+        <div className="slip-row slip-bold">
+          <span>TOTAL</span>
+          <span>Rp {slip.totalNominal.toLocaleString("id-ID")}</span>
+        </div>
+        <div className="slip-divider">================================</div>
+        <div style={{ marginTop: 12, fontSize: 11 }}>Tanda Terima :</div>
+        <div style={{ marginTop: 32, borderTop: "1px solid #000", width: 120, fontSize: 11 }}>( {slip.nama} )</div>
+        <div style={{ marginTop: 16 }}></div>
+      </div>
+    </div>
+  );
+}
+
 export default function PenggajianPage() {
   const [karyawanList, setKaryawanList] = useState<Karyawan[]>([]);
   const [gajiList, setGajiList] = useState<GajiHarian[]>([]);
@@ -87,25 +145,29 @@ export default function PenggajianPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [activeTab, setActiveTab] = useState<"input" | "rekap" | "karyawan">("input");
+  const [activeTab, setActiveTab] = useState<"input" | "borongan" | "rekap" | "karyawan">("input");
 
-  // Form input gaji
+  // Form input gaji (tab input)
   const [karyawanId, setKaryawanId] = useState("");
   const [nominal, setNominal] = useState("");
   const [tanggal, setTanggal] = useState(hariIniWIB());
   const [keterangan, setKeterangan] = useState("");
-
-  // Packing Online
   const [qtyKecil, setQtyKecil] = useState("");
   const [qtyBesar, setQtyBesar] = useState("");
 
+  // Tab Borongan
+  const [boronganKaryawanId, setBoronganKaryawanId] = useState("");
+  const [boronganTanggal, setBoronganTanggal] = useState(hariIniWIB());
+  const [boronganKet, setBoronganKet] = useState("");
+  const [boronganRows, setBoronganRows] = useState<BoronganRow[]>([]);
+  const [lastSlip, setLastSlip] = useState<SlipData | null>(null);
+  const [showPrintBtn, setShowPrintBtn] = useState(false);
+
   const [filterBulan, setFilterBulan] = useState(hariIniWIB().slice(0, 7));
 
-  // Tambah karyawan (tab karyawan)
+  // Tambah karyawan
   const [newNama, setNewNama] = useState("");
   const [newTipe, setNewTipe] = useState("Operator Produksi");
-  const [newTarifHarian, setNewTarifHarian] = useState("");
-  const [newTarifBorongan, setNewTarifBorongan] = useState("");
   const [newGajiBulanan, setNewGajiBulanan] = useState("");
   const [newFeeLive, setNewFeeLive] = useState("");
   const [newKomisiLive, setNewKomisiLive] = useState("");
@@ -121,17 +183,12 @@ export default function PenggajianPage() {
     try {
       const [resKaryawan, resGaji, resVarian] = await Promise.all([
         supabase.from("karyawan").select("*").eq("status", "Aktif").order("tipe").order("nama"),
-        supabase.from("gaji_harian")
-          .select("*, karyawan(nama, tipe)")
-          .order("tanggal", { ascending: false })
-          .limit(300),
+        supabase.from("gaji_harian").select("*, karyawan(nama, tipe)").order("tanggal", { ascending: false }).limit(300),
         supabase.from("varian_borongan").select("*").eq("aktif", true).order("kategori").order("nama"),
       ]);
       setKaryawanList(resKaryawan.data || []);
       setGajiList((resGaji.data || []).map((g: any) => ({
-        ...g,
-        nama_karyawan: g.karyawan?.nama,
-        tipe_karyawan: g.karyawan?.tipe,
+        ...g, nama_karyawan: g.karyawan?.nama, tipe_karyawan: g.karyawan?.tipe,
       })));
       setVarianList(resVarian.data || []);
     } catch (err: any) {
@@ -143,29 +200,132 @@ export default function PenggajianPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Varian Packing Online
+  // ── Varian untuk tab input (Packing Online) ──
   const varianPackingOnline = varianList.filter(v => v.kategori === "Packing Online");
   const tarifKecil = varianPackingOnline.find(v => v.nama.toLowerCase().includes("kecil"))?.tarif_per_kg || 0;
   const tarifBesar = varianPackingOnline.find(v => v.nama.toLowerCase().includes("besar"))?.tarif_per_kg || 0;
-
   const selectedKaryawan = karyawanList.find(k => k.id === parseInt(karyawanId));
   const isPackingOnline = selectedKaryawan?.tipe === "Packing Online";
 
-  // Hitung nominal otomatis untuk Packing Online
   useEffect(() => {
     if (!isPackingOnline) return;
     const total = (parseInt(qtyKecil) || 0) * tarifKecil + (parseInt(qtyBesar) || 0) * tarifBesar;
     setNominal(total > 0 ? total.toLocaleString("id-ID").replace(/,/g, ".") : "");
   }, [qtyKecil, qtyBesar, tarifKecil, tarifBesar, isPackingOnline]);
 
-  const handlePilihKaryawan = (id: string) => {
-    setKaryawanId(id);
-    setNominal("");
-    setQtyKecil("");
-    setQtyBesar("");
+  // ── Handle pilih karyawan di tab Borongan ──
+  const handlePilihBoronganKaryawan = (id: string) => {
+    setBoronganKaryawanId(id);
+    setShowPrintBtn(false);
+    setLastSlip(null);
+    if (!id) { setBoronganRows([]); return; }
     const k = karyawanList.find(x => x.id === parseInt(id));
     if (!k) return;
-    // Auto-suggest untuk non Packing Online
+    // Isi rows dari varian yang sesuai
+    const kat = k.tipe === "Pencetak" ? "Pencetak" : "Packing Online";
+    const varians = varianList.filter(v => v.kategori === kat);
+    setBoronganRows(varians.map(v => ({
+      varianId: v.id,
+      varianNama: v.nama,
+      tarifPerKg: v.tarif_per_kg,
+      qty: "",
+      kategori: kat,
+    })));
+  };
+
+  const updateBoronganQty = (idx: number, val: string) => {
+    setBoronganRows(prev => prev.map((r, i) => i === idx ? { ...r, qty: val } : r));
+  };
+
+  // Hitung total borongan
+  const boronganTotal = boronganRows.reduce((acc, r) => {
+    const q = parseFloat(r.qty) || 0;
+    return acc + q * r.tarifPerKg;
+  }, 0);
+
+  const boronganKaryawan = karyawanList.find(k => k.id === parseInt(boronganKaryawanId));
+
+  // ── Simpan borongan ──
+  const simpanBorongan = async () => {
+    if (!boronganKaryawanId) return showToast("Pilih karyawan!", "error");
+    if (boronganTotal <= 0) return showToast("Input minimal 1 varian!", "error");
+    if (!boronganKaryawan) return;
+
+    const tipeBeban = getTipeBeban(boronganKaryawan.tipe);
+    const isKg = boronganKaryawan.tipe === "Pencetak";
+
+    // Keterangan detail per varian
+    const detailParts = boronganRows
+      .filter(r => parseFloat(r.qty) > 0)
+      .map(r => `${r.varianNama}: ${r.qty}${isKg ? "kg" : " pkt"}`);
+    const ket = boronganKet.trim() || detailParts.join(", ");
+
+    setSubmitting(true);
+    try {
+      const { error: errGaji } = await supabase.from("gaji_harian").insert([{
+        karyawan_id: parseInt(boronganKaryawanId),
+        tanggal: boronganTanggal,
+        nominal: Math.round(boronganTotal),
+        keterangan: ket,
+        tipe_beban: tipeBeban,
+      }]);
+      if (errGaji) throw new Error("Gagal simpan: " + errGaji.message);
+
+      // HPP tidak masuk kas, Operasional masuk kas
+      if (tipeBeban === "Operasional") {
+        const { error: errKas } = await supabase.from("kas").insert([{
+          tipe: "Keluar",
+          kategori: "Gaji Operasional",
+          nominal: Math.round(boronganTotal),
+          keterangan: `Gaji ${boronganKaryawan.nama} (${boronganKaryawan.tipe})`,
+        }]);
+        if (errKas) throw new Error("Tersimpan tapi gagal catat kas: " + errKas.message);
+      }
+
+      // Siapkan data slip
+      const slipRows = boronganRows
+        .filter(r => parseFloat(r.qty) > 0)
+        .map(r => ({
+          label: r.varianNama,
+          qty: parseFloat(r.qty),
+          tarif: r.tarifPerKg,
+          total: Math.round((parseFloat(r.qty) || 0) * r.tarifPerKg),
+        }));
+
+      const slip: SlipData = {
+        nama: boronganKaryawan.nama,
+        tipe: boronganKaryawan.tipe,
+        tanggal: boronganTanggal,
+        rows: slipRows,
+        totalNominal: Math.round(boronganTotal),
+      };
+
+      setLastSlip(slip);
+      setShowPrintBtn(true);
+      showToast(`✓ Gaji ${boronganKaryawan.nama} ${rupiahFmt(boronganTotal)} tersimpan!`);
+
+      // Reset form tapi pertahankan karyawan & tanggal untuk input cepat berikutnya
+      setBoronganRows(prev => prev.map(r => ({ ...r, qty: "" })));
+      setBoronganKet("");
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Print slip thermal ──
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // ── Tab input: simpan gaji operasional ──
+  const handlePilihKaryawan = (id: string) => {
+    setKaryawanId(id);
+    setNominal(""); setQtyKecil(""); setQtyBesar("");
+    const k = karyawanList.find(x => x.id === parseInt(id));
+    if (!k) return;
     if (k.tipe !== "Packing Online") {
       if (k.gaji_bulanan > 0) setNominal(k.gaji_bulanan.toLocaleString("id-ID").replace(/,/g, "."));
       else if (k.tarif_harian > 0) setNominal(k.tarif_harian.toLocaleString("id-ID").replace(/,/g, "."));
@@ -178,11 +338,8 @@ export default function PenggajianPage() {
     if (toAngka(nominal) <= 0) return showToast("Isi nominal gaji!", "error");
     const karyawan = karyawanList.find(k => k.id === parseInt(karyawanId));
     if (!karyawan) return;
-
     const tipeBeban = getTipeBeban(karyawan.tipe);
     const nominalAngka = toAngka(nominal);
-
-    // Keterangan otomatis untuk Packing Online
     let ket = keterangan.trim();
     if (!ket && isPackingOnline) {
       const parts = [];
@@ -191,29 +348,19 @@ export default function PenggajianPage() {
       ket = `Packing Online — ${parts.join(", ")}`;
     }
     if (!ket) ket = `Gaji ${karyawan.tipe} — ${karyawan.nama}`;
-
     setSubmitting(true);
     try {
       const { error: errGaji } = await supabase.from("gaji_harian").insert([{
-        karyawan_id: parseInt(karyawanId),
-        tanggal,
-        nominal: nominalAngka,
-        keterangan: ket,
-        tipe_beban: tipeBeban,
+        karyawan_id: parseInt(karyawanId), tanggal, nominal: nominalAngka, keterangan: ket, tipe_beban: tipeBeban,
       }]);
       if (errGaji) throw new Error("Gagal simpan: " + errGaji.message);
-
-      // Packing Online = Operasional → catat ke kas
       if (tipeBeban === "Operasional") {
         const { error: errKas } = await supabase.from("kas").insert([{
-          tipe: "Keluar",
-          kategori: "Gaji Operasional",
-          nominal: nominalAngka,
+          tipe: "Keluar", kategori: "Gaji Operasional", nominal: nominalAngka,
           keterangan: `Gaji ${karyawan.nama} (${karyawan.tipe})`,
         }]);
         if (errKas) throw new Error("Gaji tersimpan tapi gagal catat ke kas: " + errKas.message);
       }
-
       showToast(`✓ Gaji ${karyawan.nama} ${rupiahFmt(nominalAngka)}${tipeBeban === "Operasional" ? " → Kas Keluar" : " → HPP"}`);
       setKaryawanId(""); setNominal(""); setKeterangan(""); setTanggal(hariIniWIB());
       setQtyKecil(""); setQtyBesar("");
@@ -229,22 +376,14 @@ export default function PenggajianPage() {
     if (!newNama.trim()) return showToast("Isi nama!", "error");
     setAddingKaryawan(true);
     const { error } = await supabase.from("karyawan").insert([{
-      nama: newNama.trim(),
-      tipe: newTipe.trim(),
-      tarif_harian: toAngka(newTarifHarian),
-      tarif_borongan: toAngka(newTarifBorongan),
-      gaji_bulanan: toAngka(newGajiBulanan),
-      fee_live_sesi: toAngka(newFeeLive),
-      komisi_live_persen: parseFloat(newKomisiLive) || 0,
-      status: "Aktif",
-      catatan: newCatatan.trim() || null,
+      nama: newNama.trim(), tipe: newTipe, gaji_bulanan: toAngka(newGajiBulanan),
+      fee_live_sesi: toAngka(newFeeLive), komisi_live_persen: parseFloat(newKomisiLive) || 0,
+      status: "Aktif", catatan: newCatatan.trim() || null,
     }]);
     if (error) { showToast("Gagal: " + error.message, "error"); setAddingKaryawan(false); return; }
     showToast(`✓ ${newNama} ditambahkan!`);
-    setNewNama(""); setNewTarifHarian(""); setNewTarifBorongan("");
-    setNewGajiBulanan(""); setNewFeeLive(""); setNewKomisiLive(""); setNewCatatan("");
-    fetchData();
-    setAddingKaryawan(false);
+    setNewNama(""); setNewGajiBulanan(""); setNewFeeLive(""); setNewKomisiLive(""); setNewCatatan("");
+    fetchData(); setAddingKaryawan(false);
   };
 
   const gajiFiltered = gajiList.filter(g => g.tanggal?.startsWith(filterBulan));
@@ -255,10 +394,8 @@ export default function PenggajianPage() {
     const gajiK = gajiFiltered.filter(g => g.karyawan_id === k.id);
     return { ...k, totalGaji: gajiK.reduce((a, g) => a + g.nominal, 0), jumlahInput: gajiK.length };
   }).filter(k => k.totalGaji > 0);
-
   const gajiHariIniList = gajiList.filter(g => g.tanggal === tanggal);
   const totalHariIni = gajiHariIniList.reduce((a, g) => a + g.nominal, 0);
-
   const tipeOptions = ["Operator Produksi", "Packing", "Pencetak", "Packing Online", "Host Live", "Admin Shopee", "Owner"];
 
   const inp: React.CSSProperties = {
@@ -290,9 +427,32 @@ export default function PenggajianPage() {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+        /* ── PRINT STYLES THERMAL 80mm ── */
+        @media print {
+          body > * { display: none !important; }
+          #slip-thermal { display: block !important; }
+          #slip-thermal * { display: revert !important; }
+          @page { margin: 0; size: 80mm auto; }
+          .slip-content {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            width: 72mm;
+            padding: 4mm;
+            color: #000;
+          }
+          .slip-center { text-align: center; margin-bottom: 2px; }
+          .slip-bold { font-weight: bold; }
+          .slip-divider { font-size: 10px; margin: 4px 0; white-space: pre; }
+          .slip-row { display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 11px; }
+          .slip-header { font-weight: bold; font-size: 10px; }
+        }
       `}</style>
 
       <ToastBar toast={toast} onClose={() => setToast(null)} />
+
+      {/* Hidden slip untuk print */}
+      {lastSlip && <SlipThermal slip={lastSlip} />}
 
       <div style={{ background: C.bg, minHeight: "100vh", padding: "32px 28px", fontFamily: C.fontSans, color: C.text }}>
 
@@ -322,8 +482,13 @@ export default function PenggajianPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-          {[{ id: "input", label: "✏️ Input Gaji" }, { id: "rekap", label: "📊 Rekap Bulanan" }, { id: "karyawan", label: "👥 Data Karyawan" }].map(tab => (
+        <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+          {[
+            { id: "input", label: "✏️ Input Gaji" },
+            { id: "borongan", label: "⚖ Input Borongan" },
+            { id: "rekap", label: "📊 Rekap Bulanan" },
+            { id: "karyawan", label: "👥 Data Karyawan" },
+          ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{
               padding: "10px 20px", borderRadius: 10, border: "none", cursor: "pointer",
               fontFamily: C.fontSans, fontWeight: 600, fontSize: 13,
@@ -333,12 +498,11 @@ export default function PenggajianPage() {
           ))}
         </div>
 
-        {/* ── INPUT ── */}
+        {/* ── INPUT GAJI (Operasional) ── */}
         {activeTab === "input" && (
           <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: 20, animation: "fadeUp 0.2s ease" }}>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
               <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Input Gaji</h3>
-
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Karyawan</label>
               <select value={karyawanId} onChange={e => handlePilihKaryawan(e.target.value)} style={inp}>
                 <option value="">— Pilih Karyawan —</option>
@@ -347,17 +511,11 @@ export default function PenggajianPage() {
                 ))}
               </select>
               <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 12 }}>
-                ℹ Gaji Operator Produksi, Packing & Pencetak diinput per batch di modul Produksi
+                ℹ Gaji Pencetak & Packing Online input di tab ⚖ Input Borongan
               </div>
-
               {selectedKaryawan && (
-                <div style={{
-                  background: C.orange + "15", border: `1px solid ${C.orange}30`,
-                  borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12,
-                }}>
-                  <div style={{ color: C.orange, fontWeight: 700, marginBottom: 4 }}>
-                    📋 Operasional — masuk kas keluar
-                  </div>
+                <div style={{ background: C.orange + "15", border: `1px solid ${C.orange}30`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12 }}>
+                  <div style={{ color: C.orange, fontWeight: 700, marginBottom: 4 }}>📋 Operasional — masuk kas keluar</div>
                   <div style={{ color: C.muted, fontSize: 11, fontFamily: C.fontMono }}>
                     {selectedKaryawan.tipe === "Packing Online" && tarifKecil > 0 && `Paket Kecil: ${rupiahFmt(tarifKecil)} · Paket Besar: ${rupiahFmt(tarifBesar)}`}
                     {selectedKaryawan.gaji_bulanan > 0 && `Gaji bulanan: ${rupiahFmt(selectedKaryawan.gaji_bulanan)}`}
@@ -365,11 +523,8 @@ export default function PenggajianPage() {
                   </div>
                 </div>
               )}
-
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tanggal</label>
               <input type="date" value={tanggal} onChange={e => setTanggal(e.target.value)} style={inp} />
-
-              {/* ── Packing Online: input qty paket ── */}
               {isPackingOnline ? (
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ padding: "10px 14px", background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 8, marginBottom: 12, fontSize: 12, color: C.blue, fontFamily: C.fontMono }}>
@@ -378,44 +533,22 @@ export default function PenggajianPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
                     <div>
                       <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-                        PAKET KECIL
-                        {tarifKecil > 0 && <span style={{ color: C.blue, marginLeft: 6 }}>{rupiahFmt(tarifKecil)}/pkt</span>}
+                        PAKET KECIL {tarifKecil > 0 && <span style={{ color: C.blue }}>{rupiahFmt(tarifKecil)}/pkt</span>}
                       </label>
-                      <input
-                        type="number" min="0"
-                        value={qtyKecil}
-                        onChange={e => setQtyKecil(e.target.value)}
-                        placeholder="0"
-                        style={{ ...inp, fontFamily: C.fontMono, marginBottom: 0 }}
-                      />
+                      <input type="number" min="0" value={qtyKecil} onChange={e => setQtyKecil(e.target.value)} placeholder="0" style={{ ...inp, fontFamily: C.fontMono, marginBottom: 0 }} />
                     </div>
                     <div>
                       <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-                        PAKET BESAR
-                        {tarifBesar > 0 && <span style={{ color: C.blue, marginLeft: 6 }}>{rupiahFmt(tarifBesar)}/pkt</span>}
+                        PAKET BESAR {tarifBesar > 0 && <span style={{ color: C.blue }}>{rupiahFmt(tarifBesar)}/pkt</span>}
                       </label>
-                      <input
-                        type="number" min="0"
-                        value={qtyBesar}
-                        onChange={e => setQtyBesar(e.target.value)}
-                        placeholder="0"
-                        style={{ ...inp, fontFamily: C.fontMono, marginBottom: 0 }}
-                      />
+                      <input type="number" min="0" value={qtyBesar} onChange={e => setQtyBesar(e.target.value)} placeholder="0" style={{ ...inp, fontFamily: C.fontMono, marginBottom: 0 }} />
                     </div>
                   </div>
-                  {/* Rincian kalkulasi */}
                   {(parseInt(qtyKecil) > 0 || parseInt(qtyBesar) > 0) && (
                     <div style={{ background: `${C.blue}08`, border: `1px solid ${C.blue}20`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, fontSize: 12, fontFamily: C.fontMono }}>
                       {parseInt(qtyKecil) > 0 && <div style={{ color: C.muted, marginBottom: 2 }}>{qtyKecil} × {rupiahFmt(tarifKecil)} = <span style={{ color: C.blue }}>{rupiahFmt((parseInt(qtyKecil) || 0) * tarifKecil)}</span></div>}
                       {parseInt(qtyBesar) > 0 && <div style={{ color: C.muted, marginBottom: 2 }}>{qtyBesar} × {rupiahFmt(tarifBesar)} = <span style={{ color: C.blue }}>{rupiahFmt((parseInt(qtyBesar) || 0) * tarifBesar)}</span></div>}
-                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, marginTop: 4, color: C.text, fontWeight: 700 }}>
-                        Total: <span style={{ color: C.purple }}>{rupiahFmt(toAngka(nominal))}</span>
-                      </div>
-                    </div>
-                  )}
-                  {tarifKecil === 0 && tarifBesar === 0 && (
-                    <div style={{ color: C.red, fontSize: 11, fontFamily: C.fontMono, marginBottom: 8 }}>
-                      ⚠ Tarif belum diset! Atur di Admin → Varian Borongan.
+                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, marginTop: 4, color: C.text, fontWeight: 700 }}>Total: <span style={{ color: C.purple }}>{rupiahFmt(toAngka(nominal))}</span></div>
                     </div>
                   )}
                 </div>
@@ -423,51 +556,167 @@ export default function PenggajianPage() {
                 <>
                   <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Nominal Gaji</label>
                   <input type="text" value={nominal} onChange={e => setNominal(formatIDR(e.target.value))} placeholder="Rp 0" style={inp} />
-                  {nominal && toAngka(nominal) > 0 && (
-                    <div style={{ fontSize: 12, color: C.purple, fontFamily: C.fontMono, marginBottom: 8, fontWeight: 700 }}>= {rupiahFmt(toAngka(nominal))}</div>
-                  )}
+                  {nominal && toAngka(nominal) > 0 && <div style={{ fontSize: 12, color: C.purple, fontFamily: C.fontMono, marginBottom: 8, fontWeight: 700 }}>= {rupiahFmt(toAngka(nominal))}</div>}
                 </>
               )}
-
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Keterangan (opsional)</label>
-              <input type="text" value={keterangan} onChange={e => setKeterangan(e.target.value)} placeholder={isPackingOnline ? "Otomatis dari qty paket" : "Misal: produksi 500 pcs..."} style={{ ...inp, marginBottom: 16 }} />
-
+              <input type="text" value={keterangan} onChange={e => setKeterangan(e.target.value)} placeholder="Opsional" style={{ ...inp, marginBottom: 16 }} />
               <button onClick={simpanGaji} disabled={submitting || !karyawanId || toAngka(nominal) <= 0} style={{
                 width: "100%", padding: "12px", border: "none", borderRadius: 8,
                 background: (!karyawanId || toAngka(nominal) <= 0) ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.purple})`,
                 color: (!karyawanId || toAngka(nominal) <= 0) ? C.muted : "#fff",
                 fontWeight: 700, cursor: (!karyawanId || toAngka(nominal) <= 0) ? "not-allowed" : "pointer",
                 fontFamily: C.fontMono, fontSize: 13,
-              }}>
-                {submitting ? "Menyimpan..." : "💾 Simpan Gaji"}
-              </button>
+              }}>{submitting ? "Menyimpan..." : "💾 Simpan Gaji"}</button>
             </div>
-
-            {/* Riwayat hari ini */}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
-              <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
-                Riwayat — {tanggalFmt(tanggal)}
-              </h3>
+              <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Riwayat — {tanggalFmt(tanggal)}</h3>
               <div style={{ maxHeight: 420, overflowY: "auto" }}>
-                {gajiHariIniList.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada input gaji hari ini</div>
-                ) : gajiHariIniList.map(g => (
-                  <div key={g.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{g.nama_karyawan}</div>
-                      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{g.tipe_karyawan} · {g.keterangan?.slice(0, 40)}</div>
-                      <span style={{ fontSize: 10, display: "inline-block", marginTop: 2, background: (g.tipe_beban === "HPP" ? C.yellow : C.orange) + "20", color: g.tipe_beban === "HPP" ? C.yellow : C.orange, padding: "1px 6px", borderRadius: 4, fontFamily: C.fontMono, fontWeight: 700 }}>
-                        {g.tipe_beban}
-                      </span>
+                {gajiHariIniList.length === 0
+                  ? <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada input gaji hari ini</div>
+                  : gajiHariIniList.map(g => (
+                    <div key={g.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{g.nama_karyawan}</div>
+                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{g.tipe_karyawan} · {g.keterangan?.slice(0, 40)}</div>
+                        <span style={{ fontSize: 10, display: "inline-block", marginTop: 2, background: (g.tipe_beban === "HPP" ? C.yellow : C.orange) + "20", color: g.tipe_beban === "HPP" ? C.yellow : C.orange, padding: "1px 6px", borderRadius: 4, fontFamily: C.fontMono, fontWeight: 700 }}>{g.tipe_beban}</span>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(g.nominal)}</div>
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(g.nominal)}</div>
-                  </div>
-                ))}
+                  ))}
               </div>
               {gajiHariIniList.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>Total Hari Ini</span>
                   <span style={{ fontSize: 14, fontWeight: 800, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(totalHariIni)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── INPUT BORONGAN (Pencetak + Packing Online) ── */}
+        {activeTab === "borongan" && (
+          <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20, animation: "fadeUp 0.2s ease" }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+              <h3 style={{ margin: "0 0 6px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Input Borongan</h3>
+              <p style={{ margin: "0 0 18px", fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>Pencetak (kg/varian) & Packing Online (paket)</p>
+
+              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Karyawan</label>
+              <select value={boronganKaryawanId} onChange={e => handlePilihBoronganKaryawan(e.target.value)} style={inp}>
+                <option value="">— Pilih Karyawan —</option>
+                <optgroup label="Pencetak">
+                  {karyawanList.filter(k => k.tipe === "Pencetak").map(k => (
+                    <option key={k.id} value={k.id}>{k.nama}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Packing Online">
+                  {karyawanList.filter(k => k.tipe === "Packing Online").map(k => (
+                    <option key={k.id} value={k.id}>{k.nama}</option>
+                  ))}
+                </optgroup>
+              </select>
+
+              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tanggal</label>
+              <input type="date" value={boronganTanggal} onChange={e => setBoronganTanggal(e.target.value)} style={inp} />
+
+              {/* Rows per varian */}
+              {boronganRows.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                    {boronganKaryawan?.tipe === "Pencetak" ? "KG PER VARIAN" : "QTY PAKET"}
+                  </div>
+                  {boronganRows.map((r, idx) => (
+                    <div key={r.varianId} style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                      <div style={{ background: `${C.accent}08`, border: `1px solid ${C.accent}20`, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{r.varianNama}</div>
+                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(r.tarifPerKg)}/{boronganKaryawan?.tipe === "Pencetak" ? "kg" : "pkt"}</div>
+                      </div>
+                      <input
+                        type="number" min="0" step={boronganKaryawan?.tipe === "Pencetak" ? "0.1" : "1"}
+                        value={r.qty}
+                        onChange={e => updateBoronganQty(idx, e.target.value)}
+                        placeholder="0"
+                        style={{ ...inp, fontFamily: C.fontMono, fontWeight: 700, marginBottom: 0, textAlign: "right" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Total */}
+              {boronganTotal > 0 && (
+                <div style={{ background: `${C.green}10`, border: `1px solid ${C.green}25`, borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 4 }}>TOTAL GAJI</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(boronganTotal)}</div>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>
+                    {boronganKaryawan?.tipe === "Pencetak" ? "⚙ HPP → biaya produksi" : "📋 Operasional → kas keluar"}
+                  </div>
+                </div>
+              )}
+
+              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Keterangan (opsional)</label>
+              <input type="text" value={boronganKet} onChange={e => setBoronganKet(e.target.value)} placeholder="Otomatis dari varian" style={{ ...inp, marginBottom: 16 }} />
+
+              <button onClick={simpanBorongan} disabled={submitting || !boronganKaryawanId || boronganTotal <= 0} style={{
+                width: "100%", padding: "12px", border: "none", borderRadius: 8, marginBottom: 10,
+                background: (!boronganKaryawanId || boronganTotal <= 0) ? C.dim : `linear-gradient(135deg, #059669, ${C.green})`,
+                color: (!boronganKaryawanId || boronganTotal <= 0) ? C.muted : "#000",
+                fontWeight: 700, cursor: (!boronganKaryawanId || boronganTotal <= 0) ? "not-allowed" : "pointer",
+                fontFamily: C.fontMono, fontSize: 13,
+              }}>{submitting ? "Menyimpan..." : "💾 Simpan & Siapkan Slip"}</button>
+
+              {/* Tombol print muncul setelah simpan */}
+              {showPrintBtn && lastSlip && (
+                <button onClick={handlePrint} style={{
+                  width: "100%", padding: "12px", border: `2px solid ${C.purple}`, borderRadius: 8,
+                  background: `${C.purple}15`, color: C.purple,
+                  fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 13,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  🖨 Print Slip Thermal — {lastSlip.nama}
+                </button>
+              )}
+            </div>
+
+            {/* Preview slip */}
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+              <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Preview Slip</h3>
+              {!lastSlip ? (
+                <div style={{ textAlign: "center", padding: "60px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>
+                  Input & simpan borongan untuk preview slip
+                </div>
+              ) : (
+                <div style={{ background: "#fff", color: "#000", borderRadius: 8, padding: "16px 20px", fontFamily: "'Courier New', monospace", fontSize: 13, maxWidth: 320, margin: "0 auto" }}>
+                  <div style={{ textAlign: "center", fontWeight: 700, fontSize: 15, marginBottom: 2 }}>AZALEA</div>
+                  <div style={{ textAlign: "center", fontSize: 12, marginBottom: 8 }}>Slip Gaji Harian</div>
+                  <div style={{ borderTop: "1px dashed #000", borderBottom: "1px dashed #000", padding: "6px 0", marginBottom: 8, fontSize: 12 }}>
+                    <div>Nama &nbsp;&nbsp;: {lastSlip.nama}</div>
+                    <div>Tipe &nbsp;&nbsp;&nbsp;: {lastSlip.tipe}</div>
+                    <div>Tanggal : {tanggalFmt(lastSlip.tanggal)}</div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 700, marginBottom: 4, borderBottom: "1px solid #ccc", paddingBottom: 4 }}>
+                    <span style={{ flex: 2 }}>Varian</span>
+                    <span style={{ flex: 1, textAlign: "right" }}>{lastSlip.tipe === "Pencetak" ? "Kg" : "Qty"}</span>
+                    <span style={{ flex: 1, textAlign: "right" }}>Tarif</span>
+                    <span style={{ flex: 1, textAlign: "right" }}>Total</span>
+                  </div>
+                  {lastSlip.rows.map((r, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
+                      <span style={{ flex: 2 }}>{r.label}</span>
+                      <span style={{ flex: 1, textAlign: "right" }}>{r.qty}</span>
+                      <span style={{ flex: 1, textAlign: "right" }}>{r.tarif.toLocaleString("id-ID")}</span>
+                      <span style={{ flex: 1, textAlign: "right" }}>{r.total.toLocaleString("id-ID")}</span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: "1px dashed #000", marginTop: 6, paddingTop: 6, display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                    <span>TOTAL</span>
+                    <span>Rp {lastSlip.totalNominal.toLocaleString("id-ID")}</span>
+                  </div>
+                  <div style={{ borderTop: "1px dashed #000", marginTop: 10, paddingTop: 8, fontSize: 11 }}>
+                    <div>Tanda Terima :</div>
+                    <div style={{ marginTop: 28, borderTop: "1px solid #000", width: 100, fontSize: 11 }}>( {lastSlip.nama} )</div>
+                  </div>
                 </div>
               )}
             </div>
@@ -503,8 +752,7 @@ export default function PenggajianPage() {
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{k.nama}</div>
                         <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                          {k.tipe} · {k.jumlahInput}× ·{" "}
-                          <span style={{ color: getTipeBeban(k.tipe) === "HPP" ? C.yellow : C.orange }}>{getTipeBeban(k.tipe)}</span>
+                          {k.tipe} · {k.jumlahInput}× · <span style={{ color: getTipeBeban(k.tipe) === "HPP" ? C.yellow : C.orange }}>{getTipeBeban(k.tipe)}</span>
                         </div>
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(k.totalGaji)}</div>
@@ -540,20 +788,15 @@ export default function PenggajianPage() {
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
               <h3 style={{ margin: "0 0 18px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Tambah Karyawan</h3>
               <div style={{ padding: "10px 14px", background: `${C.blue}10`, border: `1px solid ${C.blue}25`, borderRadius: 8, marginBottom: 14, fontSize: 11, color: C.blue, fontFamily: C.fontMono }}>
-                💡 Lebih lengkap: tambah karyawan via <strong>Admin → Master Karyawan</strong>
+                💡 Lebih lengkap via <strong>Admin → Master Karyawan</strong>
               </div>
               <input type="text" value={newNama} onChange={e => setNewNama(e.target.value)} placeholder="Nama karyawan" style={inp} />
-              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tipe / Jabatan</label>
+              <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Tipe</label>
               <select value={newTipe} onChange={e => setNewTipe(e.target.value)} style={inp}>
                 {tipeOptions.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <div style={{
-                background: (getTipeBeban(newTipe) === "HPP" ? C.yellow : C.orange) + "15",
-                border: `1px solid ${(getTipeBeban(newTipe) === "HPP" ? C.yellow : C.orange)}30`,
-                borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11,
-                color: getTipeBeban(newTipe) === "HPP" ? C.yellow : C.orange, fontFamily: C.fontMono,
-              }}>
-                {getTipeBeban(newTipe) === "HPP" ? "⚙️ Gaji masuk HPP" : "📋 Gaji masuk Beban Operasional (kas keluar)"}
+              <div style={{ background: (getTipeBeban(newTipe) === "HPP" ? C.yellow : C.orange) + "15", border: `1px solid ${(getTipeBeban(newTipe) === "HPP" ? C.yellow : C.orange)}30`, borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 11, color: getTipeBeban(newTipe) === "HPP" ? C.yellow : C.orange, fontFamily: C.fontMono }}>
+                {getTipeBeban(newTipe) === "HPP" ? "⚙️ Gaji masuk HPP" : "📋 Gaji masuk Beban Operasional"}
               </div>
               {(newTipe.includes("Admin") || newTipe.includes("Owner")) && (
                 <input type="text" value={newGajiBulanan} onChange={e => setNewGajiBulanan(formatIDR(e.target.value))} placeholder="Gaji bulanan (Rp)" style={inp} />
@@ -570,11 +813,8 @@ export default function PenggajianPage() {
                 background: addingKaryawan ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.accent})`,
                 color: "#fff", fontWeight: 700, cursor: addingKaryawan ? "not-allowed" : "pointer",
                 fontFamily: C.fontMono, fontSize: 13,
-              }}>
-                {addingKaryawan ? "Menyimpan..." : "+ Tambah Karyawan"}
-              </button>
+              }}>{addingKaryawan ? "Menyimpan..." : "+ Tambah Karyawan"}</button>
             </div>
-
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
               <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>
                 Daftar Karyawan <span style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>({karyawanList.length})</span>
@@ -590,7 +830,6 @@ export default function PenggajianPage() {
                           {k.tipe}
                           {k.gaji_bulanan > 0 && ` · ${rupiahFmt(k.gaji_bulanan)}/bln`}
                           {k.fee_live_sesi > 0 && ` · ${rupiahFmt(k.fee_live_sesi)}/sesi`}
-                          {k.tipe === "Packing Online" && tarifKecil > 0 && ` · Kecil ${rupiahFmt(tarifKecil)} · Besar ${rupiahFmt(tarifBesar)}`}
                         </div>
                       </div>
                     </div>

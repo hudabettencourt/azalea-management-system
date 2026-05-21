@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
-// ── Types ────────────────────────────────────────────────
 interface GajiRow {
   id: number;
   karyawan_id: number;
@@ -24,7 +24,6 @@ interface KaryawanRekap {
   totalUangMakan: number;
   jumlahHari: number;
   rows: GajiRow[];
-  // group by tanggal
   byTanggal: Record<string, { rows: GajiRow[]; subtotal: number }>;
 }
 
@@ -38,35 +37,11 @@ interface SlipData {
   totalDenganMakan: number;
 }
 
-// ── Helpers ──────────────────────────────────────────────
-const C = {
-  bg: "#100c16",
-  card: "#17111f",
-  border: "#2a1f3d",
-  purple: "#a78bfa",
-  accentDark: "#7c3aed",
-  green: "#34d399",
-  yellow: "#fbbf24",
-  orange: "#fb923c",
-  red: "#f87171",
-  blue: "#60a5fa",
-  muted: "#6b5d7a",
-  dim: "#3d3050",
-  text: "#f0eaff",
-  textMid: "#c4b5d4",
-  fontDisplay: "'DM Serif Display', serif",
-  fontMono: "'DM Mono', monospace",
-  fontSans: "'DM Sans', sans-serif",
-  shadow: "0 4px 24px rgba(0,0,0,0.4)",
-};
-
-const rupiahFmt = (n: number) =>
-  "Rp " + Math.round(n).toLocaleString("id-ID");
+const rupiahFmt = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
 const getTipeBeban = (tipe: string) =>
   ["Operator Produksi", "Packing", "Pencetak"].includes(tipe) ? "HPP" : "Operasional";
 
-// Parse keterangan "Siomay Besar: 5kg, Siomay Kuncup: 2.5kg" jadi rows slip
 const parseKeterangan = (ket: string): { label: string; qty: string }[] => {
   if (!ket) return [];
   return ket.split(",").map((part) => {
@@ -91,15 +66,14 @@ const hariIniWIB = () => {
   return wib.toISOString().slice(0, 10);
 };
 
-// ── Print Slip Component (hidden, for @media print) ──────
 function PrintSlip({ slip }: { slip: SlipData }) {
   return (
-    <div id="print-slip" style={{ display: "none" }}>
+    <div id="print-slip-borongan" style={{ display: "none" }}>
       <style>{`
         @media print {
           body * { visibility: hidden !important; }
-          #print-slip, #print-slip * { visibility: visible !important; }
-          #print-slip {
+          #print-slip-borongan, #print-slip-borongan * { visibility: visible !important; }
+          #print-slip-borongan {
             display: block !important;
             position: fixed !important;
             top: 0; left: 0;
@@ -111,24 +85,16 @@ function PrintSlip({ slip }: { slip: SlipData }) {
             padding: 3mm 2mm;
             line-height: 1.4;
           }
-          @page {
-            size: 57mm auto;
-            margin: 0;
-          }
+          @page { size: 57mm auto; margin: 0; }
         }
       `}</style>
       <div style={{ fontFamily: "'Courier New', monospace", fontSize: 9, color: "#000", lineHeight: 1.4 }}>
-        {/* Header */}
         <div style={{ textAlign: "center", fontWeight: "bold", fontSize: 11, marginBottom: 2 }}>AZALEA FOOD</div>
         <div style={{ textAlign: "center", fontSize: 8, marginBottom: 4 }}>SLIP GAJI BORONGAN</div>
         <div style={{ borderTop: "1px dashed #000", marginBottom: 4 }} />
-
-        {/* Info karyawan */}
         <div style={{ marginBottom: 1 }}><b>{slip.nama}</b></div>
         <div style={{ marginBottom: 4, fontSize: 8 }}>{formatTanggal(slip.tanggal)}</div>
         <div style={{ borderTop: "1px dashed #000", marginBottom: 4 }} />
-
-        {/* Rows produksi */}
         {slip.rows.map((r, i) => (
           <div key={i} style={{ marginBottom: 3 }}>
             <div>{r.label}</div>
@@ -138,8 +104,6 @@ function PrintSlip({ slip }: { slip: SlipData }) {
             </div>
           </div>
         ))}
-
-        {/* Uang makan */}
         {slip.uangMakan > 0 && (
           <>
             <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
@@ -149,29 +113,25 @@ function PrintSlip({ slip }: { slip: SlipData }) {
             </div>
           </>
         )}
-
-        {/* Total */}
         <div style={{ borderTop: "1px solid #000", marginTop: 4, paddingTop: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: 11 }}>
             <span>TOTAL</span>
             <span>{Math.round(slip.totalDenganMakan).toLocaleString("id-ID")}</span>
           </div>
         </div>
-
-        {/* TTD */}
         <div style={{ borderTop: "1px dashed #000", marginTop: 8, paddingTop: 6 }}>
           <div style={{ fontSize: 8 }}>Tanda Terima :</div>
-          <div style={{ marginTop: 20, borderTop: "1px solid #000", paddingTop: 2, fontSize: 8 }}>
-            ( {slip.nama} )
-          </div>
+          <div style={{ marginTop: 20, borderTop: "1px solid #000", paddingTop: 2, fontSize: 8 }}>( {slip.nama} )</div>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Main Component ────────────────────────────────────────
-export default function RekapBulananTab() {
+export default function GajiBoronganTab() {
+  const { isDark } = useTheme();
+  const C = isDark ? DARK : LIGHT;
+
   const [filterBulan, setFilterBulan] = useState(hariIniWIB().slice(0, 7));
   const [loading, setLoading] = useState(true);
   const [rekapList, setRekapList] = useState<KaryawanRekap[]>([]);
@@ -185,35 +145,24 @@ export default function RekapBulananTab() {
     try {
       const [tahun, bulan] = filterBulan.split("-");
       const mulai = `${tahun}-${bulan}-01`;
-      const akhir = new Date(parseInt(tahun), parseInt(bulan), 0)
-        .toISOString()
-        .slice(0, 10);
-
+      const akhir = new Date(parseInt(tahun), parseInt(bulan), 0).toISOString().slice(0, 10);
       const { data } = await supabase
         .from("gaji_harian")
         .select("*, karyawan(nama, tipe, uang_makan)")
         .gte("tanggal", mulai)
         .lte("tanggal", akhir)
         .order("tanggal", { ascending: false });
-
       if (!data) return;
-
-      // Group by karyawan
       const map: Record<number, KaryawanRekap> = {};
       data.forEach((g: GajiRow) => {
         const k = g.karyawan;
         if (!k) return;
         if (!map[g.karyawan_id]) {
           map[g.karyawan_id] = {
-            id: g.karyawan_id,
-            nama: k.nama,
-            tipe: k.tipe,
+            id: g.karyawan_id, nama: k.nama, tipe: k.tipe,
             uang_makan: k.uang_makan || 0,
-            totalNominal: 0,
-            totalUangMakan: 0,
-            jumlahHari: 0,
-            rows: [],
-            byTanggal: {},
+            totalNominal: 0, totalUangMakan: 0, jumlahHari: 0,
+            rows: [], byTanggal: {},
           };
         }
         const rec = map[g.karyawan_id];
@@ -227,57 +176,37 @@ export default function RekapBulananTab() {
         rec.byTanggal[g.tanggal].rows.push(g);
         rec.byTanggal[g.tanggal].subtotal += g.nominal;
       });
-
-      setRekapList(
-        Object.values(map).sort((a, b) => b.totalNominal - a.totalNominal)
-      );
+      setRekapList(Object.values(map).sort((a, b) => b.totalNominal - a.totalNominal));
     } finally {
       setLoading(false);
     }
   }, [filterBulan]);
 
-  useEffect(() => {
-    fetchRekap();
-  }, [fetchRekap]);
+  useEffect(() => { fetchRekap(); }, [fetchRekap]);
 
-  // Trigger print setelah slip ter-set
   useEffect(() => {
-    if (printSlip) {
-      setTimeout(() => window.print(), 100);
-    }
+    if (printSlip) setTimeout(() => window.print(), 100);
   }, [printSlip]);
 
   const handlePrintSlip = (k: KaryawanRekap, tanggal: string) => {
     const dayData = k.byTanggal[tanggal];
-    const rows = dayData.rows.flatMap((g) =>
-      parseKeterangan(g.keterangan).map((r) => ({
-        label: r.label,
-        qty: r.qty,
-        total: g.nominal / parseKeterangan(g.keterangan).length,
-      }))
-    );
-    // Kalau hanya 1 row, pakai nominal penuh
-    const finalRows =
-      dayData.rows.length === 1
-        ? parseKeterangan(dayData.rows[0].keterangan).map((r) => ({
-            label: r.label,
-            qty: r.qty,
-            total: dayData.rows[0].nominal,
+    const finalRows = dayData.rows.length === 1
+      ? parseKeterangan(dayData.rows[0].keterangan).map((r) => ({
+          label: r.label, qty: r.qty, total: dayData.rows[0].nominal,
+        }))
+      : dayData.rows.flatMap((g) =>
+          parseKeterangan(g.keterangan).map((r) => ({
+            label: r.label, qty: r.qty,
+            total: g.nominal / Math.max(parseKeterangan(g.keterangan).length, 1),
           }))
-        : rows;
-
-    const slip: SlipData = {
-      nama: k.nama,
-      tipe: k.tipe,
-      tanggal,
+        );
+    setPrintSlip({
+      nama: k.nama, tipe: k.tipe, tanggal,
       uangMakan: k.uang_makan,
-      rows: finalRows.length > 0
-        ? finalRows
-        : [{ label: dayData.rows[0]?.keterangan || "-", qty: "", total: dayData.subtotal }],
+      rows: finalRows.length > 0 ? finalRows : [{ label: dayData.rows[0]?.keterangan || "-", qty: "", total: dayData.subtotal }],
       totalGaji: dayData.subtotal,
       totalDenganMakan: dayData.subtotal + k.uang_makan,
-    };
-    setPrintSlip(slip);
+    });
   };
 
   const filtered = rekapList.filter((k) => {
@@ -286,98 +215,80 @@ export default function RekapBulananTab() {
   });
 
   const totalBulan = filtered.reduce((a, k) => a + k.totalNominal + k.totalUangMakan, 0);
-  const totalHPP = filtered.filter((k) => getTipeBeban(k.tipe) === "HPP")
-    .reduce((a, k) => a + k.totalNominal + k.totalUangMakan, 0);
-  const totalOps = filtered.filter((k) => getTipeBeban(k.tipe) === "Operasional")
-    .reduce((a, k) => a + k.totalNominal + k.totalUangMakan, 0);
+  const totalHPP = filtered.filter((k) => getTipeBeban(k.tipe) === "HPP").reduce((a, k) => a + k.totalNominal + k.totalUangMakan, 0);
+  const totalOps = filtered.filter((k) => getTipeBeban(k.tipe) === "Operasional").reduce((a, k) => a + k.totalNominal + k.totalUangMakan, 0);
 
-  const inp: React.CSSProperties = {
-    background: "#0d0a14",
-    border: `1px solid ${C.border}`,
-    borderRadius: 8,
-    padding: "8px 12px",
-    color: C.text,
-    fontSize: 13,
-    fontFamily: C.fontMono,
+  const inputS: React.CSSProperties = {
+    background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 8, padding: "8px 12px",
+    color: C.text, fontSize: 13, fontFamily: C.fontMono,
     outline: "none",
-    width: "100%",
   };
 
   return (
     <>
-      {/* Hidden print slip */}
       {printSlip && <PrintSlip slip={printSlip} />}
-
       <div style={{ animation: "fadeUp 0.2s ease" }}>
 
-        {/* ── Filter bar ── */}
+        {/* Filter bar */}
         <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <label style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>Bulan:</label>
-            <input
-              type="month"
-              value={filterBulan}
-              onChange={(e) => setFilterBulan(e.target.value)}
-              style={{ ...inp, width: "auto", padding: "8px 12px" }}
-            />
+            <input type="month" value={filterBulan} onChange={(e) => setFilterBulan(e.target.value)}
+              style={{ ...inputS, colorScheme: isDark ? "dark" : "light" }} />
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {(["semua", "HPP", "Operasional"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setFilterTipe(t)}
-                style={{
-                  padding: "7px 14px", borderRadius: 8, border: "none", cursor: "pointer",
-                  fontFamily: C.fontMono, fontSize: 11, fontWeight: 600,
-                  background: filterTipe === t
-                    ? t === "HPP" ? C.green : t === "Operasional" ? C.orange : C.purple
-                    : C.dim,
-                  color: filterTipe === t ? "#000" : C.muted,
-                  transition: "all 0.15s",
-                }}
-              >
+              <button key={t} onClick={() => setFilterTipe(t)} style={{
+                padding: "7px 14px", borderRadius: 8,
+                border: `1px solid ${filterTipe === t
+                  ? (t === "HPP" ? C.green : t === "Operasional" ? C.orange : C.accent) + "60"
+                  : C.border}`,
+                background: filterTipe === t
+                  ? (t === "HPP" ? C.green : t === "Operasional" ? C.orange : C.accent) + "20"
+                  : "transparent",
+                color: filterTipe === t
+                  ? (t === "HPP" ? C.green : t === "Operasional" ? C.orange : C.accent)
+                  : C.muted,
+                cursor: "pointer", fontFamily: C.fontMono, fontSize: 11, fontWeight: 600,
+                transition: "all 0.15s",
+              }}>
                 {t === "semua" ? "Semua" : t}
               </button>
             ))}
           </div>
-          <button
-            onClick={fetchRekap}
-            style={{ marginLeft: "auto", padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, cursor: "pointer", fontSize: 12, fontFamily: C.fontMono }}
-          >
-            ↻ Refresh
-          </button>
+          <button onClick={fetchRekap} style={{
+            marginLeft: "auto", padding: "7px 14px", borderRadius: 8,
+            border: `1px solid ${C.border}`, background: "transparent",
+            color: C.muted, cursor: "pointer", fontSize: 12, fontFamily: C.fontMono,
+          }}>↻ Refresh</button>
         </div>
 
-        {/* ── Summary cards ── */}
+        {/* Summary cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 24 }}>
           {[
-            { label: "Total Gaji Bulan Ini", value: rupiahFmt(totalBulan), color: C.purple, icon: "💰" },
+            { label: "Total Gaji Bulan Ini", value: rupiahFmt(totalBulan), color: C.accent, icon: "💰" },
             { label: "HPP Produksi", value: rupiahFmt(totalHPP), color: C.green, icon: "⚙️" },
             { label: "Beban Operasional", value: rupiahFmt(totalOps), color: C.orange, icon: "📋" },
           ].map((s, i) => (
             <div key={i} style={{
-              background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
-              padding: "18px 20px", position: "relative", overflow: "hidden",
+              background: C.card, border: `1px solid ${C.border}`,
+              borderRadius: 14, padding: "18px 20px",
+              position: "relative", overflow: "hidden", boxShadow: C.shadow,
             }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: s.color, borderRadius: "14px 14px 0 0" }} />
-              <div style={{ fontSize: 18, marginBottom: 8 }}>{s.icon}</div>
+              <div style={{ fontSize: 20, marginBottom: 8 }}>{s.icon}</div>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>{s.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: s.color, fontFamily: C.fontDisplay }}>{s.value}</div>
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontFamily: C.fontMono }}>
-                {filtered.filter((k) =>
-                  s.label === "Total Gaji Bulan Ini" ? true :
-                  s.label === "HPP Produksi" ? getTipeBeban(k.tipe) === "HPP" :
-                  getTipeBeban(k.tipe) === "Operasional"
-                ).length} karyawan
-              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: s.color, fontFamily: C.fontMono }}>{s.value}</div>
             </div>
           ))}
         </div>
 
-        {/* ── Karyawan list ── */}
+        {/* Karyawan list */}
         {loading ? (
           <div style={{ textAlign: "center", padding: "60px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
-            <div style={{ fontSize: 28, marginBottom: 8, animation: "pulse 1.5s infinite", color: C.purple }}>◈</div>
+            <div style={{ fontSize: 28, marginBottom: 8, color: C.accent }}>◈</div>
             Memuat data...
           </div>
         ) : filtered.length === 0 ? (
@@ -394,23 +305,20 @@ export default function RekapBulananTab() {
 
               return (
                 <div key={k.id} style={{
-                  background: C.card, border: `1px solid ${isExpanded ? C.purple + "60" : C.border}`,
+                  background: C.card,
+                  border: `1px solid ${isExpanded ? C.accent + "60" : C.border}`,
                   borderRadius: 14, overflow: "hidden", transition: "border-color 0.2s",
+                  boxShadow: C.shadow,
                 }}>
-                  {/* ── Karyawan header row (clickable) ── */}
-                  <div
-                    onClick={() => {
-                      setExpandedKaryawan(isExpanded ? null : k.id);
-                      setExpandedTanggal(null);
-                    }}
+                  {/* Header row */}
+                  <div onClick={() => { setExpandedKaryawan(isExpanded ? null : k.id); setExpandedTanggal(null); }}
                     style={{
                       display: "flex", alignItems: "center", gap: 14,
                       padding: "14px 20px", cursor: "pointer",
-                      background: isExpanded ? `${C.purple}08` : "transparent",
+                      background: isExpanded ? isDark ? "rgba(167,139,250,0.06)" : "rgba(167,139,250,0.04)" : "transparent",
                       transition: "background 0.2s",
                     }}
                   >
-                    {/* Avatar */}
                     <div style={{
                       width: 40, height: 40, borderRadius: 10, flexShrink: 0,
                       background: `${tipeColor}20`, border: `1px solid ${tipeColor}40`,
@@ -419,34 +327,24 @@ export default function RekapBulananTab() {
                     }}>
                       {k.nama.charAt(0).toUpperCase()}
                     </div>
-
-                    {/* Info */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>
-                        {k.nama}
-                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>{k.nama}</div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={{
                           fontSize: 10, padding: "2px 8px", borderRadius: 4,
                           background: `${tipeColor}20`, color: tipeColor,
                           fontFamily: C.fontMono, fontWeight: 600,
-                        }}>
-                          {k.tipe}
-                        </span>
-                        <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                          {k.jumlahHari} hari kerja
-                        </span>
+                        }}>{k.tipe}</span>
+                        <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{k.jumlahHari} hari kerja</span>
                         {k.uang_makan > 0 && (
                           <span style={{ fontSize: 10, color: C.yellow, fontFamily: C.fontMono }}>
-                            🍚 Uang makan Rp{k.uang_makan.toLocaleString("id-ID")}/hari
+                            🍚 Rp{k.uang_makan.toLocaleString("id-ID")}/hari
                           </span>
                         )}
                       </div>
                     </div>
-
-                    {/* Total + chevron */}
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: tipeColor, fontFamily: C.fontDisplay }}>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: tipeColor, fontFamily: C.fontMono }}>
                         {rupiahFmt(k.totalNominal + k.totalUangMakan)}
                       </div>
                       {k.uang_makan > 0 && (
@@ -456,16 +354,16 @@ export default function RekapBulananTab() {
                       )}
                     </div>
                     <div style={{
-                      fontSize: 14, color: C.muted, transition: "transform 0.2s",
+                      fontSize: 12, color: C.muted, marginLeft: 8,
+                      transition: "transform 0.2s",
                       transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                      marginLeft: 8,
                     }}>▼</div>
                   </div>
 
-                  {/* ── Expanded: detail per tanggal ── */}
+                  {/* Expanded detail */}
                   {isExpanded && (
                     <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 20px" }}>
-                      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 10, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                      <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginBottom: 10, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                         Detail Per Hari
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -473,102 +371,50 @@ export default function RekapBulananTab() {
                           const dayData = k.byTanggal[tgl];
                           const isExpandedTgl = expandedTanggal === `${k.id}-${tgl}`;
                           const totalHari = dayData.subtotal + k.uang_makan;
-
                           return (
                             <div key={tgl} style={{
-                              background: "#0d0a14", borderRadius: 10,
-                              border: `1px solid ${isExpandedTgl ? C.purple + "40" : C.border}`,
+                              background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
+                              borderRadius: 10,
+                              border: `1px solid ${isExpandedTgl ? C.accent + "40" : C.border}`,
                               overflow: "hidden",
                             }}>
-                              {/* Tanggal row */}
-                              <div
-                                onClick={() => setExpandedTanggal(isExpandedTgl ? null : `${k.id}-${tgl}`)}
-                                style={{
-                                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                                  padding: "10px 14px", cursor: "pointer",
-                                }}
+                              <div onClick={() => setExpandedTanggal(isExpandedTgl ? null : `${k.id}-${tgl}`)}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", cursor: "pointer" }}
                               >
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <div style={{
-                                    width: 6, height: 6, borderRadius: "50%",
-                                    background: tipeColor, flexShrink: 0,
-                                  }} />
-                                  <span style={{ fontSize: 13, color: C.textMid, fontFamily: C.fontMono }}>
-                                    {formatTanggalPendek(tgl)}
-                                  </span>
-                                  <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                                    {dayData.rows.length} entri
-                                  </span>
+                                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: tipeColor, flexShrink: 0 }} />
+                                  <span style={{ fontSize: 13, color: C.textMid, fontFamily: C.fontMono }}>{formatTanggalPendek(tgl)}</span>
+                                  <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{dayData.rows.length} entri</span>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>
-                                    {rupiahFmt(totalHari)}
-                                  </span>
-                                  {/* Tombol print */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePrintSlip(k, tgl);
-                                    }}
-                                    title="Print slip gaji"
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(totalHari)}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); handlePrintSlip(k, tgl); }}
                                     style={{
-                                      padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.purple}40`,
-                                      background: `${C.purple}15`, color: C.purple,
+                                      padding: "5px 10px", borderRadius: 6,
+                                      border: `1px solid ${C.accent}40`,
+                                      background: `${C.accent}15`, color: C.accent,
                                       cursor: "pointer", fontSize: 12, fontFamily: C.fontMono,
                                       transition: "all 0.15s",
                                     }}
-                                    onMouseEnter={(e) => {
-                                      (e.target as HTMLElement).style.background = `${C.purple}30`;
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      (e.target as HTMLElement).style.background = `${C.purple}15`;
-                                    }}
-                                  >
-                                    🖨 Print
-                                  </button>
-                                  <span style={{
-                                    fontSize: 11, color: C.muted, transition: "transform 0.2s",
-                                    transform: isExpandedTgl ? "rotate(180deg)" : "rotate(0deg)",
-                                    display: "inline-block",
-                                  }}>▾</span>
+                                  >🖨 Print</button>
+                                  <span style={{ fontSize: 11, color: C.muted, display: "inline-block", transition: "transform 0.2s", transform: isExpandedTgl ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
                                 </div>
                               </div>
-
-                              {/* Detail rows */}
                               {isExpandedTgl && (
                                 <div style={{ borderTop: `1px solid ${C.border}`, padding: "10px 14px" }}>
                                   {dayData.rows.map((g) => (
-                                    <div key={g.id} style={{
-                                      display: "flex", justifyContent: "space-between",
-                                      padding: "5px 0", borderBottom: `1px solid ${C.border}`,
-                                      fontSize: 12,
-                                    }}>
-                                      <span style={{ color: C.textMid, fontFamily: C.fontMono, flex: 1 }}>
-                                        {g.keterangan}
-                                      </span>
-                                      <span style={{ color: tipeColor, fontFamily: C.fontMono, fontWeight: 600, marginLeft: 12 }}>
-                                        {rupiahFmt(g.nominal)}
-                                      </span>
+                                    <div key={g.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
+                                      <span style={{ color: C.textMid, fontFamily: C.fontMono, flex: 1 }}>{g.keterangan}</span>
+                                      <span style={{ color: tipeColor, fontFamily: C.fontMono, fontWeight: 600, marginLeft: 12 }}>{rupiahFmt(g.nominal)}</span>
                                     </div>
                                   ))}
                                   {k.uang_makan > 0 && (
-                                    <div style={{
-                                      display: "flex", justifyContent: "space-between",
-                                      padding: "5px 0", fontSize: 12,
-                                    }}>
-                                      <span style={{ color: C.yellow, fontFamily: C.fontMono }}>
-                                        🍚 Uang Makan
-                                      </span>
-                                      <span style={{ color: C.yellow, fontFamily: C.fontMono, fontWeight: 600 }}>
-                                        +{rupiahFmt(k.uang_makan)}
-                                      </span>
+                                    <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12 }}>
+                                      <span style={{ color: C.yellow, fontFamily: C.fontMono }}>🍚 Uang Makan</span>
+                                      <span style={{ color: C.yellow, fontFamily: C.fontMono, fontWeight: 600 }}>+{rupiahFmt(k.uang_makan)}</span>
                                     </div>
                                   )}
-                                  <div style={{
-                                    display: "flex", justifyContent: "space-between",
-                                    padding: "8px 0 2px", borderTop: `1px solid ${C.border}`,
-                                    fontSize: 13, fontWeight: 700,
-                                  }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 2px", borderTop: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700 }}>
                                     <span style={{ color: C.muted, fontFamily: C.fontMono }}>Total hari ini</span>
                                     <span style={{ color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(totalHari)}</span>
                                   </div>
@@ -578,7 +424,6 @@ export default function RekapBulananTab() {
                           );
                         })}
                       </div>
-
                       {/* Ringkasan bawah */}
                       <div style={{
                         marginTop: 12, padding: "12px 16px", borderRadius: 10,
@@ -587,9 +432,9 @@ export default function RekapBulananTab() {
                       }}>
                         <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
                           Total {filterBulan} · {k.jumlahHari} hari
-                          {k.uang_makan > 0 && ` · +${rupiahFmt(k.totalUangMakan)} uang makan`}
+                          {k.uang_makan > 0 && ` · +${rupiahFmt(k.totalUangMakan)} makan`}
                         </div>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: tipeColor, fontFamily: C.fontDisplay }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: tipeColor, fontFamily: C.fontMono }}>
                           {rupiahFmt(k.totalNominal + k.totalUangMakan)}
                         </div>
                       </div>

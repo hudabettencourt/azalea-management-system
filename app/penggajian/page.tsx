@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import Sidebar from "@/components/Sidebar";
+import GajiBoronganTab from "./GajiBoronganTab";
 
 type Karyawan = {
   id: number;
@@ -724,63 +725,7 @@ export default function PenggajianPage() {
         )}
 
         {/* ── REKAP ── */}
-        {activeTab === "rekap" && (
-          <div style={{ animation: "fadeUp 0.2s ease" }}>
-            <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center" }}>
-              <label style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>Bulan:</label>
-              <input type="month" value={filterBulan} onChange={e => setFilterBulan(e.target.value)} style={{ ...inp, width: "auto", marginBottom: 0, padding: "8px 12px" }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
-              {[
-                { label: "Total Gaji", value: rupiahFmt(totalBulan), color: C.purple },
-                { label: "HPP (Produksi)", value: rupiahFmt(totalHPP), color: C.yellow },
-                { label: "Beban Operasional", value: rupiahFmt(totalOperasional), color: C.orange },
-              ].map((s, i) => (
-                <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontFamily: C.fontMono, textTransform: "uppercase", letterSpacing: "0.08em" }}>{s.label}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: s.color, fontFamily: C.fontDisplay }}>{s.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
-                <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Rekap Per Karyawan</h3>
-                {rekapPerKaryawan.length === 0
-                  ? <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada data</div>
-                  : rekapPerKaryawan.map(k => (
-                    <div key={k.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid }}>{k.nama}</div>
-                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                          {k.tipe} · {k.jumlahInput}× · <span style={{ color: getTipeBeban(k.tipe) === "HPP" ? C.yellow : C.orange }}>{getTipeBeban(k.tipe)}</span>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(k.totalGaji)}</div>
-                    </div>
-                  ))}
-              </div>
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
-                <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 16, color: "#f0eaff", fontWeight: 400 }}>Detail Transaksi</h3>
-                <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                  {gajiFiltered.length === 0
-                    ? <div style={{ textAlign: "center", padding: "40px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada data</div>
-                    : gajiFiltered.map(g => (
-                      <div key={g.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: C.textMid }}>{g.nama_karyawan}</div>
-                          <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(g.tanggal)} · {g.keterangan?.slice(0, 35)}</div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: C.purple, fontFamily: C.fontMono }}>{rupiahFmt(g.nominal)}</div>
-                          <div style={{ fontSize: 10, color: g.tipe_beban === "HPP" ? C.yellow : C.orange, fontFamily: C.fontMono }}>{g.tipe_beban}</div>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {activeTab === "rekap" && <GajiBoronganTab />}
 
         {/* ── KARYAWAN ── */}
         {activeTab === "karyawan" && (

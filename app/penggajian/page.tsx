@@ -192,8 +192,8 @@ export default function PenggajianPage() {
     w.document.write(html);
     w.document.close();
     w.focus();
+    w.onafterprint = () => w.close();
     w.print();
-    w.close();
   };
 
   const simpanBorongan = async () => {

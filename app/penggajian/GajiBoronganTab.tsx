@@ -157,13 +157,13 @@ export default function GajiBoronganTab() {
       </div>
     </body></html>`;
 
-    const w = window.open("", "_blank", "width=300,height=500");
+    const w = window.open("", "_blank", "width=800,height=700");
     if (!w) return;
     w.document.write(html);
     w.document.close();
     w.focus();
     w.onafterprint = () => w.close();
-    w.print();
+    setTimeout(() => w.print(), 500);
   };
 
   const filtered = rekapList.filter((k) =>

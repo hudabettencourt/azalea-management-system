@@ -153,8 +153,9 @@ export default function PenggajianPage() {
     const html = `<!DOCTYPE html><html><head>
       <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Courier New',monospace; font-size:10pt; width:80mm; padding:4mm; color:#000; line-height:1.5; }
-        @page { size:80mm auto; margin:0; }
+        html, body { margin:0; padding:0; }
+        body { font-family:'Courier New',monospace; font-size:10pt; width:57mm; padding:2mm; color:#000; line-height:1.4; }
+        @page { size:57mm auto; margin:0mm; }
         .center { text-align:center; }
         .bold { font-weight:bold; }
         .divider { border-top:1px dashed #000; margin:4px 0; }
@@ -187,13 +188,13 @@ export default function PenggajianPage() {
       <div style="font-size:9pt;margin-top:6px">Tanda Terima :</div>
       <div style="margin-top:28px;border-top:1px solid #000;width:110px;font-size:9pt">( ${slip.nama} )</div>
     </body></html>`;
-    const w = window.open("", "_blank", "width=350,height=550");
+    const w = window.open("", "_blank", "width=800,height=700");
     if (!w) return;
     w.document.write(html);
     w.document.close();
     w.focus();
     w.onafterprint = () => w.close();
-    w.print();
+    setTimeout(() => w.print(), 500);
   };
 
   const simpanBorongan = async () => {

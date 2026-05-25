@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Toko, Toast, PLATFORM_OPTIONS, PLATFORM_COLORS } from "../adminTypes";
 
 interface Props { C: any; isDark: boolean; showToast: (msg: string, type?: Toast["type"]) => void; }
@@ -18,6 +19,9 @@ export default function TokoTab({ C, isDark, showToast }: Props) {
   const [savingEdit, setSavingEdit] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState<number | null>(null);
+
+  const searchParams = useSearchParams();
 
   const inputStyle: React.CSSProperties = {
     padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
@@ -34,6 +38,56 @@ export default function TokoTab({ C, isDark, showToast }: Props) {
   }, []);
 
   useEffect(() => { fetchToko(); }, [fetchToko]);
+
+  // Cek hasil callback dari Shopee
+  useEffect(() => {
+    const status = searchParams.get("shopee");
+    const tokoId = searchParams.get("toko");
+    if (status === "success") {
+      showToast(`✓ Toko berhasil terhubung ke Shopee!`);
+      fetchToko();
+    } else if (status === "error") {
+      showToast("Gagal connect ke Shopee, coba lagi", "error");
+    }
+  }, [searchParams]);
+
+  const handleConnectShopee = (tokoId: number) => {
+    window.location.href = `/api/shopee/auth?toko_id=${tokoId}`;
+  };
+
+  const handleDisconnectShopee = async (tokoId: number) => {
+    const { error } = await supabase.from("toko_online").update({
+      shopee_shop_id: null,
+      shopee_access_token: null,
+      shopee_refresh_token: null,
+      shopee_token_expire_at: null,
+      shopee_authorized_at: null,
+    }).eq("id", tokoId);
+    if (error) showToast("Gagal disconnect: " + error.message, "error");
+    else { showToast("Toko berhasil di-disconnect dari Shopee"); fetchToko(); }
+  };
+
+  const handleSyncOrders = async (tokoId: number, nama: string) => {
+    setSyncing(tokoId);
+    try {
+      const res = await fetch("/api/shopee/sync-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toko_id: tokoId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const result = data.results?.[0];
+        showToast(`✓ ${nama}: ${result?.new || 0} pesanan baru disync`);
+      } else {
+        showToast("Gagal sync: " + data.error, "error");
+      }
+    } catch (err: any) {
+      showToast("Gagal sync: " + err.message, "error");
+    } finally {
+      setSyncing(null);
+    }
+  };
 
   const handleTambah = async () => {
     if (!tambah.nama.trim()) return showToast("Nama toko wajib diisi!", "error");
@@ -73,12 +127,21 @@ export default function TokoTab({ C, isDark, showToast }: Props) {
     </button>
   );
 
+  const isConnected = (t: any) => !!t.shopee_access_token;
+  const tokenExpireSoon = (t: any) => {
+    if (!t.shopee_token_expire_at) return false;
+    const hoursLeft = (new Date(t.shopee_token_expire_at).getTime() - Date.now()) / (1000 * 3600);
+    return hoursLeft < 24;
+  };
+
   return (
     <div style={{ animation: "fadeUp 0.3s ease" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: C.text }}>Master Toko Online</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>{tokoList.length} toko · {tokoList.filter(t => t.aktif).length} aktif</p>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
+            {tokoList.length} toko · {tokoList.filter(t => t.aktif).length} aktif · {tokoList.filter(t => isConnected(t)).length} connected Shopee
+          </p>
         </div>
         <button onClick={() => { setShowTambah(v => !v); setTambah(emptyForm()); setEditingId(null); }} style={{ padding: "9px 18px", background: showTambah ? "transparent" : `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: showTambah ? `1px solid ${C.border}` : "none", color: showTambah ? C.muted : "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: C.fontSans, whiteSpace: "nowrap" }}>
           {showTambah ? "✕ Batal" : "+ Tambah Toko"}
@@ -118,28 +181,72 @@ export default function TokoTab({ C, isDark, showToast }: Props) {
         {loading && <div style={{ padding: 40, textAlign: "center", color: C.muted, fontFamily: C.fontMono }}>Memuat...</div>}
         {!loading && tokoList.length === 0 && <div style={{ padding: 40, textAlign: "center", color: C.muted, fontFamily: C.fontMono }}>Belum ada toko</div>}
         {!loading && tokoList.map(t => (
-          <div key={t.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div key={t.id} style={{ background: C.card, border: `1px solid ${isConnected(t) ? C.green + "40" : C.border}`, borderRadius: 12, overflow: "hidden" }}>
             {editingId !== t.id ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px" }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: `${PLATFORM_COLORS[t.platform] || C.muted}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏪</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{t.nama}</div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: `${PLATFORM_COLORS[t.platform] || C.muted}20`, color: PLATFORM_COLORS[t.platform] || C.muted, fontWeight: 600 }}>{t.platform}</span>
-                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: t.aktif ? `${C.green}15` : `${C.red}15`, color: t.aktif ? C.green : C.red, fontWeight: 600 }}>{t.aktif ? "Aktif" : "Nonaktif"}</span>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: `${PLATFORM_COLORS[t.platform] || C.muted}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏪</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{t.nama}</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: `${PLATFORM_COLORS[t.platform] || C.muted}20`, color: PLATFORM_COLORS[t.platform] || C.muted, fontWeight: 600 }}>{t.platform}</span>
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: t.aktif ? `${C.green}15` : `${C.red}15`, color: t.aktif ? C.green : C.red, fontWeight: 600 }}>{t.aktif ? "Aktif" : "Nonaktif"}</span>
+                      {/* Status koneksi Shopee */}
+                      {t.platform === "Shopee" && (
+                        isConnected(t) ? (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: `${C.green}15`, color: C.green, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                            ✓ Connected
+                            {tokenExpireSoon(t) && <span style={{ color: C.yellow }}>· Token expire soon!</span>}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: `${C.red}15`, color: C.red, fontWeight: 600 }}>
+                            ✕ Belum connect
+                          </span>
+                        )
+                      )}
+                      {isConnected(t) && t.shopee_authorized_at && (
+                        <span style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>
+                          Authorized: {new Date(t.shopee_authorized_at).toLocaleDateString("id-ID")}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => toggleAktif(t.id, t.aktif)} style={{ padding: "6px 12px", background: t.aktif ? `${C.red}15` : `${C.green}15`, border: `1px solid ${t.aktif ? C.red : C.green}30`, color: t.aktif ? C.red : C.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 600 }}>{t.aktif ? "Nonaktifkan" : "Aktifkan"}</button>
-                  <button className="btn-edit" onClick={() => { setEditingId(t.id); setEditForm({ nama: t.nama, platform: t.platform, aktif: t.aktif }); setShowTambah(false); }} style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>Edit</button>
-                  {confirmDeleteId === t.id ? (
-                    <>
-                      <button onClick={() => handleHapus(t.id, t.nama)} disabled={deletingId === t.id} style={{ background: C.red, border: "none", color: "#fff", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>{deletingId === t.id ? "..." : "Hapus"}</button>
-                      <button onClick={() => setConfirmDeleteId(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.muted, padding: "6px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
-                    </>
-                  ) : (
-                    <button className="btn-del" onClick={() => setConfirmDeleteId(t.id)} style={{ background: `${C.red}15`, border: `1px solid ${C.red}25`, color: C.red, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>🗑</button>
-                  )}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {/* Tombol Shopee */}
+                    {t.platform === "Shopee" && t.aktif && (
+                      isConnected(t) ? (
+                        <>
+                          <button
+                            onClick={() => handleSyncOrders(t.id, t.nama)}
+                            disabled={syncing === t.id}
+                            style={{ padding: "6px 12px", background: `${C.blue}15`, border: `1px solid ${C.blue}30`, color: C.blue, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 600 }}>
+                            {syncing === t.id ? "Syncing..." : "↻ Sync Orders"}
+                          </button>
+                          <button
+                            onClick={() => handleDisconnectShopee(t.id)}
+                            style={{ padding: "6px 12px", background: `${C.red}10`, border: `1px solid ${C.red}25`, color: C.red, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 600 }}>
+                            Disconnect
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleConnectShopee(t.id)}
+                          style={{ padding: "6px 14px", background: `linear-gradient(135deg, #ee4d2d, #ff6b35)`, border: "none", color: "#fff", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>
+                          🔗 Connect Shopee
+                        </button>
+                      )
+                    )}
+                    <button onClick={() => toggleAktif(t.id, t.aktif)} style={{ padding: "6px 12px", background: t.aktif ? `${C.red}15` : `${C.green}15`, border: `1px solid ${t.aktif ? C.red : C.green}30`, color: t.aktif ? C.red : C.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 600 }}>{t.aktif ? "Nonaktifkan" : "Aktifkan"}</button>
+                    <button className="btn-edit" onClick={() => { setEditingId(t.id); setEditForm({ nama: t.nama, platform: t.platform, aktif: t.aktif }); setShowTambah(false); }} style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>Edit</button>
+                    {confirmDeleteId === t.id ? (
+                      <>
+                        <button onClick={() => handleHapus(t.id, t.nama)} disabled={deletingId === t.id} style={{ background: C.red, border: "none", color: "#fff", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>{deletingId === t.id ? "..." : "Hapus"}</button>
+                        <button onClick={() => setConfirmDeleteId(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.muted, padding: "6px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11 }}>✕</button>
+                      </>
+                    ) : (
+                      <button className="btn-del" onClick={() => setConfirmDeleteId(t.id)} style={{ background: `${C.red}15`, border: `1px solid ${C.red}25`, color: C.red, padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>🗑</button>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (

@@ -4,7 +4,15 @@ export type Produk = { id: number; nama_produk: string; sku: string | null; juml
 export type BahanBakuFull = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number; aktif: boolean | null; updated_at: string | null };
 export type BahanBakuRef = { id: number; nama: string; satuan: string; kategori: string };
 export type PresetKemasan = { id: number; stok_barang_id: number; bahan_baku_id: number; berat_gram: number; nama_bahan?: string; satuan_bahan?: string };
-export type Toko = { id: number; nama: string; platform: string; aktif: boolean; created_at: string };
+export type Toko = { 
+  id: number; nama: string; platform: string; aktif: boolean; created_at: string;
+  username_shopee?: string | null;
+  shopee_shop_id?: number | null;
+  shopee_access_token?: string | null;
+  shopee_refresh_token?: string | null;
+  shopee_token_expire_at?: string | null;
+  shopee_authorized_at?: string | null;
+};
 export type Supplier = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
 export type Pelanggan = { id: number; nama: string; telepon: string | null; alamat: string | null; catatan: string | null; created_at: string };
 export type HargaKhusus = { id: number; pelanggan_id: number; produk_id: number; harga: number; nama_produk?: string };

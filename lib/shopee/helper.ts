@@ -20,7 +20,9 @@ export function generateSignature(path: string, timestamp: number, accessToken?:
 export function generateAuthUrl(state: string): string {
   const timestamp = Math.floor(Date.now() / 1000);
   const path = "/api/v2/shop/auth_partner";
-  const sign = generateSignature(path, timestamp);
+  // Auth URL signature: partner_id + path + timestamp ONLY (no access token, no shop id)
+  const baseStr = `${PARTNER_ID}${path}${timestamp}`;
+  const sign = crypto.createHmac("sha256", PARTNER_KEY).update(baseStr).digest("hex");
   const params = new URLSearchParams({
     partner_id: PARTNER_ID.toString(),
     timestamp: timestamp.toString(),

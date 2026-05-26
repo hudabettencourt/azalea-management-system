@@ -11,19 +11,39 @@ type Produk = { id: number; nama_produk: string; jumlah_stok: number; harga_jual
 type PiutangShopee = { toko_id: number; toko_nama: string; total_piutang: number; total_retur: number; total_fee: number; total_cair: number; sisa_piutang: number };
 type ReturShopee = { id: number; toko_id: number; produk_id: number; qty: number; nominal: number; tipe: string; stok_kembali: boolean; created_at: string; nama_produk?: string; nama_toko?: string };
 type PencairanShopee = { id: number; toko_id: number; nominal_cair: number; nominal_piutang: number; selisih: number; created_at: string; nama_toko?: string };
-type Piutang = { id: number; nama_pelanggan: string; nominal: number; keterangan: string; status: string; created_at?: string };
 type KeranjangItem = { produk_id: number; nama_produk: string; harga_jual: number; qty: number; subtotal: number; harga_khusus: boolean };
 type PelangganOffline = { id: number; nama: string; telepon: string | null };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
-// Edit offline transaction type
+type PenjualanOffline = {
+  id: number;
+  pelanggan_id: number | null;
+  nama_pelanggan: string | null;
+  tanggal: string;
+  metode_bayar: string;
+  total_nominal: number;
+  status_bayar: string;
+  catatan: string | null;
+  created_at: string;
+  detail?: DetailPenjualanOffline[];
+};
+
+type DetailPenjualanOffline = {
+  id: number;
+  penjualan_id: number;
+  stok_barang_id: number | null;
+  nama_produk: string;
+  qty: number;
+  harga_satuan: number;
+  subtotal: number;
+};
+
 type EditOfflineData = {
   id: number;
   nama_pelanggan: string;
   nominal: number;
-  keterangan: string;
-  status: string;
-  metode_asal: "Tunai" | "Piutang"; // Tunai = dari kas, Piutang = dari tabel piutang
+  metode_asal: "Tunai" | "Piutang";
+  status_bayar: string;
 };
 
 const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
@@ -80,16 +100,9 @@ function ModalKonfirmasi({
   return (
     <>
       <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000 }} />
-      <div style={{
-        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-        zIndex: 1001, width: 400, background: C.card,
-        border: `1px solid ${C.borderStrong}`, borderRadius: 16,
-        padding: 24, fontFamily: C.fontSans,
-      }}>
+      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 400, background: C.card, border: `1px solid ${C.borderStrong}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 4 }}>⚠️ Konfirmasi Transaksi</div>
         <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>Pastikan data sudah benar sebelum disimpan</div>
-
-        {/* Ringkasan */}
         <div style={{ background: "#120e1e", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
           <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Ringkasan</div>
           {keranjang.map(k => (
@@ -103,8 +116,6 @@ function ModalKonfirmasi({
             <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(total)}</span>
           </div>
         </div>
-
-        {/* Detail pembayaran */}
         <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
           <div style={{ flex: 1, background: metode === "Tunai" ? `${C.green}15` : `${C.yellow}15`, border: `1px solid ${metode === "Tunai" ? C.green : C.yellow}40`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginBottom: 4 }}>METODE</div>
@@ -117,11 +128,8 @@ function ModalKonfirmasi({
             </div>
           )}
         </div>
-
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onCancel} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>
-            ✕ Batal, Koreksi Dulu
-          </button>
+          <button onClick={onCancel} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>✕ Batal, Koreksi Dulu</button>
           <button onClick={onConfirm} disabled={loading} style={{ flex: 1, padding: "11px", background: `linear-gradient(135deg, #7c3aed, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: loading ? 0.7 : 1 }}>
             {loading ? "Memproses..." : "✓ Ya, Simpan"}
           </button>
@@ -131,8 +139,8 @@ function ModalKonfirmasi({
   );
 }
 
-// ── Modal Edit Piutang Offline ──
-function ModalEditPiutang({
+// ── Modal Edit Transaksi Offline ──
+function ModalEditOffline({
   open, data, onSave, onCancel, loading
 }: {
   open: boolean;
@@ -147,7 +155,7 @@ function ModalEditPiutang({
   useEffect(() => {
     if (data) {
       setMetode(data.metode_asal);
-      setNama(data.nama_pelanggan);
+      setNama(data.nama_pelanggan || "");
     }
   }, [data]);
 
@@ -156,22 +164,9 @@ function ModalEditPiutang({
   return (
     <>
       <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000 }} />
-      <div style={{
-        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-        zIndex: 1001, width: 380, background: C.card,
-        border: `1px solid ${C.borderStrong}`, borderRadius: 16,
-        padding: 24, fontFamily: C.fontSans,
-      }}>
+      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 380, background: C.card, border: `1px solid ${C.borderStrong}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>✏️ Edit Transaksi</div>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>{data.keterangan}</div>
-
-        <div style={{ background: "#120e1e", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, color: C.muted }}>Nominal</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(data.nominal)}</span>
-          </div>
-        </div>
-
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>{rupiahFmt(data.nominal)}</div>
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Ubah Metode Bayar</div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -182,29 +177,65 @@ function ModalEditPiutang({
             ))}
           </div>
         </div>
-
         {metode === "Piutang" && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Nama Pelanggan</div>
             <input value={nama} onChange={e => setNama(e.target.value)} placeholder="Nama pelanggan" style={{ width: "100%", padding: "10px 12px", background: "#120e1e", border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13, outline: "none", boxSizing: "border-box" as const }} />
           </div>
         )}
-
         {metode !== data.metode_asal && (
           <div style={{ background: `${C.yellow}15`, border: `1px solid ${C.yellow}40`, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: C.yellow, fontFamily: C.fontMono }}>
-            ⚠ {data.metode_asal === "Tunai"
-              ? "Data kas masuk akan dihapus, diganti piutang"
-              : "Piutang akan dihapus, diganti kas masuk"
-            }
+            ⚠ {data.metode_asal === "Tunai" ? "Kas masuk akan dihapus, diganti piutang" : "Status berubah ke Lunas, masuk kas"}
           </div>
         )}
-
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>Batal</button>
           <button onClick={() => onSave(data.id, metode, nama)} disabled={loading || (metode === "Piutang" && !nama.trim())} style={{ flex: 1, padding: "11px", background: `linear-gradient(135deg, #7c3aed, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: loading ? 0.7 : 1 }}>
             {loading ? "Menyimpan..." : "✓ Simpan"}
           </button>
         </div>
+      </div>
+    </>
+  );
+}
+
+// ── Modal Detail Transaksi ──
+function ModalDetailTransaksi({
+  open, data, onClose
+}: {
+  open: boolean;
+  data: PenjualanOffline | null;
+  onClose: () => void;
+}) {
+  if (!open || !data) return null;
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000 }} />
+      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 420, background: C.card, border: `1px solid ${C.borderStrong}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>📋 Detail Transaksi</div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 16, fontFamily: C.fontMono }}>{tanggalFmt(data.created_at)} · {data.metode_bayar}</div>
+        {data.nama_pelanggan && (
+          <div style={{ background: `${C.accent}10`, border: `1px solid ${C.accent}30`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 13, color: C.accent, fontWeight: 600 }}>
+            👤 {data.nama_pelanggan}
+          </div>
+        )}
+        <div style={{ background: "#120e1e", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Item</div>
+          {(data.detail || []).map((d, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.dim}` }}>
+              <div>
+                <div style={{ fontSize: 13, color: C.textMid, fontWeight: 600 }}>{d.nama_produk}</div>
+                <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(d.harga_satuan)} × {d.qty}</div>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(d.subtotal)}</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Total</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(data.total_nominal)}</span>
+          </div>
+        </div>
+        <button onClick={onClose} style={{ width: "100%", padding: "11px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono }}>Tutup</button>
       </div>
     </>
   );
@@ -219,7 +250,7 @@ export default function PenjualanPage() {
   const [piutangShopee, setPiutangShopee] = useState<PiutangShopee[]>([]);
   const [returList, setReturList] = useState<ReturShopee[]>([]);
   const [pencairanList, setPencairanList] = useState<PencairanShopee[]>([]);
-  const [piutangOffline, setPiutangOffline] = useState<Piutang[]>([]);
+  const [penjualanOfflineList, setPenjualanOfflineList] = useState<PenjualanOffline[]>([]);
   const [pelangganMaster, setPelangganMaster] = useState<PelangganOffline[]>([]);
   const [pelangganHarga, setPelangganHarga] = useState<Record<number, number>>({});
   const [loadingHarga, setLoadingHarga] = useState(false);
@@ -227,13 +258,16 @@ export default function PenjualanPage() {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
 
-  // Modal konfirmasi
+  // Modal states
   const [showKonfirmasi, setShowKonfirmasi] = useState(false);
-
-  // Modal edit
   const [editData, setEditData] = useState<EditOfflineData | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [detailData, setDetailData] = useState<PenjualanOffline | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+
+  // Filter offline
+  const [filterStatus, setFilterStatus] = useState<"semua" | "Belum Lunas" | "Lunas">("semua");
 
   // Form Retur
   const [returTokoId, setReturTokoId] = useState("");
@@ -269,7 +303,7 @@ export default function PenjualanPage() {
       const map: Record<number, number> = {};
       (data || []).forEach((row: { produk_id: number; harga: number }) => { map[row.produk_id] = row.harga; });
       setPelangganHarga(map);
-    } catch (err) {
+    } catch {
       setPelangganHarga({});
     } finally {
       setLoadingHarga(false);
@@ -314,15 +348,15 @@ export default function PenjualanPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resPiutangOffline, resFee, resPelanggan] = await Promise.all([
+      const [resToko, resProduk, resPenjualan, resRetur, resPencairan, resFee, resPelanggan, resPenjualanOffline] = await Promise.all([
         supabase.from("toko_online").select("*").eq("aktif", true).order("id"),
         supabase.from("stok_barang").select("*").order("nama_produk"),
         supabase.from("penjualan_online").select("toko_id, total_nominal, total_ditarik, status"),
         supabase.from("retur_online").select("*, stok_barang(nama_produk), toko_online(nama)").order("created_at", { ascending: false }).limit(50),
         supabase.from("pencairan_online").select("*, toko_online(nama)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("piutang").select("*").eq("status", "Belum Lunas").order("created_at", { ascending: false }),
         supabase.from("fee_platform").select("toko_id, total_fee"),
         supabase.from("pelanggan_offline").select("id, nama, telepon").order("nama"),
+        supabase.from("penjualan_offline").select("*, detail_penjualan_offline(*)").order("created_at", { ascending: false }).limit(100),
       ]);
 
       setToko(resToko.data || []);
@@ -348,7 +382,14 @@ export default function PenjualanPage() {
       setPiutangShopee(piutangPerToko);
       setReturList(returData.map((r: any) => ({ ...r, nama_produk: r.stok_barang?.nama_produk, nama_toko: r.toko_online?.nama })));
       setPencairanList(pencairanData.map((p: any) => ({ ...p, nama_toko: p.toko_online?.nama })));
-      setPiutangOffline(resPiutangOffline.data || []);
+
+      // Map penjualan offline dengan detail
+      const offlineData = (resPenjualanOffline.data || []).map((pj: any) => ({
+        ...pj,
+        detail: pj.detail_penjualan_offline || [],
+      }));
+      setPenjualanOfflineList(offlineData);
+
     } catch (err) {
       console.error(err);
     } finally {
@@ -359,7 +400,12 @@ export default function PenjualanPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const totalPiutangShopee = piutangShopee.reduce((a, p) => a + p.sisa_piutang, 0);
-  const totalPiutangOffline = piutangOffline.reduce((a, p) => a + p.nominal, 0);
+  const piutangOfflineList = penjualanOfflineList.filter(p => p.metode_bayar === "Piutang" && p.status_bayar === "Belum Lunas");
+  const totalPiutangOffline = piutangOfflineList.reduce((a, p) => a + p.total_nominal, 0);
+
+  const filteredOffline = filterStatus === "semua"
+    ? penjualanOfflineList
+    : penjualanOfflineList.filter(p => p.status_bayar === filterStatus);
 
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "10px 12px", background: "#120e1e",
@@ -425,7 +471,7 @@ export default function PenjualanPage() {
     } finally { setSubmitting(null); }
   };
 
-  // ── PENJUALAN OFFLINE — validasi dulu, baru tampil modal ──
+  // ── PENJUALAN OFFLINE ──
   const handleClickProses = () => {
     if (keranjang.length === 0) return showToast("Keranjang kosong!", "error");
     if (offlineMetode === "Piutang" && !offlineNamaPelanggan.trim()) return showToast("Pilih atau isi nama pelanggan!", "error");
@@ -435,18 +481,47 @@ export default function PenjualanPage() {
   const prosesOffline = async () => {
     setSubmitting("offline");
     try {
+      // 1. Insert header ke penjualan_offline
+      const { data: penjualanData, error: penjualanError } = await supabase
+        .from("penjualan_offline")
+        .insert([{
+          pelanggan_id: offlinePelangganId && offlinePelangganId !== "baru" ? parseInt(offlinePelangganId) : null,
+          nama_pelanggan: offlineNamaPelanggan.trim() || null,
+          tanggal: new Date().toISOString().split("T")[0],
+          metode_bayar: offlineMetode,
+          total_nominal: totalKeranjang,
+          status_bayar: offlineMetode === "Tunai" ? "Lunas" : "Belum Lunas",
+        }])
+        .select()
+        .single();
+
+      if (penjualanError) throw penjualanError;
+
+      // 2. Insert detail per produk
+      const detailRows = keranjang.map(k => ({
+        penjualan_id: penjualanData.id,
+        stok_barang_id: k.produk_id,
+        nama_produk: k.nama_produk,
+        qty: k.qty,
+        harga_satuan: k.harga_jual,
+      }));
+      const { error: detailError } = await supabase.from("detail_penjualan_offline").insert(detailRows);
+      if (detailError) throw detailError;
+
+      // 3. Kurangi stok + mutasi
       for (const item of keranjang) {
         const p = produk.find(x => x.id === item.produk_id);
         if (!p) continue;
         await supabase.from("stok_barang").update({ jumlah_stok: p.jumlah_stok - item.qty }).eq("id", p.id);
         await supabase.from("mutasi_stok").insert([{ stok_barang_id: p.id, tipe: "Keluar", qty: item.qty, keterangan: "Penjualan Offline" }]);
       }
-      const keterangan = keranjang.map(k => `${k.nama_produk} ×${k.qty}`).join(", ");
+
+      // 4. Jika tunai, catat ke kas
       if (offlineMetode === "Tunai") {
+        const keterangan = keranjang.map(k => `${k.nama_produk} ×${k.qty}`).join(", ");
         await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: totalKeranjang, keterangan }]);
-      } else {
-        await supabase.from("piutang").insert([{ nama_pelanggan: offlineNamaPelanggan.trim(), nominal: totalKeranjang, keterangan, status: "Belum Lunas" }]);
       }
+
       showToast(`${keranjang.length} item terjual = ${rupiahFmt(totalKeranjang)} via ${offlineMetode}`);
       setKeranjang([]);
       setOfflineNamaPelanggan("");
@@ -463,32 +538,37 @@ export default function PenjualanPage() {
     }
   };
 
-  // ── EDIT PIUTANG OFFLINE ──
-  const handleEditPiutang = (pt: Piutang) => {
+  // ── EDIT TRANSAKSI OFFLINE ──
+  const handleEditOffline = (pj: PenjualanOffline) => {
     setEditData({
-      id: pt.id,
-      nama_pelanggan: pt.nama_pelanggan,
-      nominal: pt.nominal,
-      keterangan: pt.keterangan,
-      status: pt.status,
-      metode_asal: "Piutang",
+      id: pj.id,
+      nama_pelanggan: pj.nama_pelanggan || "",
+      nominal: pj.total_nominal,
+      metode_asal: pj.metode_bayar as "Tunai" | "Piutang",
+      status_bayar: pj.status_bayar,
     });
     setShowEdit(true);
   };
 
-  const simpanEditPiutang = async (id: number, newMetode: "Tunai" | "Piutang", newNama: string) => {
+  const simpanEditOffline = async (id: number, newMetode: "Tunai" | "Piutang", newNama: string) => {
     if (!editData) return;
     setSavingEdit(true);
     try {
       if (newMetode === "Tunai" && editData.metode_asal === "Piutang") {
-        // Hapus dari piutang, pindah ke kas masuk
-        await supabase.from("piutang").update({ status: "Lunas" }).eq("id", id);
-        await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: editData.nominal, keterangan: `[Koreksi] ${editData.keterangan}` }]);
+        // Ubah ke tunai: update status + catat ke kas
+        await supabase.from("penjualan_offline").update({ metode_bayar: "Tunai", status_bayar: "Lunas", nama_pelanggan: newNama.trim() || null }).eq("id", id);
+        const pj = penjualanOfflineList.find(x => x.id === id);
+        const keterangan = (pj?.detail || []).map(d => `${d.nama_produk} ×${d.qty}`).join(", ");
+        await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: editData.nominal, keterangan: `[Koreksi] ${keterangan}` }]);
         showToast("Transaksi diubah ke Tunai, masuk ke Kas ✓");
-      } else if (newMetode === "Piutang" && editData.metode_asal === "Piutang") {
-        // Update nama pelanggan saja
-        await supabase.from("piutang").update({ nama_pelanggan: newNama.trim() }).eq("id", id);
-        showToast("Nama pelanggan diupdate ✓");
+      } else if (newMetode === "Piutang" && editData.metode_asal === "Tunai") {
+        // Ubah ke piutang
+        await supabase.from("penjualan_offline").update({ metode_bayar: "Piutang", status_bayar: "Belum Lunas", nama_pelanggan: newNama.trim() || null }).eq("id", id);
+        showToast("Transaksi diubah ke Piutang ✓");
+      } else {
+        // Update nama saja
+        await supabase.from("penjualan_offline").update({ nama_pelanggan: newNama.trim() || null }).eq("id", id);
+        showToast("Data diupdate ✓");
       }
       setShowEdit(false);
       setEditData(null);
@@ -500,12 +580,17 @@ export default function PenjualanPage() {
     }
   };
 
-  const lunaskanPiutang = async (pt: Piutang) => {
-    const { error } = await supabase.from("piutang").update({ status: "Lunas" }).eq("id", pt.id);
-    if (error) { showToast("Gagal update piutang", "error"); return; }
-    await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Piutang", nominal: pt.nominal, keterangan: `Lunas: ${pt.nama_pelanggan}` }]);
-    showToast(`Piutang ${pt.nama_pelanggan} lunas!`);
-    fetchData();
+  // ── LUNASKAN ──
+  const lunaskanOffline = async (pj: PenjualanOffline) => {
+    try {
+      await supabase.from("penjualan_offline").update({ status_bayar: "Lunas" }).eq("id", pj.id);
+      const keterangan = (pj.detail || []).map(d => `${d.nama_produk} ×${d.qty}`).join(", ");
+      await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Piutang", nominal: pj.total_nominal, keterangan: `Lunas: ${pj.nama_pelanggan} — ${keterangan}` }]);
+      showToast(`Piutang ${pj.nama_pelanggan} lunas!`);
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message || "Gagal update piutang", "error");
+    }
   };
 
   if (loading) return (
@@ -527,7 +612,6 @@ export default function PenjualanPage() {
 
       <ToastBar toast={toast} onClose={() => setToast(null)} />
 
-      {/* Modal Konfirmasi */}
       <ModalKonfirmasi
         open={showKonfirmasi}
         keranjang={keranjang}
@@ -539,13 +623,18 @@ export default function PenjualanPage() {
         loading={submitting === "offline"}
       />
 
-      {/* Modal Edit */}
-      <ModalEditPiutang
+      <ModalEditOffline
         open={showEdit}
         data={editData}
-        onSave={simpanEditPiutang}
+        onSave={simpanEditOffline}
         onCancel={() => { setShowEdit(false); setEditData(null); }}
         loading={savingEdit}
+      />
+
+      <ModalDetailTransaksi
+        open={showDetail}
+        data={detailData}
+        onClose={() => { setShowDetail(false); setDetailData(null); }}
       />
 
       <div style={{ background: C.bg, minHeight: "100vh", padding: "32px 28px", fontFamily: C.fontSans, color: C.text }}>
@@ -556,16 +645,14 @@ export default function PenjualanPage() {
             <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: 28, color: "#f0eaff", fontWeight: 400 }}>Penjualan</h1>
             <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Kelola orderan Shopee & penjualan offline</p>
           </div>
-          <a href="/" style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: C.accentDim, border: `1px solid ${C.accent}40`, borderRadius: 8, color: C.accent, fontWeight: 600, fontSize: 13, textDecoration: "none", fontFamily: C.fontSans, whiteSpace: "nowrap" }}>
-            🏠 Home
-          </a>
+          <a href="/" style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: C.accentDim, border: `1px solid ${C.accent}40`, borderRadius: 8, color: C.accent, fontWeight: 600, fontSize: 13, textDecoration: "none", fontFamily: C.fontSans, whiteSpace: "nowrap" }}>🏠 Home</a>
         </div>
 
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
           {[
             { label: "Piutang Shopee", value: rupiahFmt(totalPiutangShopee), color: C.yellow, icon: "🛍", sub: `${piutangShopee.filter(p => p.sisa_piutang > 0).length} toko aktif` },
-            { label: "Piutang Offline", value: rupiahFmt(totalPiutangOffline), color: C.red, icon: "📝", sub: `${piutangOffline.length} pelanggan` },
+            { label: "Piutang Offline", value: rupiahFmt(totalPiutangOffline), color: C.red, icon: "📝", sub: `${piutangOfflineList.length} pelanggan` },
             { label: "Total Toko Shopee", value: `${toko.length} toko`, color: C.accent, icon: "🏪", sub: "Aktif terdaftar" },
             { label: "Total Produk", value: `${produk.length} item`, color: C.green, icon: "📦", sub: "Di stok gudang" },
           ].map((s, i) => (
@@ -814,36 +901,66 @@ export default function PenjualanPage() {
                 </div>
               )}
 
-              <button
-                onClick={handleClickProses}
-                disabled={keranjang.length === 0}
-                style={{ width: "100%", padding: "12px", border: "none", borderRadius: 8, background: keranjang.length === 0 ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.accent})`, color: keranjang.length === 0 ? C.muted : "#fff", fontWeight: 700, cursor: keranjang.length === 0 ? "not-allowed" : "pointer", fontFamily: C.fontMono, fontSize: 13 }}
-              >
+              <button onClick={handleClickProses} disabled={keranjang.length === 0} style={{ width: "100%", padding: "12px", border: "none", borderRadius: 8, background: keranjang.length === 0 ? C.dim : `linear-gradient(135deg, #7c3aed, ${C.accent})`, color: keranjang.length === 0 ? C.muted : "#fff", fontWeight: 700, cursor: keranjang.length === 0 ? "not-allowed" : "pointer", fontFamily: C.fontMono, fontSize: 13 }}>
                 {`💳 Proses ${keranjang.length > 0 ? `(${keranjang.length} item = ${rupiahFmt(totalKeranjang)})` : "Keranjang"} via ${offlineMetode}`}
               </button>
             </div>
 
-            {/* Piutang Offline */}
+            {/* Riwayat Transaksi Offline */}
             <div style={{ background: C.card, borderRadius: 14, padding: 20, border: `1px solid ${C.border}` }}>
-              <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Piutang Offline</h3>
-              {piutangOffline.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "32px 0", color: C.green, fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada piutang offline 🎉</div>
-              ) : piutangOffline.map(pt => (
-                <div key={pt.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.textMid }}>{pt.nama_pelanggan}</div>
-                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{pt.keterangan}</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: C.red, fontFamily: C.fontMono }}>{rupiahFmt(pt.nominal)}</span>
-                    <button onClick={() => handleEditPiutang(pt)} style={{ padding: "6px 12px", background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: C.fontMono }}>✏️ Edit</button>
-                    <button onClick={() => lunaskanPiutang(pt)} style={{ padding: "6px 14px", background: C.green + "20", border: `1px solid ${C.green}40`, color: C.green, borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: C.fontMono }}>Lunas</button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: 18, color: "#f0eaff", fontWeight: 400 }}>Riwayat Transaksi</h3>
+                {/* Filter */}
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["semua", "Belum Lunas", "Lunas"] as const).map(f => (
+                    <button key={f} onClick={() => setFilterStatus(f)} style={{ padding: "5px 12px", borderRadius: 6, border: `1px solid ${filterStatus === f ? C.accent : C.border}`, background: filterStatus === f ? C.accentDim : "transparent", color: filterStatus === f ? C.accent : C.muted, fontFamily: C.fontMono, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      {f === "semua" ? "Semua" : f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {filteredOffline.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "32px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Belum ada transaksi offline</div>
+              ) : filteredOffline.map(pj => (
+                <div key={pj.id} style={{ padding: "12px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.textMid }}>{pj.nama_pelanggan || "Tanpa Pelanggan"}</span>
+                        <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, fontFamily: C.fontMono, fontWeight: 700, background: pj.status_bayar === "Lunas" ? C.green + "20" : C.yellow + "20", color: pj.status_bayar === "Lunas" ? C.green : C.yellow }}>
+                          {pj.status_bayar}
+                        </span>
+                        <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, fontFamily: C.fontMono, background: pj.metode_bayar === "Tunai" ? C.green + "15" : C.accent + "15", color: pj.metode_bayar === "Tunai" ? C.green : C.accent }}>
+                          {pj.metode_bayar}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 4 }}>
+                        {tanggalFmt(pj.created_at)} · {(pj.detail || []).length} item
+                      </div>
+                      <div style={{ fontSize: 11, color: C.dim, fontFamily: C.fontMono }}>
+                        {(pj.detail || []).slice(0, 2).map(d => `${d.nama_produk} ×${d.qty}`).join(", ")}
+                        {(pj.detail || []).length > 2 && ` +${(pj.detail || []).length - 2} lainnya`}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: pj.status_bayar === "Lunas" ? C.green : C.red, fontFamily: C.fontMono }}>{rupiahFmt(pj.total_nominal)}</span>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => { setDetailData(pj); setShowDetail(true); }} style={{ padding: "5px 10px", background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: C.fontMono }}>📋 Detail</button>
+                        <button onClick={() => handleEditOffline(pj)} style={{ padding: "5px 10px", background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: C.fontMono }}>✏️ Edit</button>
+                        {pj.metode_bayar === "Piutang" && pj.status_bayar === "Belum Lunas" && (
+                          <button onClick={() => lunaskanOffline(pj)} style={{ padding: "5px 10px", background: C.green + "20", border: `1px solid ${C.green}40`, color: C.green, borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: C.fontMono }}>✓ Lunas</button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
-              {piutangOffline.length > 0 && (
+
+              {/* Total Piutang */}
+              {piutangOfflineList.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, paddingTop: 12, borderTop: `2px solid ${C.border}` }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Total Piutang</span>
+                  <span style={{ fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Total Piutang Belum Lunas</span>
                   <span style={{ fontSize: 16, fontWeight: 800, color: C.red, fontFamily: C.fontMono }}>{rupiahFmt(totalPiutangOffline)}</span>
                 </div>
               )}

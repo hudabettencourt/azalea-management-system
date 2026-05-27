@@ -134,7 +134,7 @@ export default function TokoTab({ C, isDark, showToast }: Props) {
   const tokenExpireSoon = (t: any) => {
     if (!t.shopee_token_expire_at) return false;
     const hoursLeft = (new Date(t.shopee_token_expire_at).getTime() - Date.now()) / (1000 * 3600);
-    return hoursLeft < 24;
+    return hoursLeft < 1;
   };
 
   return (

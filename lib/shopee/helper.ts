@@ -116,4 +116,29 @@ export async function shopeeApi(
   return res.json();
 }
 
+// POST variant: auth params di query string, payload di body JSON.
+// Dipakai untuk endpoint mutasi seperti /api/v2/product/update_stock.
+export async function shopeeApiPost(
+  path: string,
+  shopId: number,
+  accessToken: string,
+  body: Record<string, any> = {}
+) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = generateSignature(path, timestamp, accessToken, shopId);
+  const query = new URLSearchParams({
+    partner_id: PARTNER_ID.toString(),
+    timestamp: timestamp.toString(),
+    sign,
+    shop_id: shopId.toString(),
+    access_token: accessToken,
+  });
+  const res = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
 export { PARTNER_ID, API_BASE_URL };

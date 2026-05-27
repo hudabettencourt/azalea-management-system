@@ -1,0 +1,35 @@
+name: Shopee Auto Sync
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # tiap 30 menit (UTC)
+  workflow_dispatch:         # manual trigger via GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refresh Shopee tokens
+        run: |
+          curl -sS --fail-with-body \
+            "${{ vars.APP_URL || 'https://azalea-management-system.vercel.app' }}/api/shopee/refresh-token" \
+            -o /tmp/refresh.json
+          cat /tmp/refresh.json
+
+      - name: Sync orders (all toko)
+        run: |
+          curl -sS --fail-with-body \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "${{ vars.APP_URL || 'https://azalea-management-system.vercel.app' }}/api/shopee/sync-orders" \
+            -o /tmp/orders.json
+          cat /tmp/orders.json
+
+      - name: Sync finance (pencairan)
+        run: |
+          curl -sS --fail-with-body \
+            "${{ vars.APP_URL || 'https://azalea-management-system.vercel.app' }}/api/shopee/sync-finance" \
+            -o /tmp/finance.json
+          cat /tmp/finance.json

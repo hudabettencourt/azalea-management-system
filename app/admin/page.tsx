@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, lazy, Suspense } from "react";
+import { useState, lazy, Suspense, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRole } from "@/hooks/useRole";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import Sidebar from "@/components/Sidebar";
@@ -16,8 +17,9 @@ const PelangganTab = lazy(() => import("./tabs/PelangganTab"));
 const VarianBoronganTab = lazy(() => import("./tabs/VarianBoronganTab"));
 const MasterPLUTab = lazy(() => import("./tabs/MasterPLUTab"));
 const KaryawanTab = lazy(() => import("./tabs/KaryawanTab"));
+const ShopeeStokTab = lazy(() => import("./tabs/ShopeeStokTab"));
 
-type Section = "users" | "produk" | "bahan" | "toko" | "supplier" | "pelanggan" | "varian_borongan" | "master_plu" | "karyawan";
+type Section = "users" | "produk" | "bahan" | "toko" | "supplier" | "pelanggan" | "varian_borongan" | "master_plu" | "karyawan" | "shopee_stok";
 
 const NAV_ITEMS: { id: Section; label: string; icon: string; group?: string }[] = [
   { id: "users",           label: "Manajemen User",   icon: "⊛" },
@@ -29,6 +31,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: string; group?: string }[] 
   { id: "varian_borongan", label: "Varian Borongan",  icon: "⚖️" },
   { id: "master_plu",      label: "Master PLU",       icon: "🔢" },
   { id: "karyawan",        label: "Master Karyawan",  icon: "👷" },
+  { id: "shopee_stok",     label: "Stok Shopee",      icon: "🛒" },
 ];
 
 function TabLoading({ C }: { C: any }) {
@@ -46,6 +49,12 @@ export default function AdminPage() {
   const C = isDark ? DARK : LIGHT;
   const [activeSection, setActiveSection] = useState<Section>("users");
   const [toast, setToast] = useState<Toast | null>(null);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && NAV_ITEMS.some(n => n.id === tab)) setActiveSection(tab as Section);
+  }, [searchParams]);
 
   const showToast = (msg: string, type: Toast["type"] = "success") => {
     setToast({ msg, type });
@@ -142,6 +151,9 @@ export default function AdminPage() {
             )}
             {activeSection === "karyawan" && (
               <KaryawanTab C={C} isDark={isDark} showToast={showToast} />
+            )}
+            {activeSection === "shopee_stok" && (
+              <ShopeeStokTab C={C} isDark={isDark} showToast={showToast} />
             )}
           </Suspense>
         </div>

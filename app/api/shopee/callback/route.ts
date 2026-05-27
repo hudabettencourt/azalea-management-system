@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw new Error(error.message);
 
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/admin?shopee=success&toko=${state}`);
+    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/admin?shopee=success&toko=${state}&tab=toko`);
   } catch (err: any) {
     console.error("Shopee callback error:", err);
     return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/admin?shopee=error`);

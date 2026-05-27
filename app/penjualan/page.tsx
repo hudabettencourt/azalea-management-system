@@ -637,7 +637,7 @@ export default function PenjualanPage() {
               <label style={labelStyle}>Metode Bayar</label>
               <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                 {["Tunai", "Piutang"].map(m => (
-                  <button key={m} onClick={() => { setOfflineMetode(m); setOfflinePelangganId(""); setOfflineNamaPelanggan(""); setPelangganHarga({}); setKeranjang([]); }} style={{ flex: 1, padding: "10px", border: `2px solid ${offlineMetode === m ? T.accent : T.border}`, borderRadius: 10, background: offlineMetode === m ? T.accentLight : T.bg, color: offlineMetode === m ? T.accent : T.muted, fontFamily: T.font, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  <button key={m} onClick={() => { setOfflineMetode(m); setOfflinePelangganId(""); setOfflineNamaPelanggan(""); setPelangganHarga({}); setKeranjang([]); }} style={{ flex: 1, padding: "10px", border: `2px solid ${offlineMetode === m ? T.accent : T.border}`, borderRadius: 10, background: offlineMetode === m ? T.accentLight : "#fff", color: offlineMetode === m ? T.accent : T.textMid, fontFamily: T.font, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                     {m === "Tunai" ? "💵 Tunai" : "📝 Piutang"}
                   </button>
                 ))}
@@ -718,7 +718,7 @@ export default function PenjualanPage() {
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: T.text }}>📋 Riwayat Transaksi</h3>
                 <div style={{ display: "flex", gap: 6 }}>
                   {(["semua", "Belum Lunas", "Lunas"] as const).map(f => (
-                    <button key={f} onClick={() => setFilterStatus(f)} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${filterStatus === f ? T.accent : T.border}`, background: filterStatus === f ? T.accentLight : T.bg, color: filterStatus === f ? T.accent : T.muted, fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    <button key={f} onClick={() => setFilterStatus(f)} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${filterStatus === f ? T.accent : T.border}`, background: filterStatus === f ? T.accentLight : "#fff", color: filterStatus === f ? T.accent : T.textMid, fontFamily: T.font, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                       {f === "semua" ? "Semua" : f}
                     </button>
                   ))}

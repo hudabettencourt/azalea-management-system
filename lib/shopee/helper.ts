@@ -13,13 +13,14 @@ const AUTH_BASE_URL = IS_SANDBOX
   : "https://open.shopee.com/auth";
 
 // API Base URL (untuk token, orders, dll)
+// FIX: Pakai partner.shopeemobile.com (bukan openplatform.sandbox)
 const API_BASE_URL = IS_SANDBOX
-  ? "https://openplatform.sandbox.test-stable.shopee.sg"
+  ? "https://partner.test-stable.shopeemobile.com"
   : "https://partner.shopeemobile.com";
 
 export const SHOPEE_REDIRECT_URL = process.env.SHOPEE_REDIRECT_URL || "";
 
-// Generate HMAC-SHA256 signature untuk API calls
+// Generate HMAC-SHA256 signature
 export function generateSignature(
   path: string,
   timestamp: number,
@@ -45,44 +46,56 @@ export function generateAuthUrl(state: string): string {
 }
 
 // Tukar auth code → access token + refresh token
+// FIX: partner_id, timestamp, sign di QUERY STRING (bukan body)
 export async function getAccessToken(code: string, shopId: number) {
   const timestamp = Math.floor(Date.now() / 1000);
   const path = "/api/v2/auth/token/get";
   const sign = generateSignature(path, timestamp);
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+
+  const query = new URLSearchParams({
+    partner_id: PARTNER_ID.toString(),
+    timestamp: timestamp.toString(),
+    sign,
+  });
+
+  const res = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       code,
       shop_id: shopId,
       partner_id: PARTNER_ID,
-      timestamp,
-      sign,
     }),
   });
   return res.json();
 }
 
 // Refresh access token
+// FIX: partner_id, timestamp, sign di QUERY STRING
 export async function refreshAccessToken(refreshToken: string, shopId: number) {
   const timestamp = Math.floor(Date.now() / 1000);
   const path = "/api/v2/auth/access_token/get";
   const sign = generateSignature(path, timestamp);
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+
+  const query = new URLSearchParams({
+    partner_id: PARTNER_ID.toString(),
+    timestamp: timestamp.toString(),
+    sign,
+  });
+
+  const res = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       refresh_token: refreshToken,
       shop_id: shopId,
       partner_id: PARTNER_ID,
-      timestamp,
-      sign,
     }),
   });
   return res.json();
 }
 
-// Generic API call ke Shopee
+// Generic API call ke Shopee (untuk endpoint shop-level seperti get orders)
 export async function shopeeApi(
   path: string,
   shopId: number,

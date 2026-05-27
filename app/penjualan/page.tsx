@@ -41,7 +41,7 @@ const T = {
   border: "var(--border, #e8eaf6)",
   text: "var(--text, #1a1a2e)",
   textMid: "var(--text-mid, #4a5568)",
-  muted: "var(--muted, #94a3b8)",
+  muted: "var(--muted, #64748b)",
   accent: "#7c6ff7",
   accentLight: "#ede9fe",
   green: "#22c55e",
@@ -478,7 +478,7 @@ export default function PenjualanPage() {
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: T.text }}>Penjualan</h1>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: T.muted }}>Kelola orderan Shopee & penjualan offline</p>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: T.textMid }}>Kelola orderan Shopee & penjualan offline</p>
         </div>
 
         {/* Summary Cards */}
@@ -496,7 +496,7 @@ export default function PenjualanPage() {
         {/* Tab Utama */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
           {[{ id: "shopee", label: "🛍️ Shopee" }, { id: "offline", label: "🏪 Offline" }].map(tab => (
-            <button key={tab.id} className="pj-tab-btn" onClick={() => setActiveTab(tab.id as any)} style={{ padding: "10px 28px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: T.font, fontWeight: 800, fontSize: 14, background: activeTab === tab.id ? T.accent : T.card, color: activeTab === tab.id ? "#fff" : T.muted, boxShadow: activeTab === tab.id ? `0 4px 12px ${T.accent}40` : T.shadow, transition: "all 0.15s" }}>
+            <button key={tab.id} className="pj-tab-btn" onClick={() => setActiveTab(tab.id as any)} style={{ padding: "10px 28px", borderRadius: 10, border: `1px solid ${activeTab === tab.id ? T.accent : T.border}`, cursor: "pointer", fontFamily: T.font, fontWeight: 800, fontSize: 14, background: activeTab === tab.id ? T.accent : "#fff", color: activeTab === tab.id ? "#fff" : T.textMid, boxShadow: activeTab === tab.id ? `0 4px 12px ${T.accent}40` : T.shadow, transition: "all 0.15s" }}>
               {tab.label}
             </button>
           ))}
@@ -740,8 +740,8 @@ export default function PenjualanPage() {
                           {pj.metode_bayar}
                         </span>
                       </div>
-                      <div style={{ fontSize: 11, color: T.muted, fontFamily: T.mono, marginBottom: 3 }}>{tanggalFmt(pj.created_at)} · {(pj.detail || []).length} item</div>
-                      <div style={{ fontSize: 11, color: T.muted }}>
+                      <div style={{ fontSize: 11, color: T.textMid, fontFamily: T.mono, marginBottom: 3 }}>{tanggalFmt(pj.created_at)} · {(pj.detail || []).length} item</div>
+                      <div style={{ fontSize: 11, color: T.textMid }}>
                         {(pj.detail || []).slice(0, 2).map(d => `${d.nama_produk} ×${d.qty}`).join(", ")}
                         {(pj.detail || []).length > 2 && ` +${(pj.detail || []).length - 2} lainnya`}
                       </div>
@@ -762,7 +762,7 @@ export default function PenjualanPage() {
 
               {piutangOfflineList.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, paddingTop: 12, borderTop: `2px solid ${T.border}` }}>
-                  <span style={{ fontSize: 13, color: T.muted, fontWeight: 700 }}>Total Piutang Belum Lunas</span>
+                  <span style={{ fontSize: 13, color: T.text, fontWeight: 700 }}>Total Piutang Belum Lunas</span>
                   <span style={{ fontSize: 16, fontWeight: 900, color: T.red, fontFamily: T.mono }}>{rupiahFmt(totalPiutangOffline)}</span>
                 </div>
               )}

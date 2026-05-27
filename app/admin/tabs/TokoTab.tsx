@@ -70,6 +70,9 @@ export default function TokoTab({ C, isDark, showToast }: Props) {
   const handleSyncOrders = async (tokoId: number, nama: string) => {
     setSyncing(tokoId);
     try {
+        // Auto-refresh token dulu kalau mau expire
+    await fetch("/api/shopee/refresh-token");
+
       const res = await fetch("/api/shopee/sync-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -44,6 +44,14 @@ function TabLoading({ C }: { C: any }) {
 }
 
 export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageInner />
+    </Suspense>
+  );
+}
+
+function AdminPageInner() {
   const { profile: currentUser, isOwner, loading: roleLoading } = useRole();
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;

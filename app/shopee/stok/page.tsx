@@ -1,11 +1,5 @@
 "use client";
 
-// /shopee/stok — Stok virtual + distribusi otomatis.
-// Tugas 8: pilih produk → input anggaran → "Hitung Distribusi Otomatis"
-// (histori 30 hari, toko tanpa histori dapat jatah rata-rata sisa) →
-// preview editable per-toko → "Konfirmasi & Push" persists ke
-// shopee_stok_pool/distribusi lalu hit /api/shopee/push-stok.
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { supabase } from "@/lib/supabase";
@@ -21,6 +15,7 @@ type PreviewRow = {
   persentase: number;
   jumlah: number;
   hasHistory: boolean;
+  stok_shopee: number | null; // stok terkini di Shopee
 };
 
 type PoolRow = {
@@ -54,10 +49,6 @@ function sinceDateWIB(daysAgo: number): string {
     .toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
 }
 
-// Distribute total across rows so the sum equals total_anggaran exactly.
-// History-tokos get a proportional share, then leftover units go to the
-// no-history tokos as an equal split. Rounding remainders land on the first
-// row.
 function computeDistribution(toko: Toko[], salesByToko: Map<number, number>, totalAnggaran: number): PreviewRow[] {
   const withHistory = toko.filter(t => (salesByToko.get(t.id) || 0) > 0);
   const withoutHistory = toko.filter(t => !(salesByToko.get(t.id) || 0));
@@ -73,7 +64,7 @@ function computeDistribution(toko: Toko[], salesByToko: Map<number, number>, tot
     rows.push({
       toko_id: t.id, toko_nama: t.nama, sales_30d: sales,
       persentase: Math.round(persen * 10000) / 100,
-      jumlah, hasHistory: true,
+      jumlah, hasHistory: true, stok_shopee: null,
     });
   }
   const sisa = Math.max(0, totalAnggaran - allocated);
@@ -81,15 +72,23 @@ function computeDistribution(toko: Toko[], salesByToko: Map<number, number>, tot
   for (const t of withoutHistory) {
     rows.push({
       toko_id: t.id, toko_nama: t.nama, sales_30d: 0,
-      persentase: 0, jumlah: perTokoSisa, hasHistory: false,
+      persentase: 0, jumlah: perTokoSisa, hasHistory: false, stok_shopee: null,
     });
   }
-  // Rounding remainder → first row (if any).
   if (rows.length > 0) {
     const sum = rows.reduce((a, r) => a + r.jumlah, 0);
     rows[0].jumlah += totalAnggaran - sum;
   }
   return rows;
+}
+
+// Recalculate persentase berdasarkan jumlah yang di-edit manual
+function recalcPersentase(rows: PreviewRow[]): PreviewRow[] {
+  const total = rows.reduce((a, r) => a + r.jumlah, 0);
+  return rows.map(r => ({
+    ...r,
+    persentase: total > 0 ? Math.round((r.jumlah / total) * 10000) / 100 : 0,
+  }));
 }
 
 export default function ShopeeStokPage() {
@@ -110,6 +109,10 @@ export default function ShopeeStokPage() {
   const [confirming, setConfirming] = useState(false);
   const [pushingId, setPushingId] = useState<number | null>(null);
   const [pushingPoolId, setPushingPoolId] = useState<number | null>(null);
+  const [loadingShopeeStok, setLoadingShopeeStok] = useState(false);
+
+  // Mode: "otomatis" = hitung distribusi, "manual" = input langsung per toko
+  const [mode, setMode] = useState<"otomatis" | "manual">("otomatis");
 
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const showToast = (msg: string, type: "success" | "error" = "success") => {
@@ -135,21 +138,15 @@ export default function ShopeeStokPage() {
       setStokOpts((resStok.data || []) as StokOpt[]);
       setTokoList((resToko.data || []) as Toko[]);
       setPools(((resPool.data || []) as any[]).map(p => ({
-        id: p.id,
-        stok_barang_id: p.stok_barang_id,
-        total_anggaran: p.total_anggaran,
-        updated_at: p.updated_at,
+        id: p.id, stok_barang_id: p.stok_barang_id,
+        total_anggaran: p.total_anggaran, updated_at: p.updated_at,
         nama_produk: p.stok_barang?.nama_produk || "—",
         sku: p.stok_barang?.sku || null,
       })));
       setDistribusi(((resDist.data || []) as any[]).map(d => ({
-        id: d.id,
-        pool_id: d.pool_id,
-        toko_id: d.toko_id,
-        jumlah: d.jumlah,
-        persentase: d.persentase || 0,
-        last_pushed_at: d.last_pushed_at,
-        last_push_status: d.last_push_status,
+        id: d.id, pool_id: d.pool_id, toko_id: d.toko_id,
+        jumlah: d.jumlah, persentase: d.persentase || 0,
+        last_pushed_at: d.last_pushed_at, last_push_status: d.last_push_status,
         nama_toko: d.toko_online?.nama || "—",
       })));
     } catch (err: any) {
@@ -163,7 +160,25 @@ export default function ShopeeStokPage() {
 
   const totalAnggaran = useMemo(() => toAngka(anggaranInput), [anggaranInput]);
   const previewSum = useMemo(() => (preview || []).reduce((a, r) => a + (r.jumlah || 0), 0), [preview]);
-  const previewValid = preview !== null && previewSum === totalAnggaran;
+  const previewValid = preview !== null && (mode === "manual" || previewSum === totalAnggaran);
+
+  // Fetch stok terkini dari Shopee untuk preview
+  const fetchShopeeStok = async (rows: PreviewRow[], stokBarangId: number): Promise<PreviewRow[]> => {
+    setLoadingShopeeStok(true);
+    try {
+      const res = await fetch(`/api/shopee/get-stok-per-toko?stok_barang_id=${stokBarangId}`);
+      if (!res.ok) return rows;
+      const data = await res.json();
+      return rows.map(r => ({
+        ...r,
+        stok_shopee: data.stok?.[r.toko_id] ?? null,
+      }));
+    } catch {
+      return rows;
+    } finally {
+      setLoadingShopeeStok(false);
+    }
+  };
 
   const hitungDistribusi = async () => {
     if (!selectedStokId) return showToast("Pilih produk dulu", "error");
@@ -191,7 +206,8 @@ export default function ShopeeStokPage() {
         salesByToko.set(tokoId, (salesByToko.get(tokoId) || 0) + ((r as any).qty || 0));
       }
 
-      const rows = computeDistribution(tokoList, salesByToko, totalAnggaran);
+      let rows = computeDistribution(tokoList, salesByToko, totalAnggaran);
+      rows = await fetchShopeeStok(rows, parseInt(selectedStokId));
       setPreview(rows);
       setPreviewProduct(stokOpts.find(s => s.id === parseInt(selectedStokId)) || null);
     } catch (err: any) {
@@ -201,9 +217,34 @@ export default function ShopeeStokPage() {
     }
   };
 
+  // Mode manual: tampilkan form kosong per toko
+  const bukaManual = async () => {
+    if (!selectedStokId) return showToast("Pilih produk dulu", "error");
+    if (tokoList.length === 0) return showToast("Tidak ada toko Shopee aktif terhubung", "error");
+
+    setComputing(true);
+    try {
+      let rows: PreviewRow[] = tokoList.map(t => ({
+        toko_id: t.id, toko_nama: t.nama, sales_30d: 0,
+        persentase: 0, jumlah: 0, hasHistory: false, stok_shopee: null,
+      }));
+      rows = await fetchShopeeStok(rows, parseInt(selectedStokId));
+      setPreview(rows);
+      setPreviewProduct(stokOpts.find(s => s.id === parseInt(selectedStokId)) || null);
+    } catch (err: any) {
+      showToast("Gagal: " + err.message, "error");
+    } finally {
+      setComputing(false);
+    }
+  };
+
   const updatePreviewRow = (toko_id: number, jumlahStr: string) => {
     const jumlah = Math.max(0, parseInt(jumlahStr.replace(/\D/g, ""), 10) || 0);
-    setPreview(prev => prev?.map(r => r.toko_id === toko_id ? { ...r, jumlah } : r) || null);
+    setPreview(prev => {
+      if (!prev) return null;
+      const updated = prev.map(r => r.toko_id === toko_id ? { ...r, jumlah } : r);
+      return recalcPersentase(updated); // recalc persentase otomatis
+    });
   };
 
   const resetPreview = () => {
@@ -213,38 +254,31 @@ export default function ShopeeStokPage() {
 
   const konfirmasiPush = async () => {
     if (!preview || !previewProduct) return;
-    if (!previewValid) {
-      showToast(`Total per toko (${fmtInt(previewSum)}) ≠ anggaran (${fmtInt(totalAnggaran)})`, "error");
-      return;
-    }
     setConfirming(true);
     try {
-      // 1. Upsert pool
+      const totalPool = preview.reduce((a, r) => a + r.jumlah, 0);
+
       const { data: pool, error: errPool } = await supabase
         .from("shopee_stok_pool")
         .upsert({
           stok_barang_id: previewProduct.id,
-          total_anggaran: totalAnggaran,
+          total_anggaran: totalPool,
           updated_at: new Date().toISOString(),
         }, { onConflict: "stok_barang_id" })
         .select("id")
         .single();
       if (errPool || !pool) throw new Error(errPool?.message || "Gagal simpan pool");
 
-      // 2. Replace distribusi rows
       await supabase.from("shopee_stok_distribusi").delete().eq("pool_id", pool.id);
       const rows = preview.map(r => ({
-        pool_id: pool.id,
-        toko_id: r.toko_id,
+        pool_id: pool.id, toko_id: r.toko_id,
         stok_barang_id: previewProduct.id,
-        jumlah: r.jumlah,
-        persentase: r.persentase,
+        jumlah: r.jumlah, persentase: r.persentase,
         updated_at: new Date().toISOString(),
       }));
       const { error: errIns } = await supabase.from("shopee_stok_distribusi").insert(rows);
       if (errIns) throw new Error(errIns.message);
 
-      // 3. Push to Shopee via existing endpoint
       const res = await fetch("/api/shopee/push-stok", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pool_id: pool.id }),
@@ -255,11 +289,8 @@ export default function ShopeeStokPage() {
       const err = data.results.length - ok;
       showToast(`✓ ${previewProduct.nama_produk} tersimpan. Push: ${ok} ok${err > 0 ? `, ${err} error` : ""}`, err > 0 ? "error" : "success");
 
-      // 4. Reset UI
-      setPreview(null);
-      setPreviewProduct(null);
-      setSelectedStokId("");
-      setAnggaranInput("");
+      setPreview(null); setPreviewProduct(null);
+      setSelectedStokId(""); setAnggaranInput("");
       await fetchAll();
     } catch (err: any) {
       showToast("Gagal: " + err.message, "error");
@@ -277,7 +308,7 @@ export default function ShopeeStokPage() {
       });
       const data = await res.json();
       const r = data.results?.[0];
-      if (r?.status === "ok") showToast(`✓ ${r.toko}: stok ${r.stock} terkirim`);
+      if (r?.status === "ok") showToast(`✓ ${r.toko}: +${r.tambahan} → total ${r.total}`);
       else showToast(`Gagal: ${r?.message || data.error}`, "error");
       await fetchAll();
     } catch (err: any) {
@@ -313,8 +344,7 @@ export default function ShopeeStokPage() {
   const inputStyle: React.CSSProperties = {
     padding: "9px 12px",
     background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-    border: `1.5px solid ${C.border}`,
-    borderRadius: 8,
+    border: `1.5px solid ${C.border}`, borderRadius: 8,
     color: C.text, fontFamily: C.fontSans, fontSize: 13,
     outline: "none", width: "100%", boxSizing: "border-box",
   };
@@ -330,7 +360,7 @@ export default function ShopeeStokPage() {
       )}
 
       <div style={{ padding: "24px 28px" }}>
-        {/* Section 1: Form */}
+        {/* Form */}
         <div style={{
           background: `${C.accent}06`, border: `1px solid ${C.accent}30`,
           borderRadius: 14, padding: 20, marginBottom: 18,
@@ -338,51 +368,64 @@ export default function ShopeeStokPage() {
           <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 14, letterSpacing: 1 }}>
             + SET POOL & DISTRIBUSI
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 12, alignItems: "end" }}>
+
+          {/* Mode toggle */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {(["otomatis", "manual"] as const).map(m => (
+              <button key={m} onClick={() => { setMode(m); resetPreview(); }} style={{
+                padding: "6px 16px",
+                background: mode === m ? `${C.accent}20` : "transparent",
+                border: `1.5px solid ${mode === m ? C.accent : C.border}`,
+                borderRadius: 20, color: mode === m ? C.accent : C.muted,
+                cursor: "pointer", fontSize: 12, fontWeight: mode === m ? 700 : 500,
+                fontFamily: C.fontSans,
+              }}>
+                {m === "otomatis" ? "🤖 Otomatis" : "✏️ Manual per Toko"}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: mode === "otomatis" ? "2fr 1fr auto" : "2fr auto", gap: 12, alignItems: "end" }}>
             <div>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>PRODUK *</div>
               <select value={selectedStokId} onChange={e => setSelectedStokId(e.target.value)}
                 style={{ ...inputStyle, cursor: "pointer" }}>
                 <option value="">— Pilih produk —</option>
                 {stokOpts.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.nama_produk} {s.sku ? `(${s.sku})` : ""}
-                  </option>
+                  <option key={s.id} value={s.id}>{s.nama_produk} {s.sku ? `(${s.sku})` : ""}</option>
                 ))}
               </select>
             </div>
-            <div>
-              <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>ANGGARAN STOK *</div>
-              <input value={anggaranInput} onChange={e => setAnggaranInput(formatIDR(e.target.value))}
-                placeholder="0" style={inputStyle} />
-            </div>
-            <button onClick={hitungDistribusi} disabled={computing} style={{
-              padding: "10px 20px",
-              background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
-              border: "none", color: "#fff", borderRadius: 8,
-              cursor: computing ? "wait" : "pointer", fontWeight: 700, fontSize: 13,
-              fontFamily: C.fontSans, opacity: computing ? 0.7 : 1, whiteSpace: "nowrap",
-            }}>
-              {computing ? "Menghitung..." : "Hitung Distribusi"}
+            {mode === "otomatis" && (
+              <div>
+                <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>ANGGARAN STOK *</div>
+                <input value={anggaranInput} onChange={e => setAnggaranInput(formatIDR(e.target.value))}
+                  placeholder="0" style={inputStyle} />
+              </div>
+            )}
+            <button
+              onClick={mode === "otomatis" ? hitungDistribusi : bukaManual}
+              disabled={computing} style={{
+                padding: "10px 20px",
+                background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
+                border: "none", color: "#fff", borderRadius: 8,
+                cursor: computing ? "wait" : "pointer", fontWeight: 700, fontSize: 13,
+                fontFamily: C.fontSans, opacity: computing ? 0.7 : 1, whiteSpace: "nowrap",
+              }}>
+              {computing ? "Memuat..." : mode === "otomatis" ? "Hitung Distribusi" : "Input Manual →"}
             </button>
           </div>
-
-          {!stokOpts.length && !loading && (
-            <div style={{ marginTop: 12, fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-              Belum ada produk dengan SKU terisi — produk tanpa SKU tidak bisa di-sync ke Shopee.
-            </div>
-          )}
 
           {/* Preview table */}
           {preview && previewProduct && (
             <div style={{ marginTop: 18, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
               <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>
-                    Preview: {previewProduct.nama_produk}
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text }}>
+                    {mode === "otomatis" ? "Preview Distribusi" : "Input Manual"}: {previewProduct.nama_produk}
                   </div>
                   <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>
-                    Berdasarkan histori {HISTORY_WINDOW_DAYS} hari terakhir
+                    {loadingShopeeStok ? "Mengambil stok Shopee..." : "Stok Shopee saat ini ditampilkan di kolom kanan"}
                   </div>
                 </div>
                 <button onClick={resetPreview} style={{
@@ -394,28 +437,32 @@ export default function ShopeeStokPage() {
 
               {/* Header */}
               <div style={{
-                display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 1fr 90px",
+                display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.6fr 0.8fr 0.8fr 80px",
                 padding: "8px 16px", fontSize: 10, fontWeight: 700, color: C.muted,
                 fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const,
                 background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)",
                 borderBottom: `1px solid ${C.border}`, gap: 12,
               }}>
                 <span>Toko</span>
-                <span>Histori 30d</span>
+                {mode === "otomatis" && <span>Histori 30d</span>}
                 <span>%</span>
-                <span style={{ textAlign: "right" }}>Jumlah (edit)</span>
+                <span style={{ textAlign: "right" }}>Stok Shopee</span>
+                <span style={{ textAlign: "right" }}>Tambah</span>
                 <span>Source</span>
               </div>
 
               {preview.map(row => (
                 <div key={row.toko_id} style={{
-                  display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 1fr 90px",
+                  display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.6fr 0.8fr 0.8fr 80px",
                   padding: "10px 16px", borderBottom: `1px solid ${C.border}`,
                   alignItems: "center", gap: 12,
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{row.toko_nama}</div>
-                  <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontMono }}>{row.sales_30d} pcs</div>
+                  {mode === "otomatis" && <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontMono }}>{row.sales_30d} pcs</div>}
                   <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontMono }}>{row.persentase.toFixed(1)}%</div>
+                  <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.blue, fontFamily: C.fontMono }}>
+                    {row.stok_shopee === null ? (loadingShopeeStok ? "..." : "—") : fmtInt(row.stok_shopee)}
+                  </div>
                   <input
                     value={fmtInt(row.jumlah)}
                     onChange={e => updatePreviewRow(row.toko_id, e.target.value)}
@@ -426,26 +473,25 @@ export default function ShopeeStokPage() {
                     background: row.hasHistory ? C.greenDim : C.yellowDim,
                     color: row.hasHistory ? C.green : C.yellow,
                     fontWeight: 700, fontFamily: C.fontMono, alignSelf: "center", textAlign: "center",
-                  }}>{row.hasHistory ? "histori" : "rata-rata"}</span>
+                  }}>{mode === "manual" ? "manual" : row.hasHistory ? "histori" : "rata-rata"}</span>
                 </div>
               ))}
 
-              {/* Footer totals */}
+              {/* Footer */}
               <div style={{
                 padding: "14px 16px",
-                background: previewValid ? C.greenDim : C.redDim,
+                background: C.greenDim,
                 borderTop: `1px solid ${C.border}`,
                 display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8,
               }}>
-                <div style={{ fontSize: 12, fontFamily: C.fontMono, color: previewValid ? C.green : C.red, fontWeight: 700 }}>
-                  Total: <span style={{ fontSize: 16 }}>{fmtInt(previewSum)}</span> / {fmtInt(totalAnggaran)}
-                  {!previewValid && <span style={{ marginLeft: 8 }}>(selisih {fmtInt(previewSum - totalAnggaran)})</span>}
+                <div style={{ fontSize: 12, fontFamily: C.fontMono, color: C.green, fontWeight: 700 }}>
+                  Total tambahan: <span style={{ fontSize: 16 }}>{fmtInt(previewSum)}</span>
                 </div>
-                <button onClick={konfirmasiPush} disabled={!previewValid || confirming} style={{
+                <button onClick={konfirmasiPush} disabled={confirming || previewSum === 0} style={{
                   padding: "10px 18px",
-                  background: previewValid ? `linear-gradient(135deg, #ee4d2d, #ff6b35)` : C.border,
-                  border: "none", color: previewValid ? "#fff" : C.muted,
-                  borderRadius: 10, cursor: previewValid && !confirming ? "pointer" : "not-allowed",
+                  background: previewSum > 0 ? `linear-gradient(135deg, #ee4d2d, #ff6b35)` : C.border,
+                  border: "none", color: previewSum > 0 ? "#fff" : C.muted,
+                  borderRadius: 10, cursor: previewSum > 0 && !confirming ? "pointer" : "not-allowed",
                   fontWeight: 800, fontSize: 13, fontFamily: C.fontSans, opacity: confirming ? 0.7 : 1,
                 }}>
                   {confirming ? "Memproses..." : "✓ Konfirmasi & Push ke Shopee"}
@@ -455,9 +501,9 @@ export default function ShopeeStokPage() {
           )}
         </div>
 
-        {/* Section 2: Existing pools */}
+        {/* Pool tersimpan */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 800, color: C.text, fontFamily: C.fontSans, margin: 0 }}>Pool Stok Tersimpan</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0 }}>Pool Stok Tersimpan</h2>
           <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{pools.length} pool</span>
         </div>
 
@@ -477,7 +523,7 @@ export default function ShopeeStokPage() {
               <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: C.shadow }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap", gap: 10 }}>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>{p.nama_produk}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{p.nama_produk}</div>
                     <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                       {p.sku && <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>SKU: {p.sku}</span>}
                       <span style={{ fontSize: 11, color: C.accent, fontFamily: C.fontMono, fontWeight: 700 }}>
@@ -487,8 +533,7 @@ export default function ShopeeStokPage() {
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => pushPool(p.id)} disabled={pushingPoolId === p.id} style={{
-                      padding: "7px 14px",
-                      background: `linear-gradient(135deg, #ee4d2d, #ff6b35)`,
+                      padding: "7px 14px", background: `linear-gradient(135deg, #ee4d2d, #ff6b35)`,
                       border: "none", color: "#fff", borderRadius: 6,
                       cursor: pushingPoolId === p.id ? "wait" : "pointer",
                       fontSize: 11, fontFamily: C.fontMono, fontWeight: 700,
@@ -504,7 +549,6 @@ export default function ShopeeStokPage() {
                     }}>🗑</button>
                   </div>
                 </div>
-
                 <div style={{ padding: "8px 18px 14px" }}>
                   {dist.length === 0 && <div style={{ padding: 14, color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Tidak ada distribusi</div>}
                   {dist.map(d => (

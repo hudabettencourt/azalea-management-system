@@ -81,7 +81,7 @@ async function fetchCurrentStock(
   if (res.error) return 0;
   const item = res.response?.item_list?.[0];
   if (!item) return 0;
-
+console.log("[debug stok existing]", JSON.stringify(item?.stock_info), JSON.stringify(item?.stock_info_v2));
   if (modelId) {
     const modelRes = await shopeeApi("/api/v2/product/get_model_list", shopId, accessToken, { item_id: itemId });
     if (modelRes.error) return 0;

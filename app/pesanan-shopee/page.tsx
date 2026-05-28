@@ -51,8 +51,6 @@ const SEARCH_FIELDS = [
   { key: "nama_pembeli", label: "Nama Pembeli" },
 ];
 
-const JASA_KIRIM_LIST = ["SPX Hemat", "SPX Standard", "Anteraja Economy", "Anteraja Reguler", "JNE Reguler", "J&T Cargo", "Pos Reguler"];
-
 const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
 const tanggalFmt = (s: string) => {
   if (!s) return "-";
@@ -61,15 +59,12 @@ const tanggalFmt = (s: string) => {
 
 const PAGE_SIZE = 50;
 
-type FilterRow = { label: string; key: string; options: { key: string; label: string }[]; selected: string; setter: (v: string) => void };
-
-function PillFilterRow({ label, options, selected, onSelect, C, isDark }: {
+function PillFilterRow({ label, options, selected, onSelect, C }: {
   label: string;
   options: { key: string; label: string }[];
   selected: string;
   onSelect: (v: string) => void;
   C: any;
-  isDark: boolean;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -78,21 +73,17 @@ function PillFilterRow({ label, options, selected, onSelect, C, isDark }: {
         {options.map(opt => {
           const active = selected === opt.key;
           return (
-            <button
-              key={opt.key}
-              onClick={() => onSelect(opt.key)}
-              style={{
-                padding: "4px 12px",
-                background: active ? `${C.accent}20` : "transparent",
-                border: `1.5px solid ${active ? C.accent : C.border}`,
-                borderRadius: 20,
-                color: active ? C.accent : C.muted,
-                cursor: "pointer", fontSize: 12,
-                fontWeight: active ? 700 : 500,
-                fontFamily: C.fontSans,
-                transition: "all 0.15s",
-              }}
-            >{opt.label}</button>
+            <button key={opt.key} onClick={() => onSelect(opt.key)} style={{
+              padding: "4px 12px",
+              background: active ? `${C.accent}20` : "transparent",
+              border: `1.5px solid ${active ? C.accent : C.border}`,
+              borderRadius: 20,
+              color: active ? C.accent : C.muted,
+              cursor: "pointer", fontSize: 12,
+              fontWeight: active ? 700 : 500,
+              fontFamily: C.fontSans,
+              transition: "all 0.15s",
+            }}>{opt.label}</button>
           );
         })}
       </div>
@@ -104,20 +95,17 @@ export default function OrdersPage() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
 
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [tokoList, setTokoList] = useState<Toko[]>([]);
   const [jasaKirimList, setJasaKirimList] = useState<string[]>([]);
 
-  // Filters
   const [filterStatus, setFilterStatus] = useState("semua");
   const [filterToko, setFilterToko] = useState("semua");
   const [filterJasaKirim, setFilterJasaKirim] = useState("semua");
   const [searchField, setSearchField] = useState("no_pesanan");
   const [searchVal, setSearchVal] = useState("");
-
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
@@ -126,65 +114,22 @@ export default function OrdersPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchToko = useCallback(async () => {
-    const { data } = await supabase
-      .from("toko_online")
-      .select("id, nama")
-      .eq("platform", "Shopee")
-      .eq("aktif", true)
-      .not("shopee_access_token", "is", null)
-      .order("id");
-    setTokoList(data || []);
-  }, []);
-
-  const fetchJasaKirim = useCallback(async () => {
-    const { data } = await supabase
-      .from("detail_penjualan_online")
-      .select("jasa_kirim")
-      .not("jasa_kirim", "is", null);
-    const unique = [...new Set((data || []).map((r: any) => r.jasa_kirim).filter(Boolean))].sort();
-    setJasaKirimList(unique);
-  }, []);
-
-  const fetchOrders = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      // Build query dengan join
-      let query = supabase
+      // Ambil semua data tanpa filter dulu — max 2000 rows
+      const { data, error } = await supabase
         .from("detail_penjualan_online")
         .select(`
           id, no_pesanan, tanggal_pesanan, no_resi, sku, qty,
           harga_satuan, total_pembayaran, status_shopee,
           nama_pembeli, jasa_kirim,
           stok_barang(nama_produk),
-          penjualan_online!inner(toko_id, toko_online!inner(id, nama))
-        `, { count: "exact" })
+          penjualan_online(toko_id, toko_online(id, nama))
+        `)
         .order("tanggal_pesanan", { ascending: false })
-        .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+        .limit(2000);
 
-      // Filter status
-      if (filterStatus !== "semua") {
-        query = query.eq("status_shopee", filterStatus);
-      }
-
-      // Filter jasa kirim
-      if (filterJasaKirim !== "semua") {
-        query = query.eq("jasa_kirim", filterJasaKirim);
-      }
-
-      // Filter toko — filter via penjualan_online.toko_id
-      if (filterToko !== "semua") {
-        query = query.eq("penjualan_online.toko_id", parseInt(filterToko));
-      }
-
-      // Search
-      if (searchVal.trim()) {
-        if (searchField === "no_pesanan") query = query.ilike("no_pesanan", `%${searchVal}%`);
-        else if (searchField === "no_resi") query = query.ilike("no_resi", `%${searchVal}%`);
-        else if (searchField === "nama_pembeli") query = query.ilike("nama_pembeli", `%${searchVal}%`);
-      }
-
-      const { data, count, error } = await query;
       if (error) throw error;
 
       const mapped: Order[] = (data || []).map((r: any) => ({
@@ -204,18 +149,48 @@ export default function OrdersPage() {
         toko_id: r.penjualan_online?.toko_online?.id || 0,
       }));
 
-      setOrders(mapped);
-      setTotalCount(count || 0);
+      setAllOrders(mapped);
+
+      // Extract unique jasa kirim
+      const jk = [...new Set(mapped.map(o => o.jasa_kirim).filter(Boolean) as string[])].sort();
+      setJasaKirimList(jk);
     } catch (err: any) {
       showToast("Gagal load data: " + err.message, "error");
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterToko, filterJasaKirim, searchField, searchVal, page]);
+  }, []);
 
-  useEffect(() => { fetchToko(); fetchJasaKirim(); }, [fetchToko, fetchJasaKirim]);
+  const fetchToko = useCallback(async () => {
+    const { data } = await supabase
+      .from("toko_online")
+      .select("id, nama")
+      .eq("platform", "Shopee")
+      .eq("aktif", true)
+      .not("shopee_access_token", "is", null)
+      .order("id");
+    setTokoList(data || []);
+  }, []);
+
+  useEffect(() => { fetchToko(); fetchAll(); }, [fetchToko, fetchAll]);
   useEffect(() => { setPage(1); }, [filterStatus, filterToko, filterJasaKirim, searchVal]);
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Filter client-side
+  const filtered = allOrders.filter(o => {
+    if (filterStatus !== "semua" && o.status_shopee !== filterStatus) return false;
+    if (filterToko !== "semua" && String(o.toko_id) !== filterToko) return false;
+    if (filterJasaKirim !== "semua" && o.jasa_kirim !== filterJasaKirim) return false;
+    if (searchVal.trim()) {
+      const val = searchVal.toLowerCase();
+      if (searchField === "no_pesanan" && !o.no_pesanan?.toLowerCase().includes(val)) return false;
+      if (searchField === "no_resi" && !o.no_resi?.toLowerCase().includes(val)) return false;
+      if (searchField === "nama_pembeli" && !o.nama_pembeli?.toLowerCase().includes(val)) return false;
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const handleSyncAll = async () => {
     setSyncing(true);
@@ -229,8 +204,7 @@ export default function OrdersPage() {
       if (data.success) {
         const total = data.results?.reduce((a: number, r: any) => a + (r.new || 0), 0) || 0;
         showToast(`✓ ${total} pesanan baru disync`);
-        fetchOrders();
-        fetchJasaKirim();
+        fetchAll();
       } else {
         showToast("Gagal sync: " + data.error, "error");
       }
@@ -242,7 +216,7 @@ export default function OrdersPage() {
   };
 
   const handlePrint = () => {
-    const rows = orders.map(o => `
+    const rows = paginated.map(o => `
       <tr>
         <td>${o.no_pesanan}</td>
         <td>${tanggalFmt(o.tanggal_pesanan)}</td>
@@ -270,7 +244,7 @@ export default function OrdersPage() {
       @media print{@page{margin:1cm}}
     </style></head><body>
     <h2>Laporan Pesanan Shopee — Azalea Management</h2>
-    <p>Dicetak: ${new Date().toLocaleString("id-ID")} · ${orders.length} pesanan</p>
+    <p>Dicetak: ${new Date().toLocaleString("id-ID")} · ${paginated.length} pesanan</p>
     <table><thead><tr>
       <th>No. Pesanan</th><th>Tanggal</th><th>Pembeli</th><th>Produk</th>
       <th>Qty</th><th>Total</th><th>Jasa Kirim</th><th>No. Resi</th>
@@ -278,10 +252,8 @@ export default function OrdersPage() {
     </tr></thead><tbody>${rows}</tbody></table>
     </body></html>`);
     w.document.close();
-    setTimeout(() => { w.print(); }, 300);
+    setTimeout(() => w.print(), 300);
   };
-
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   const inputStyle: React.CSSProperties = {
     padding: "8px 12px",
@@ -316,33 +288,27 @@ export default function OrdersPage() {
           <div>
             <h1 style={{ fontSize:22, fontWeight:800, color:C.text, margin:0 }}>Pesanan Shopee</h1>
             <p style={{ fontSize:12, color:C.muted, fontFamily:C.fontMono, margin:"4px 0 0" }}>
-              {tokoList.length} toko · {totalCount.toLocaleString("id-ID")} pesanan
+              {tokoList.length} toko · {filtered.length.toLocaleString("id-ID")} pesanan
             </p>
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <button onClick={handlePrint} style={{ ...inputStyle, cursor:"pointer", fontWeight:700 }}>
               🖨️ Print
             </button>
-            <button
-              onClick={handleSyncAll} disabled={syncing}
-              style={{
-                padding:"8px 16px",
-                background:`linear-gradient(135deg,${C.accentDark},${C.accent})`,
-                border:"none",color:"#fff",borderRadius:8,
-                cursor:"pointer",fontSize:13,fontWeight:700,
-                fontFamily:C.fontSans,opacity:syncing?0.7:1,
-              }}
-            >{syncing ? "⏳ Syncing..." : "↻ Sync Semua"}</button>
+            <button onClick={handleSyncAll} disabled={syncing} style={{
+              padding:"8px 16px",
+              background:`linear-gradient(135deg,${C.accentDark},${C.accent})`,
+              border:"none",color:"#fff",borderRadius:8,
+              cursor:"pointer",fontSize:13,fontWeight:700,
+              fontFamily:C.fontSans,opacity:syncing?0.7:1,
+            }}>{syncing ? "⏳ Syncing..." : "↻ Sync Semua"}</button>
           </div>
         </div>
 
         {/* Search */}
-        <div className="no-print" style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center" }}>
-          <select
-            value={searchField}
-            onChange={e => setSearchField(e.target.value)}
-            style={{ ...inputStyle, cursor:"pointer", minWidth:140 }}
-          >
+        <div className="no-print" style={{ display:"flex", gap:8, marginBottom:14, alignItems:"center" }}>
+          <select value={searchField} onChange={e => setSearchField(e.target.value)}
+            style={{ ...inputStyle, cursor:"pointer", minWidth:140 }}>
             {SEARCH_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
           <input
@@ -352,48 +318,37 @@ export default function OrdersPage() {
             style={{ ...inputStyle, width:280 }}
           />
           {searchVal && (
-            <button onClick={() => setSearchVal("")} style={{ ...inputStyle, cursor:"pointer", color:C.muted }}>✕</button>
+            <button onClick={()=>setSearchVal("")} style={{ ...inputStyle, cursor:"pointer", color:C.muted }}>✕</button>
           )}
         </div>
 
         {/* Filter berlapis */}
         <div className="no-print" style={{
-          background: C.card,
-          border: `1px solid ${C.border}`,
-          borderRadius: 12, padding: "14px 16px",
-          marginBottom: 20,
+          background:C.card, border:`1px solid ${C.border}`,
+          borderRadius:12, padding:"14px 16px", marginBottom:20,
         }}>
           <PillFilterRow
             label="Toko"
-            options={[{ key:"semua", label:"Semua" }, ...tokoList.map(t => ({ key:String(t.id), label:t.nama }))]}
-            selected={filterToko}
-            onSelect={setFilterToko}
-            C={C} isDark={isDark}
+            options={[{key:"semua",label:"Semua"}, ...tokoList.map(t=>({key:String(t.id),label:t.nama}))]}
+            selected={filterToko} onSelect={setFilterToko} C={C}
           />
           <PillFilterRow
             label="Jasa Kirim"
-            options={[{ key:"semua", label:"Semua" }, ...jasaKirimList.map(j => ({ key:j, label:j }))]}
-            selected={filterJasaKirim}
-            onSelect={setFilterJasaKirim}
-            C={C} isDark={isDark}
+            options={[{key:"semua",label:"Semua"}, ...jasaKirimList.map(j=>({key:j,label:j}))]}
+            selected={filterJasaKirim} onSelect={setFilterJasaKirim} C={C}
           />
           <PillFilterRow
             label="Status"
             options={STATUS_TABS}
-            selected={filterStatus}
-            onSelect={setFilterStatus}
-            C={C} isDark={isDark}
+            selected={filterStatus} onSelect={setFilterStatus} C={C}
           />
         </div>
 
         {/* Table */}
         <div style={{
-          background:C.card,
-          border:`1px solid ${C.border}`,
-          borderRadius:14, overflow:"hidden",
-          boxShadow:C.shadow,
+          background:C.card, border:`1px solid ${C.border}`,
+          borderRadius:14, overflow:"hidden", boxShadow:C.shadow,
         }}>
-          {/* Header */}
           <div style={{
             display:"grid",
             gridTemplateColumns:"1fr 100px 140px 130px 60px 110px 130px 120px",
@@ -415,9 +370,9 @@ export default function OrdersPage() {
 
           {loading ? (
             <div style={{padding:40,textAlign:"center",color:C.muted,fontFamily:C.fontMono}}>Memuat...</div>
-          ) : orders.length === 0 ? (
+          ) : paginated.length === 0 ? (
             <div style={{padding:40,textAlign:"center",color:C.muted,fontFamily:C.fontMono}}>Tidak ada pesanan</div>
-          ) : orders.map(order => {
+          ) : paginated.map(order => {
             const sc = STATUS_COLORS[order.status_shopee || ""];
             return (
               <div key={order.id} className="order-row" style={{

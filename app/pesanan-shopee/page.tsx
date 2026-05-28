@@ -68,7 +68,7 @@ function PillFilterRow({ label, options, selected, onSelect, C }: {
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, minWidth: 80, letterSpacing: 0.5 }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, minWidth: 80 }}>{label}</span>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {options.map(opt => {
           const active = selected === opt.key;
@@ -77,12 +77,9 @@ function PillFilterRow({ label, options, selected, onSelect, C }: {
               padding: "4px 12px",
               background: active ? `${C.accent}20` : "transparent",
               border: `1.5px solid ${active ? C.accent : C.border}`,
-              borderRadius: 20,
-              color: active ? C.accent : C.muted,
-              cursor: "pointer", fontSize: 12,
-              fontWeight: active ? 700 : 500,
-              fontFamily: C.fontSans,
-              transition: "all 0.15s",
+              borderRadius: 20, color: active ? C.accent : C.muted,
+              cursor: "pointer", fontSize: 12, fontWeight: active ? 700 : 500,
+              fontFamily: C.fontSans, transition: "all 0.15s",
             }}>{opt.label}</button>
           );
         })}
@@ -117,41 +114,41 @@ export default function OrdersPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      // Ambil semua data tanpa filter dulu — max 2000 rows
-      const { data, error } = await supabase
-        .from("detail_penjualan_online")
-        .select(`
-          id, no_pesanan, tanggal_pesanan, no_resi, sku, qty,
-          harga_satuan, total_pembayaran, status_shopee,
-          nama_pembeli, jasa_kirim,
-          stok_barang(nama_produk),
-          penjualan_online(toko_id, toko_online(id, nama))
-        `)
-        .order("tanggal_pesanan", { ascending: false })
-        .limit(2000);
+      // Fetch toko dan orders sekaligus
+      const [tokoRes, ordersRes, penjualanRes] = await Promise.all([
+        supabase.from("toko_online").select("id, nama").eq("platform", "Shopee").eq("aktif", true).not("shopee_access_token", "is", null).order("id"),
+        supabase.from("detail_penjualan_online").select("id, no_pesanan, tanggal_pesanan, no_resi, sku, qty, harga_satuan, total_pembayaran, status_shopee, nama_pembeli, jasa_kirim, penjualan_online_id, stok_barang(nama_produk)").order("tanggal_pesanan", { ascending: false }).limit(2000),
+        supabase.from("penjualan_online").select("id, toko_id"),
+      ]);
 
-      if (error) throw error;
+      const tokoData: Toko[] = tokoRes.data || [];
+      setTokoList(tokoData);
 
-      const mapped: Order[] = (data || []).map((r: any) => ({
-        id: r.id,
-        no_pesanan: r.no_pesanan,
-        tanggal_pesanan: r.tanggal_pesanan,
-        no_resi: r.no_resi,
-        sku: r.sku,
-        qty: r.qty,
-        harga_satuan: r.harga_satuan,
-        total_pembayaran: r.total_pembayaran,
-        status_shopee: r.status_shopee,
-        nama_pembeli: r.nama_pembeli,
-        jasa_kirim: r.jasa_kirim,
-        nama_produk: r.stok_barang?.nama_produk || r.sku,
-        nama_toko: r.penjualan_online?.toko_online?.nama || "-",
-        toko_id: r.penjualan_online?.toko_online?.id || 0,
-      }));
+      // Build lookup maps
+      const tokoMap = new Map<number, string>(tokoData.map(t => [t.id, t.nama]));
+      const penjualanMap = new Map<number, number>((penjualanRes.data || []).map((p: any) => [p.id, p.toko_id]));
+
+      const mapped: Order[] = (ordersRes.data || []).map((r: any) => {
+        const tokoId = penjualanMap.get(r.penjualan_online_id) || 0;
+        return {
+          id: r.id,
+          no_pesanan: r.no_pesanan,
+          tanggal_pesanan: r.tanggal_pesanan,
+          no_resi: r.no_resi,
+          sku: r.sku,
+          qty: r.qty,
+          harga_satuan: r.harga_satuan,
+          total_pembayaran: r.total_pembayaran,
+          status_shopee: r.status_shopee,
+          nama_pembeli: r.nama_pembeli,
+          jasa_kirim: r.jasa_kirim,
+          nama_produk: (r.stok_barang as any)?.nama_produk || r.sku,
+          nama_toko: tokoMap.get(tokoId) || "-",
+          toko_id: tokoId,
+        };
+      });
 
       setAllOrders(mapped);
-
-      // Extract unique jasa kirim
       const jk = [...new Set(mapped.map(o => o.jasa_kirim).filter(Boolean) as string[])].sort();
       setJasaKirimList(jk);
     } catch (err: any) {
@@ -161,21 +158,9 @@ export default function OrdersPage() {
     }
   }, []);
 
-  const fetchToko = useCallback(async () => {
-    const { data } = await supabase
-      .from("toko_online")
-      .select("id, nama")
-      .eq("platform", "Shopee")
-      .eq("aktif", true)
-      .not("shopee_access_token", "is", null)
-      .order("id");
-    setTokoList(data || []);
-  }, []);
-
-  useEffect(() => { fetchToko(); fetchAll(); }, [fetchToko, fetchAll]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
   useEffect(() => { setPage(1); }, [filterStatus, filterToko, filterJasaKirim, searchVal]);
 
-  // Filter client-side
   const filtered = allOrders.filter(o => {
     if (filterStatus !== "semua" && o.status_shopee !== filterStatus) return false;
     if (filterToko !== "semua" && String(o.toko_id) !== filterToko) return false;
@@ -196,8 +181,7 @@ export default function OrdersPage() {
     setSyncing(true);
     try {
       const res = await fetch("/api/shopee/sync-orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       const data = await res.json();
@@ -205,52 +189,33 @@ export default function OrdersPage() {
         const total = data.results?.reduce((a: number, r: any) => a + (r.new || 0), 0) || 0;
         showToast(`✓ ${total} pesanan baru disync`);
         fetchAll();
-      } else {
-        showToast("Gagal sync: " + data.error, "error");
-      }
+      } else showToast("Gagal sync: " + data.error, "error");
     } catch (err: any) {
       showToast("Gagal sync: " + err.message, "error");
-    } finally {
-      setSyncing(false);
-    }
+    } finally { setSyncing(false); }
   };
 
   const handlePrint = () => {
-    const rows = paginated.map(o => `
-      <tr>
-        <td>${o.no_pesanan}</td>
-        <td>${tanggalFmt(o.tanggal_pesanan)}</td>
-        <td>${o.nama_pembeli || "-"}</td>
-        <td>${o.nama_produk}</td>
-        <td style="text-align:center">${o.qty}</td>
-        <td style="text-align:right">${rupiahFmt(o.total_pembayaran)}</td>
-        <td>${o.jasa_kirim || "-"}</td>
-        <td>${o.no_resi || "-"}</td>
-        <td>${o.nama_toko}</td>
-        <td>${o.status_shopee || "-"}</td>
-      </tr>`).join("");
-
+    const rows = paginated.map(o => `<tr>
+      <td>${o.no_pesanan}</td><td>${tanggalFmt(o.tanggal_pesanan)}</td>
+      <td>${o.nama_pembeli||"-"}</td><td>${o.nama_produk}</td>
+      <td style="text-align:center">${o.qty}</td>
+      <td style="text-align:right">${rupiahFmt(o.total_pembayaran)}</td>
+      <td>${o.jasa_kirim||"-"}</td><td>${o.no_resi||"-"}</td>
+      <td>${o.nama_toko}</td><td>${o.status_shopee||"-"}</td>
+    </tr>`).join("");
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Pesanan Shopee — Azalea</title>
-    <style>
-      body{font-family:Arial,sans-serif;font-size:11px;margin:16px}
-      h2{font-size:14px;margin-bottom:4px}p{font-size:11px;color:#666;margin-bottom:12px}
-      table{width:100%;border-collapse:collapse}
-      th{background:#f3f4f6;padding:6px 8px;text-align:left;font-size:10px;border:1px solid #e5e7eb}
-      td{padding:5px 8px;border:1px solid #e5e7eb;vertical-align:top}
-      tr:nth-child(even){background:#f9fafb}
-      @media print{@page{margin:1cm}}
-    </style></head><body>
-    <h2>Laporan Pesanan Shopee — Azalea Management</h2>
-    <p>Dicetak: ${new Date().toLocaleString("id-ID")} · ${paginated.length} pesanan</p>
-    <table><thead><tr>
-      <th>No. Pesanan</th><th>Tanggal</th><th>Pembeli</th><th>Produk</th>
-      <th>Qty</th><th>Total</th><th>Jasa Kirim</th><th>No. Resi</th>
-      <th>Toko</th><th>Status</th>
-    </tr></thead><tbody>${rows}</tbody></table>
-    </body></html>`);
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pesanan Shopee</title>
+    <style>body{font-family:Arial,sans-serif;font-size:11px;margin:16px}table{width:100%;border-collapse:collapse}
+    th{background:#f3f4f6;padding:6px 8px;font-size:10px;border:1px solid #e5e7eb;text-align:left}
+    td{padding:5px 8px;border:1px solid #e5e7eb}tr:nth-child(even){background:#f9fafb}
+    @media print{@page{margin:1cm}}</style></head><body>
+    <h2 style="font-size:14px;margin-bottom:4px">Pesanan Shopee — Azalea</h2>
+    <p style="font-size:11px;color:#666;margin-bottom:12px">Dicetak: ${new Date().toLocaleString("id-ID")} · ${paginated.length} pesanan</p>
+    <table><thead><tr><th>No. Pesanan</th><th>Tanggal</th><th>Pembeli</th><th>Produk</th>
+    <th>Qty</th><th>Total</th><th>Jasa Kirim</th><th>No. Resi</th><th>Toko</th><th>Status</th>
+    </tr></thead><tbody>${rows}</tbody></table></body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 300);
   };
@@ -258,137 +223,96 @@ export default function OrdersPage() {
   const inputStyle: React.CSSProperties = {
     padding: "8px 12px",
     background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-    border: `1.5px solid ${C.border}`,
-    borderRadius: 8, color: C.text,
-    fontFamily: C.fontSans, fontSize: 13, outline: "none",
+    border: `1.5px solid ${C.border}`, borderRadius: 8,
+    color: C.text, fontFamily: C.fontSans, fontSize: 13, outline: "none",
   };
 
   return (
     <Sidebar pageTitle="Pesanan Shopee" pageSubtitle="Order management semua toko">
       <style>{`
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-        .order-row:hover{background:${isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"}!important}
+        .order-row:hover{background:${isDark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"}!important}
         @media print{.no-print{display:none!important}}
       `}</style>
 
       {toast && (
-        <div style={{
-          position:"fixed",top:20,right:20,zIndex:9999,
-          padding:"12px 20px",borderRadius:10,
-          background:toast.type==="success"?C.green:C.red,
-          color:"#fff",fontSize:13,fontWeight:700,
-          boxShadow:C.shadowMd,animation:"fadeUp 0.2s ease",
-        }}>{toast.msg}</div>
+        <div style={{position:"fixed",top:20,right:20,zIndex:9999,padding:"12px 20px",borderRadius:10,
+          background:toast.type==="success"?C.green:C.red,color:"#fff",fontSize:13,fontWeight:700,
+          boxShadow:C.shadowMd,animation:"fadeUp 0.2s ease"}}>{toast.msg}</div>
       )}
 
       <div style={{ padding: "24px 28px", animation: "fadeUp 0.3s ease" }}>
-
         {/* Header */}
-        <div className="no-print" style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
+        <div className="no-print" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
-            <h1 style={{ fontSize:22, fontWeight:800, color:C.text, margin:0 }}>Pesanan Shopee</h1>
-            <p style={{ fontSize:12, color:C.muted, fontFamily:C.fontMono, margin:"4px 0 0" }}>
+            <h1 style={{fontSize:22,fontWeight:800,color:C.text,margin:0}}>Pesanan Shopee</h1>
+            <p style={{fontSize:12,color:C.muted,fontFamily:C.fontMono,margin:"4px 0 0"}}>
               {tokoList.length} toko · {filtered.length.toLocaleString("id-ID")} pesanan
             </p>
           </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={handlePrint} style={{ ...inputStyle, cursor:"pointer", fontWeight:700 }}>
-              🖨️ Print
-            </button>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={handlePrint} style={{...inputStyle,cursor:"pointer",fontWeight:700}}>🖨️ Print</button>
             <button onClick={handleSyncAll} disabled={syncing} style={{
-              padding:"8px 16px",
-              background:`linear-gradient(135deg,${C.accentDark},${C.accent})`,
-              border:"none",color:"#fff",borderRadius:8,
-              cursor:"pointer",fontSize:13,fontWeight:700,
+              padding:"8px 16px",background:`linear-gradient(135deg,${C.accentDark},${C.accent})`,
+              border:"none",color:"#fff",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:700,
               fontFamily:C.fontSans,opacity:syncing?0.7:1,
-            }}>{syncing ? "⏳ Syncing..." : "↻ Sync Semua"}</button>
+            }}>{syncing?"⏳ Syncing...":"↻ Sync Semua"}</button>
           </div>
         </div>
 
         {/* Search */}
-        <div className="no-print" style={{ display:"flex", gap:8, marginBottom:14, alignItems:"center" }}>
-          <select value={searchField} onChange={e => setSearchField(e.target.value)}
-            style={{ ...inputStyle, cursor:"pointer", minWidth:140 }}>
-            {SEARCH_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+        <div className="no-print" style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+          <select value={searchField} onChange={e=>setSearchField(e.target.value)}
+            style={{...inputStyle,cursor:"pointer",minWidth:140}}>
+            {SEARCH_FIELDS.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
-          <input
-            value={searchVal}
-            onChange={e => setSearchVal(e.target.value)}
+          <input value={searchVal} onChange={e=>setSearchVal(e.target.value)}
             placeholder={`Cari ${SEARCH_FIELDS.find(f=>f.key===searchField)?.label}...`}
-            style={{ ...inputStyle, width:280 }}
-          />
-          {searchVal && (
-            <button onClick={()=>setSearchVal("")} style={{ ...inputStyle, cursor:"pointer", color:C.muted }}>✕</button>
-          )}
+            style={{...inputStyle,width:280}} />
+          {searchVal && <button onClick={()=>setSearchVal("")} style={{...inputStyle,cursor:"pointer",color:C.muted}}>✕</button>}
         </div>
 
         {/* Filter berlapis */}
-        <div className="no-print" style={{
-          background:C.card, border:`1px solid ${C.border}`,
-          borderRadius:12, padding:"14px 16px", marginBottom:20,
-        }}>
-          <PillFilterRow
-            label="Toko"
-            options={[{key:"semua",label:"Semua"}, ...tokoList.map(t=>({key:String(t.id),label:t.nama}))]}
-            selected={filterToko} onSelect={setFilterToko} C={C}
-          />
-          <PillFilterRow
-            label="Jasa Kirim"
-            options={[{key:"semua",label:"Semua"}, ...jasaKirimList.map(j=>({key:j,label:j}))]}
-            selected={filterJasaKirim} onSelect={setFilterJasaKirim} C={C}
-          />
-          <PillFilterRow
-            label="Status"
-            options={STATUS_TABS}
-            selected={filterStatus} onSelect={setFilterStatus} C={C}
-          />
+        <div className="no-print" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:20}}>
+          <PillFilterRow label="Toko"
+            options={[{key:"semua",label:"Semua"},...tokoList.map(t=>({key:String(t.id),label:t.nama}))]}
+            selected={filterToko} onSelect={setFilterToko} C={C} />
+          <PillFilterRow label="Jasa Kirim"
+            options={[{key:"semua",label:"Semua"},...jasaKirimList.map(j=>({key:j,label:j}))]}
+            selected={filterJasaKirim} onSelect={setFilterJasaKirim} C={C} />
+          <PillFilterRow label="Status" options={STATUS_TABS}
+            selected={filterStatus} onSelect={setFilterStatus} C={C} />
         </div>
 
         {/* Table */}
-        <div style={{
-          background:C.card, border:`1px solid ${C.border}`,
-          borderRadius:14, overflow:"hidden", boxShadow:C.shadow,
-        }}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:C.shadow}}>
           <div style={{
-            display:"grid",
-            gridTemplateColumns:"1fr 100px 140px 130px 60px 110px 130px 120px",
-            padding:"10px 16px",
-            background:isDark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.03)",
-            borderBottom:`1px solid ${C.border}`,
-            fontSize:10,fontWeight:700,color:C.muted,
+            display:"grid",gridTemplateColumns:"1fr 100px 140px 130px 60px 110px 130px 120px",
+            padding:"10px 16px",background:isDark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.03)",
+            borderBottom:`1px solid ${C.border}`,fontSize:10,fontWeight:700,color:C.muted,
             fontFamily:C.fontMono,letterSpacing:1,textTransform:"uppercase" as const,
           }}>
-            <span>Pembeli / Pesanan</span>
-            <span>Tanggal</span>
-            <span>Produk</span>
-            <span>Toko</span>
-            <span style={{textAlign:"center"}}>Qty</span>
-            <span style={{textAlign:"right"}}>Total</span>
-            <span>Jasa Kirim</span>
-            <span>Status</span>
+            <span>Pembeli / Pesanan</span><span>Tanggal</span><span>Produk</span><span>Toko</span>
+            <span style={{textAlign:"center"}}>Qty</span><span style={{textAlign:"right"}}>Total</span>
+            <span>Jasa Kirim</span><span>Status</span>
           </div>
 
           {loading ? (
             <div style={{padding:40,textAlign:"center",color:C.muted,fontFamily:C.fontMono}}>Memuat...</div>
-          ) : paginated.length === 0 ? (
+          ) : paginated.length===0 ? (
             <div style={{padding:40,textAlign:"center",color:C.muted,fontFamily:C.fontMono}}>Tidak ada pesanan</div>
           ) : paginated.map(order => {
-            const sc = STATUS_COLORS[order.status_shopee || ""];
+            const sc = STATUS_COLORS[order.status_shopee||""];
             return (
               <div key={order.id} className="order-row" style={{
-                display:"grid",
-                gridTemplateColumns:"1fr 100px 140px 130px 60px 110px 130px 120px",
-                padding:"12px 16px",
-                borderBottom:`1px solid ${C.border}`,
-                alignItems:"center",
-                transition:"background 0.1s",
+                display:"grid",gridTemplateColumns:"1fr 100px 140px 130px 60px 110px 130px 120px",
+                padding:"12px 16px",borderBottom:`1px solid ${C.border}`,
+                alignItems:"center",transition:"background 0.1s",
               }}>
                 <div>
                   <div style={{fontSize:13,fontWeight:700,color:C.text}}>{order.nama_pembeli||"—"}</div>
                   <div style={{fontSize:10,color:C.muted,fontFamily:C.fontMono,marginTop:2}}>{order.no_pesanan}</div>
-                  {order.no_resi && (
-                    <div style={{fontSize:10,color:C.accent,fontFamily:C.fontMono,marginTop:1}}>📦 {order.no_resi}</div>
-                  )}
+                  {order.no_resi&&<div style={{fontSize:10,color:C.accent,fontFamily:C.fontMono,marginTop:1}}>📦 {order.no_resi}</div>}
                 </div>
                 <div style={{fontSize:12,color:C.textMid,fontFamily:C.fontMono}}>{tanggalFmt(order.tanggal_pesanan)}</div>
                 <div>
@@ -400,10 +324,8 @@ export default function OrdersPage() {
                 <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:C.green,fontFamily:C.fontMono}}>{rupiahFmt(order.total_pembayaran)}</div>
                 <div style={{fontSize:11,color:C.textMid}}>{order.jasa_kirim||"—"}</div>
                 <div>
-                  <span style={{
-                    fontSize:10,padding:"3px 8px",borderRadius:12,
-                    background:sc?.bg||C.border,
-                    color:sc?.color||C.muted,
+                  <span style={{fontSize:10,padding:"3px 8px",borderRadius:12,
+                    background:sc?.bg||C.border,color:sc?.color||C.muted,
                     fontWeight:700,fontFamily:C.fontMono,
                   }}>{order.status_shopee||"—"}</span>
                 </div>
@@ -413,7 +335,7 @@ export default function OrdersPage() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {totalPages>1&&(
           <div className="no-print" style={{display:"flex",justifyContent:"center",gap:6,marginTop:20,alignItems:"center"}}>
             <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}
               style={{...inputStyle,cursor:page===1?"not-allowed":"pointer",opacity:page===1?0.4:1}}>← Prev</button>

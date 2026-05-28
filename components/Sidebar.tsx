@@ -21,6 +21,7 @@ const MENU_GROUPS: MenuGroup[] = [
       { label: "Kas",                href: "/kas",             icon: "💰" },
       { label: "Fee Platform",       href: "/fee-platform",    icon: "💸" },
       { label: "Rekap Saldo",        href: "/rekap-saldo",     icon: "💳" },
+      { label: "Pesanan Shopee", href: "/pesanan-shopee", icon: "🛒" },
     ],
   },
   {

@@ -15,13 +15,25 @@ const MENU_GROUPS: MenuGroup[] = [
   {
     group: "Transaksi",
     items: [
-      { label: "Penjualan",          href: "/penjualan",       icon: "🛍️" },
+      { label: "Penjualan Offline",  href: "/penjualan",       icon: "🛍️" },
       { label: "Pembelian Bahan",    href: "/pembelian-bahan", icon: "🧪" },
       { label: "Pembelian Reseller", href: "/pembelian",       icon: "📦" },
       { label: "Kas",                href: "/kas",             icon: "💰" },
       { label: "Fee Platform",       href: "/fee-platform",    icon: "💸" },
       { label: "Rekap Saldo",        href: "/rekap-saldo",     icon: "💳" },
-      { label: "Pesanan Shopee", href: "/pesanan-shopee", icon: "🛒" },
+    ],
+  },
+  {
+    group: "Shopee",
+    items: [
+      { label: "Dashboard", href: "/shopee",          icon: "📊" },
+      { label: "Pesanan",   href: "/shopee/pesanan",  icon: "🛒" },
+      { label: "Ulasan",    href: "/shopee/ulasan",   icon: "💬" },
+      { label: "Performa",  href: "/shopee/performa", icon: "📈" },
+      { label: "Keuangan",  href: "/shopee/keuangan", icon: "💰" },
+      { label: "Retur",     href: "/shopee/retur",    icon: "🔄" },
+      { label: "Stok",      href: "/shopee/stok",     icon: "📦" },
+      { label: "Promosi",   href: "/shopee/promosi",  icon: "🎁" },
     ],
   },
   {
@@ -178,11 +190,19 @@ export default function Sidebar({ children, pageTitle, pageSubtitle, actions }: 
   const derivedTitle = pageTitle || (() => {
     const map: Record<string, string> = {
       "/": "Dashboard", "/dashboard": "Dashboard",
-      "/penjualan": "Penjualan", "/pembelian-bahan": "Pembelian Bahan",
+      "/penjualan": "Penjualan Offline", "/pembelian-bahan": "Pembelian Bahan",
       "/pembelian": "Pembelian Reseller", "/kas": "Kas",
       "/fee-platform": "Fee Platform", "/rekap-saldo": "Rekap Saldo",
       "/produksi": "Produksi", "/penggajian": "Penggajian",
       "/laporan": "Laporan L/R", "/admin": "Admin",
+      "/shopee": "Shopee Dashboard",
+      "/shopee/pesanan": "Shopee · Pesanan",
+      "/shopee/ulasan": "Shopee · Ulasan",
+      "/shopee/performa": "Shopee · Performa",
+      "/shopee/keuangan": "Shopee · Keuangan",
+      "/shopee/retur": "Shopee · Retur",
+      "/shopee/stok": "Shopee · Stok",
+      "/shopee/promosi": "Shopee · Promosi",
     };
     return map[pathname] || "Dashboard";
   })();
@@ -197,8 +217,12 @@ export default function Sidebar({ children, pageTitle, pageSubtitle, actions }: 
     );
     if (item.roles && (!role || !item.roles.includes(role))) return null;
 
-    const active = item.href === "/dashboard" || item.href === "/"
-      ? pathname === "/dashboard" || pathname === "/"
+    // Parent routes that also have child routes (e.g. /shopee + /shopee/pesanan)
+    // must match the pathname exactly, otherwise the parent appears active on
+    // every child page.
+    const EXACT_ONLY = new Set(["/dashboard", "/", "/shopee"]);
+    const active = EXACT_ONLY.has(item.href)
+      ? pathname === item.href
       : pathname === item.href || pathname?.startsWith(item.href + "/");
 
     return (

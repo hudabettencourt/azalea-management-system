@@ -1,7 +1,16 @@
 // app/api/shopee/sync-orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { shopeeApi, refreshAccessToken } from "@/lib/shopee/helper";
+import { sendTelegram, tgEscape, formatRupiah } from "@/lib/telegram";
 import { createClient } from "@supabase/supabase-js";
+
+type NewOrderNotif = {
+  buyer: string | null;
+  sku: string;
+  qty: number;
+  total: number;
+  jasaKirim: string | null;
+};
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -153,6 +162,7 @@ async function syncToko(toko: any) {
   let newCount = 0, updatedCount = 0, skippedSku = 0;
   const touchedHeaders = new Set<number>();
   const stokDelta = new Map<number, number>();
+  const newOrderNotifs: NewOrderNotif[] = [];
 
   for (const order of orders) {
     const tanggal = wibDate(order.create_time);
@@ -216,6 +226,13 @@ async function syncToko(toko: any) {
       if (!NON_STOCK_STATUSES.has(status)) {
         stokDelta.set(matched.id, (stokDelta.get(matched.id) || 0) + qty);
       }
+      newOrderNotifs.push({
+        buyer: namaPembeli,
+        sku,
+        qty,
+        total,
+        jasaKirim,
+      });
     }
   }
 
@@ -239,6 +256,21 @@ async function syncToko(toko: any) {
       qty: totalKeluar,
       keterangan: `Sync Shopee ${toko.nama} (API)`,
     }]);
+  }
+
+  // Telegram notif: one message per new order. Spaced 250 ms to avoid
+  // Telegram's per-chat flood limits. Failures inside sendTelegram are
+  // swallowed there, so they can't break the sync result.
+  for (let i = 0; i < newOrderNotifs.length; i++) {
+    const n = newOrderNotifs[i];
+    const lines = [
+      "🛒 <b>Pesanan Baru!</b>",
+      `[${tgEscape(toko.nama)}] ${tgEscape(n.buyer || "-")}`,
+      `${tgEscape(n.sku)} x${n.qty} — ${formatRupiah(n.total)}`,
+    ];
+    if (n.jasaKirim) lines.push(tgEscape(n.jasaKirim));
+    await sendTelegram(lines.join("\n"));
+    if (i < newOrderNotifs.length - 1) await new Promise(r => setTimeout(r, 250));
   }
 
   return { toko: toko.nama, status: "ok", new: newCount, updated: updatedCount, skipped_sku: skippedSku, total_fetched: orders.length };

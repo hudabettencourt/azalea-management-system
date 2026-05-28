@@ -86,14 +86,14 @@ console.log("[debug stok existing]", JSON.stringify(item?.stock_info), JSON.stri
     const modelRes = await shopeeApi("/api/v2/product/get_model_list", shopId, accessToken, { item_id: itemId });
     if (modelRes.error) return 0;
     const model = (modelRes.response?.model || []).find((m: any) => m.model_id === modelId);
-    return model?.stock_info?.[0]?.current_stock
-      ?? model?.stock_info_v2?.[0]?.seller_stock?.[0]?.stock
-      ?? 0;
+    return model?.stock_info_v2?.seller_stock?.[0]?.stock
+  ?? model?.stock_info?.[0]?.current_stock
+  ?? 0;
   }
 
-  return item.stock_info?.[0]?.current_stock
-    ?? item.stock_info_v2?.[0]?.seller_stock?.[0]?.stock
-    ?? 0;
+  return item.stock_info_v2?.seller_stock?.[0]?.stock
+  ?? item.stock_info?.[0]?.current_stock
+  ?? 0;
 }
 
 async function resolveSkuForToko(

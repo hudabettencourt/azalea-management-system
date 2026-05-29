@@ -28,7 +28,7 @@ const MENU_GROUPS: MenuGroup[] = [
     items: [
       { label: "Dashboard", href: "/shopee",          icon: "📊" },
       { label: "Pesanan",   href: "/shopee/pesanan",  icon: "🛒" },
-      { label: "Ulasan",    href: "/shopee/ulasan",   icon: "💬" },
+     // { label: "Ulasan",    href: "/shopee/ulasan",   icon: "💬" },
       { label: "Performa",  href: "/shopee/performa", icon: "📈" },
       { label: "Keuangan",  href: "/shopee/keuangan", icon: "💰" },
       { label: "Retur",     href: "/shopee/retur",    icon: "🔄" },

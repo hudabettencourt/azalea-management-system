@@ -2,7 +2,7 @@
 
 // /shopee/keuangan — Saldo + Escrow + Pencairan.
 // Tugas 6: three tabs.
-// - Saldo: get_wallet_balance per toko
+// - Saldo: get_income_overview per toko
 // - Escrow: get_escrow_detail per COMPLETED order_sn
 // - Pencairan: get_wallet_transactions, with "Catat ke Kas" (dedup via
 //   [SHOPEE_TXN:{id}] in kas.keterangan)
@@ -72,8 +72,6 @@ const unixToWIB = (unix: number) => {
   return new Date(unix * 1000).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
 };
 
-// Best-effort field picker — Shopee's wallet/escrow responses use different
-// names across API versions. Walks common keys and returns the first match.
 function pickNumber(obj: any, keys: string[]): number | null {
   if (!obj) return null;
   for (const k of keys) {
@@ -93,11 +91,19 @@ function pickString(obj: any, keys: string[]): string | null {
   return null;
 }
 
+// Reads get_income_overview response:
+// { response: { total_income: { released_amount, escrow_amount, ... } } }
 function parseBalance(raw: any): { tersedia: number | null; pending: number | null } {
   const resp = raw?.response ?? raw;
+  const income = resp?.total_income ?? resp;
   return {
-    tersedia: pickNumber(resp, ["seller_balance", "withdrawable_amount", "wallet_balance", "available_balance"]),
-    pending: pickNumber(resp, ["escrow_amount", "pending_amount", "frozen_amount", "settlement_amount"]),
+    tersedia: pickNumber(income, [
+      "released_amount",
+      "seller_balance", "withdrawable_amount", "wallet_balance", "available_balance",
+    ]),
+    pending: pickNumber(income, [
+      "escrow_amount", "pending_amount", "frozen_amount", "settlement_amount",
+    ]),
   };
 }
 
@@ -411,7 +417,6 @@ function PencairanTab({ C }: { C: any }) {
       setRows(all);
       setTokoOpts(opts);
 
-      // Check which transactions are already recorded in kas
       if (all.length > 0) {
         const { data: kasRows } = await supabase
           .from("kas")
@@ -592,7 +597,6 @@ export default function ShopeeKeuanganPage() {
   return (
     <Sidebar pageTitle="Shopee · Keuangan" pageSubtitle="Escrow, saldo, pencairan">
       <div style={{ padding: "24px 28px" }}>
-        {/* Auto-API banner */}
         {tokoConnectedCount !== null && tokoConnectedCount > 0 && (
           <div style={{
             padding: "10px 14px", background: C.yellowDim, color: C.yellow,
@@ -604,7 +608,6 @@ export default function ShopeeKeuanganPage() {
           </div>
         )}
 
-        {/* Tab bar */}
         <div style={{ display: "flex", gap: 6, marginBottom: 18, borderBottom: `1px solid ${C.border}` }}>
           {TABS.map(t => {
             const active = tab === t.key;

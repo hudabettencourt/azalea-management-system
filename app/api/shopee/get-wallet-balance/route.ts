@@ -1,6 +1,6 @@
 // app/api/shopee/get-wallet-balance/route.ts
 // GET /api/shopee/get-wallet-balance?toko_id=1 (omit for all toko)
-// Wraps /api/v2/payment/get_payout_info.
+// Wraps /api/v2/payment/get_wallet_transaction_list.
 import { NextRequest, NextResponse } from "next/server";
 import { shopeeApi } from "@/lib/shopee/helper";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
@@ -16,8 +16,12 @@ export async function GET(req: NextRequest) {
       const toko = tokoList[i];
       try {
         const accessToken = await getValidToken(toko);
-        const res = await shopeeApi("/api/v2/payment/get_payout_info", toko.shopee_shop_id, accessToken, {});
-        logShopeeResponse("get_payout_info", toko.nama, res);
+        const res = await shopeeApi("/api/v2/payment/get_wallet_transaction_list", toko.shopee_shop_id, accessToken, {
+          wallet_type: 1,
+          page_no: 1,
+          page_size: 1,
+        });
+        logShopeeResponse("get_wallet_transaction_list", toko.nama, res);
         results.push({ toko_id: toko.id, toko: toko.nama, ok: !res.error, raw: res });
       } catch (err: any) {
         results.push({ toko_id: toko.id, toko: toko.nama, ok: false, error: err.message });

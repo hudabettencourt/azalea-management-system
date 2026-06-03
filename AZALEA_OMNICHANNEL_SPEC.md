@@ -4,6 +4,31 @@
 
 ---
 
+## FILOSOFI UTAMA AZALEA
+
+> **"Fitur selengkap BigSeller, semudah Shopee Seller Center"**
+
+- Fitur lengkap dan terintegrasi → referensi BigSeller
+- UI/UX simpel dan familiar → referensi Shopee Seller Center
+- Tidak ada learning curve tinggi untuk staff baru
+- Setiap fitur harus bisa dipakai tanpa training panjang
+- BigSeller terlalu kompleks untuk pengguna baru — Azalea harus terasa intuitif sejak hari pertama
+- Print AWB: HTML `window.print()` via Chrome — sama seperti alur print di Shopee Seller Center, tidak perlu belajar baru
+- **"Zero training policy"** — staff baru harus bisa langsung pakai tanpa dijelaskan. Kalau butuh training, berarti UI-nya harus diperbaiki, bukan staff-nya yang harus belajar lebih keras
+- Bahasa tombol action-oriented dan jelas → "Print Resi" bukan "Cetak Label Pengiriman"
+- Warna + icon intuitif → DROPOFF biru, PICKUP hijau, BELUM CETAK merah
+- Flow linear → step 1 jelas, step 2 jelas, tidak ada pilihan membingungkan
+- Default filter otomatis ke yang paling sering dipakai
+- Setiap halaman maksimal 1-2 aksi utama yang jelas
+
+### Safeguard Wajib di Modul Pesanan (bukan opsional):
+- Badge DROPOFF / PICKUP warna beda per pesanan — tidak bisa terlewat
+- Checklist status cetak per pesanan (sudah cetak / belum cetak)
+- Warning alert kalau ada pesanan READY_TO_SHIP yang belum dicetak resinya
+- Counter "X belum dicetak" di header halaman Pesanan
+
+---
+
 ## PRINSIP ARSITEKTUR
 
 1. **Platform-agnostic** — semua modul tidak boleh hardcode "Shopee". Gunakan `platform: "shopee" | "tiktok" | "lazada"` dari awal.
@@ -96,17 +121,29 @@
 ### Sub-modul: Rekap Packing Harian
 > **Pain point nyata** — sekarang masih hitung manual di kertas setiap hari!
 
-**Fungsi:** Dari semua pesanan yang perlu dikirim, tampilkan total kebutuhan per SKU:
+**Fungsi:** Dari semua pesanan yang perlu dikirim, tampilkan total kebutuhan per SKU. Format simpel — tidak perlu foto produk atau detail per pesanan seperti BigSeller. Cukup SKU + qty.
 
-| SKU | Total Qty | Jumlah Pesanan |
-|---|---|---|
-| SM-500GR | 12 | 10 pesanan |
-| SM-1K | 47 | 32 pesanan |
-| SM-5K | 12 | 8 pesanan |
+**Format print (thermal / kertas biasa):**
+```
+REKAP PACKING
+02 Jun 2026 · Batch Siang (09:00 - 12:00)
+AsdaFood + AzaleaFood.id + ErlinFood + RaizelFood
+================================
+SM-500GR    12 pcs
+SM-1K       47 pcs
+SM-5K       12 pcs
+SM-10K       5 pcs
+================================
+TOTAL       76 pcs · 43 pesanan
+================================
+```
 
-- Auto-generate setelah/bersamaan dengan bulk print resi
-- Bisa di-print (thermal atau kertas biasa)
-- Filter by batch (pagi / siang)
+**Fitur:**
+- Pilih batch: Pagi / Siang / custom rentang waktu
+- Pilih toko: semua atau pilih beberapa
+- Tombol Print → `window.print()` langsung
+- Auto-generate bersamaan dengan bulk print resi
+- Bisa print di thermal Digi atau kertas biasa
 
 ### Sub-modul: Purna Jual (After Sales)
 | Fitur | Verdict | Catatan |
@@ -185,9 +222,10 @@
 - Beli bahan baku dari supplier untuk produksi
 - Terhubung ke HPP produksi
 
-### 4B — Pembelian Reseller (sudah ada)
-- Reseller order produk jadi ke Azalea
-- Terhubung ke piutang offline
+### 4B — Pembelian Produk Jadi (sudah ada, nama lama: "Pembelian Reseller" — perlu di-rename!)
+- Beli produk jadi dari supplier untuk dijual kembali: pilus, cuanki, lidah, dll
+- Azalea hanya produksi siomay sendiri — produk lain beli jadi
+- Perlu rename di: nama modul, UI, dan nama tabel/variabel di codebase
 
 ### 4C — Pembelian / Purchase (belum ada)
 | Fitur | Verdict | Catatan |
@@ -420,3 +458,300 @@ const fetchOrders = (platform: "shopee" | "tiktok" | "lazada") => ...
 - **Excel parsing:** gunakan `parseExcelNumber()` helper untuk angka dengan titik (186.000 = 186000)
 - **Cloudinary:** foto struk/receipt, auto-expiry 3 bulan
 - **Telegram bot:** `@azalea_notif_bot`, chat ID `1551520964` — untuk notif stok + transaksi penting
+
+---
+
+## SHELL REDESIGN — AppShell.tsx
+
+### File yang terlibat:
+- `components/AppShell.tsx` ← **baru, mengganti Sidebar.tsx**
+- `config/navigation.ts` ← **baru, navigasi config terpisah**
+- `context/ThemeContext.tsx` ← tetap dipakai, tidak diubah
+- `app/layout.tsx` ← tetap dipakai, tidak diubah
+
+### File lama yang akan deprecated:
+- `components/Sidebar.tsx` ← diganti AppShell, jangan hapus dulu sampai semua halaman migrasi
+
+### Layout (sudah disetujui via wireframe v2):
+```
+┌────┬──────────────┬─────────────────────────────────┐
+│ 56 │     210      │         flex (main)              │
+│    │              │ [topbar 44px]                    │
+│act │   sidebar    │ [content]                        │
+│bar │ (contextual) │                                  │
+│    │              │                                  │
+├────┴──────────────┴─────────────────────────────────┤
+│              status bar 28px (hijau)                 │
+└──────────────────────────────────────────────────────┘
+```
+
+### Komponen:
+1. **Activity Bar** (56px, kiri) — icon + label per modul utama
+2. **Contextual Sidebar** (210px, collapsible) — sub-menu sesuai modul aktif, grup collapsible
+3. **Top Bar** (44px) — auto breadcrumb + page-specific action buttons + notif + darkmode + avatar
+4. **Status Bar** (28px, bawah, hijau #1a7f64) — Shopee sync info + toko aktif
+
+### Modul di Activity Bar (urutan):
+1. Shopee (ti-shopping-bag)
+2. Produksi (ti-tool)
+3. Pembelian (ti-truck)
+4. Penggajian (ti-users)
+5. Keuangan (ti-wallet)
+6. Laporan (ti-chart-bar)
+7. [spacer]
+8. Admin (ti-settings) ← di bawah
+
+### Navigasi Shopee (lengkap):
+```
+Shopee
+├── Pesanan
+│   ├── Menunggu Diproses
+│   ├── Menunggu Dicetak
+│   ├── Menunggu Pickup
+│   ├── Pesanan Dikirim
+│   ├── Pesanan Selesai
+│   ├── Pesanan Dibatalkan
+│   └── Semua Pesanan
+├── Purna Jual
+│   ├── Proses Retur
+│   ├── Hasil Retur
+│   └── Pengembalian Dana
+├── Produk
+│   ├── Live
+│   ├── Draft
+│   └── Naikkan Produk
+├── Promosi
+│   ├── Voucher & Diskon
+│   └── Flash Sale
+├── Packing & WMS
+│   ├── Rekap Packing
+│   ├── Scan & Bungkus
+│   └── Scan & Kirim
+├── Keuangan
+│   ├── Rekap Saldo
+│   ├── Uang di Jalan
+│   └── Pencairan
+├── Laporan Shopee
+│   ├── Laporan Pesanan
+│   ├── Laporan per SKU
+│   └── Laporan per Toko
+└── Pelanggan
+    ├── Pelanggan Shopee
+    └── Blacklist
+```
+
+### Navigasi ERP:
+```
+Produksi
+├── Produksi → Batch Produksi, HPP per Batch, Bahan Baku
+└── Timbangan → Input Borongan, Rekap Borongan
+
+Pembelian
+├── Bahan Baku → Daftar Pembelian, Purchase Order, Supplier Bahan
+├── Produk Jadi → Daftar Pembelian, Purchase Order, Supplier Produk
+└── Reorder Alert → Saran Pembelian
+
+Penggajian
+├── Gaji → Gaji Harian, Gaji Borongan, Rekap Penggajian
+└── Karyawan → Data Karyawan
+
+Keuangan
+├── Kas → Kas Masuk, Kas Keluar, Rekap Kas
+└── Piutang → Piutang Offline, Piutang Online
+
+Laporan
+├── Keuangan → Laba Rugi, Laporan Toko Online, Laporan Offline
+└── Operasional → Laporan Produksi, Laporan Stok, Rekap Pelanggan
+
+Admin
+├── Master Data → Produk, Bahan Baku, Supplier, Pelanggan Offline, Karyawan
+├── Integrasi → Toko Shopee, TikTok Shop (soon), Lazada (soon)
+└── Sistem → Users, PLU Borongan, Varian Borongan
+```
+
+### Catatan teknis:
+- Gunakan Tabler Icons outline webfont (`<i class="ti ti-...">`) — sudah dipakai di wireframe
+- ThemeContext tetap dipakai (LIGHT/DARK palette sudah bagus)
+- Notifikasi bell pindah ke top bar (sudah ada logikanya di Sidebar.tsx lama)
+- Dark mode toggle pindah ke top bar
+- Avatar tetap di top bar kanan
+- Status bar pakai warna hijau fixed #1a7f64 (bukan dari theme)
+- Platform filter (Shopee/TikTok/Lazada) muncul sebagai pill di dalam halaman, bukan menu utama
+
+---
+
+## STRUKTUR HPP (Harga Pokok Penjualan)
+
+### HPP Offline (produk siomay dijual ke reseller/offline):
+Komponen:
+1. Bahan baku (terigu, ikan, dll) — weighted average
+2. Bahan packing offline (plastik, lakban, staples)
+3. Gaji produksi
+4. Gaji packing offline
+5. Gaji borongan
+6. Gas
+7. Uang makan
+
+### HPP Online (produk siomay dijual via Shopee/marketplace):
+= HPP Offline + tambahan packing online:
+1. Semua komponen HPP Offline di atas
+2. Packing online: kardus, lakban, bubble wrap, kertas resi
+3. Gaji packing online
+
+### Metode costing harga bahan dinamis:
+- **Weighted Average (Rata-rata Tertimbang)** — sudah dipakai, metode yang benar
+- Contoh: terigu beli 10kg @ Rp10.000 + 10kg @ Rp11.000 → rata-rata Rp10.500/kg
+- Setiap produksi pakai harga rata-rata stok saat itu
+- Syarat: pembelian SELALU diinput sebelum produksi (sudah jadi alur Azalea)
+- Berlaku untuk semua bahan baku DAN bahan packing yang harganya fluktuatif
+
+### Catatan implementasi:
+- Bahan packing (plastik, kardus, lakban, bubble, kertas resi, staples) harus masuk sebagai item di `bahan_baku` atau tabel terpisah dengan weighted average costing
+- HPP per batch produksi harus bisa pisahkan komponen offline vs tambahan online
+- Margin/laba dihitung: Harga Jual − HPP (offline atau online sesuai channel)
+
+---
+
+## KALKULASI PROFIT PER PESANAN SHOPEE
+
+> Ini keunggulan terbesar Azalea vs BigSeller — BigSeller tidak tau HPP produksi, Azalea tau semua komponen dari dalam sehingga profit per pesanan bisa benar-benar akurat.
+
+### Formula:
+```
+Harga Jual Pembeli
+− Biaya packing online per pesanan (kardus/bubble/resi) ← per pesanan
+− Fee Shopee (% dari harga jual, beda tiap kategori)
+− Biaya pengiriman (kalau ditanggung seller)
+− Voucher/diskon seller (bukan yang ditanggung Shopee)
+− Biaya COD (kalau ada, ada biaya tambahan)
+────────────────────────────────────────────
+= Pendapatan Bersih per Pesanan
+− HPP Offline (porsi per produk dari batch produksi)
+────────────────────────────────────────────
+= PROFIT BERSIH per Pesanan
+```
+
+### Yang bikin kompleks (harus ditangani):
+- Fee Shopee beda per kategori produk
+- Voucher Shopee vs voucher seller — yang nanggung berbeda
+- Ongkir: kadang subsidi Shopee, kadang seller
+- COD ada biaya tambahan vs non-COD
+- Flash sale margin beda dengan harga normal
+- Fee beda per toko (tergantung program Shopee yang diikuti)
+
+### Catatan implementasi:
+- HPP Offline per produk = total HPP batch ÷ total output batch (sudah ada di `produksi_batch`)
+- Packing online dihitung per pesanan, bukan per batch
+- Fee Shopee diambil dari `fee_platform` yang sudah ada
+- Voucher seller dicatat sebagai pengurang pendapatan
+- Hasil akhir tampil di modul Laporan → Profit Report per Pesanan
+- Bisa drill-down per toko, per SKU, per periode
+
+---
+
+## BLIND SPOT — FITUR YANG BELUM KEPIKIRAN
+
+### 1. Expired & Shelf Life Tracking 🕐
+- Siomay adalah produk makanan — ada kadaluarsa
+- Setiap batch produksi harus dicatat tanggal produksi + tanggal kadaluarsa
+- Alert otomatis ke Telegram kalau ada stok mendekati expired
+- Stok expired tidak boleh dijual → harus dicatat sebagai kerugian/disposal
+- Tampil di modul Inventory: stok normal vs stok mau expired vs stok expired
+- **Implementasi:** tambah kolom `tgl_produksi` + `tgl_expired` di `stok_barang` atau tabel batch stok
+
+### 2. Reject Produksi 🗑️ ← BELUM KEPIKIRAN, PENTING!
+- Setiap batch produksi pasti ada produk reject/gagal (bentuk cacat, gosong, dll)
+- Sekarang tidak dicatat → HPP tidak akurat!
+- Contoh dampak:
+  ```
+  Bahan batch:       Rp 500.000
+  Output normal:     50 bungkus
+  Output reject:      5 bungkus
+  HPP salah:  500.000 ÷ 55 = Rp 9.090/bungkus
+  HPP benar:  500.000 ÷ 50 = Rp 10.000/bungkus
+  ```
+- Reject tidak masuk stok tapi biayanya tetap terhitung di HPP
+- Bisa monitor trend reject per batch — kalau naik ada masalah produksi
+- **Implementasi:** tambah field `output_reject` + `alasan_reject` di `produksi_batch`
+
+### 3. Yield Rate Produksi 📊
+- Yield = output produk jadi ÷ input bahan baku (dalam kg)
+- Misal: masuk 10kg bahan → keluar 8kg produk = yield 80%
+- Kalau yield tiba-tiba turun → ada masalah di proses produksi
+- Monitor trend yield per batch, per operator, per periode
+- **Implementasi:** hitung otomatis dari data batch yang sudah ada + tambah kolom `total_kg_input`
+
+### 4. Forecast & Perencanaan Produksi 📅
+- Berdasarkan historis pesanan → prediksi kebutuhan produksi minggu depan
+- Otomatis saran: "minggu depan estimasi butuh X batch, beli bahan Y kg"
+- Terhubung ke Purchase Suggestion (reorder alert) di modul Pembelian
+- Mencegah kehabisan stok mendadak atau overstock
+- **Implementasi:** analisa `penjualan_online` + `penjualan_offline` historis → generate forecast
+
+### 5. Tracking Retur COD yang Belum Kembali 📦
+- Paket COD ditolak pembeli → proses retur bisa 1-2 minggu
+- Selama itu stok "hilang" di logistik — tidak di gudang, tidak terjual
+- Harus ada status: Terkirim → Ditolak → Dalam Perjalanan Balik → Diterima Kembali
+- Stok baru bertambah kembali setelah paket benar-benar diterima
+- Terhubung ke modul Purna Jual + Inventory
+- **Implementasi:** tambah status retur COD di `retur_online`, update stok hanya saat konfirmasi diterima
+
+---
+
+## CATATAN TAMBAHAN PRODUKSI
+
+### Input per batch yang harus ada:
+- Output normal (layak jual) per SKU
+- Output reject (tidak layak jual) + alasan
+- Total kg input bahan
+- Yield rate (auto-hitung)
+- Tanggal produksi + tanggal expired output
+
+### HPP yang benar:
+```
+Total biaya batch
+÷ Output NORMAL saja (reject tidak dihitung)
+= HPP per unit yang akurat
+```
+
+---
+
+## RESPONSIVE DESIGN — AppShell Mobile
+
+> Wajib bagus di HP Chrome — bukan hanya desktop. Owner harus bisa pantau bisnis dari HP kapan saja, bahkan saat Android app down/error.
+
+### Breakpoint:
+- **Desktop** (≥768px) → IDE-style penuh (activity bar + sidebar + content)
+- **Mobile** (<768px) → layout mobile-friendly
+
+### Layout Mobile:
+```
+┌─────────────────────────────┐
+│ ☰  Azalea          🔔  H   │  ← top bar simpel
+├─────────────────────────────┤
+│                             │
+│         KONTEN              │  ← full width
+│                             │
+└─────────────────────────────┘
+│ 🛍 Shopee  ⚙️ Prod  💰 Kas │  ← bottom nav bar
+└─────────────────────────────┘
+```
+
+### Aturan mobile:
+- Activity bar → pindah ke **bottom navigation bar** (seperti app Shopee)
+- Sidebar → muncul sebagai **drawer** saat hamburger ☰ diklik
+- Card dashboard → **2 kolom**, font lebih kecil
+- Tabel → **scroll horizontal** atau tampilan list card
+- Tombol → lebih besar, mudah diklik jari
+- Font size → lebih kecil dari desktop
+- Padding → lebih kecil biar konten muat
+
+### Kenapa perlu:
+- Owner pantau bisnis dari HP kapan saja
+- Backup saat Android app (AzaleaBorongan/AzaleaPacking) down atau error
+- Tidak perlu buka laptop hanya untuk cek dashboard/laporan
+- Responsive = standard web modern, bukan fitur tambahan
+
+### Catatan:
+- Android native app (AzaleaBorongan, AzaleaPacking) tetap untuk staff operasional
+- HP Chrome → khusus owner untuk monitoring, bukan operasional harian

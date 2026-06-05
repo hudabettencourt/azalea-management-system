@@ -1,0 +1,18 @@
+# .github/workflows/check-stok-minimum.yml
+# Cek stok minimum setiap hari jam 07:00 WIB (00:00 UTC)
+name: Check Stok Minimum
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # 07:00 WIB = 00:00 UTC
+  workflow_dispatch:       # bisa trigger manual
+
+jobs:
+  check-stok:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cek Stok Minimum & Kirim Notif Telegram
+        run: |
+          curl -f -X GET \
+            "https://azalea-management-system.vercel.app/api/stok/check-minimum" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

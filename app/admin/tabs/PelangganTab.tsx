@@ -46,7 +46,7 @@ export default function PelangganTab({ C, isDark, showToast }: Props) {
   }, []);
 
   const fetchProduk = useCallback(async () => {
-    const { data } = await supabase.from("stok_barang").select("id, nama_produk, sku, jumlah_stok, harga_jual, satuan, berat_kg").order("nama_produk");
+    const { data } = await supabase.from("stok_barang").select("id, nama_produk, sku, jumlah_stok, harga_jual, satuan, berat_kg, stok_minimum").order("nama_produk");
     setProdukList(data || []);
   }, []);
 

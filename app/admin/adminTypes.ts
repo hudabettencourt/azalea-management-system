@@ -1,6 +1,6 @@
 // ── Shared Types ──
 export type Profile = { id: string; email: string; nama: string; role: string; created_at: string };
-export type Produk = { id: number; nama_produk: string; sku: string | null; jumlah_stok: number; harga_jual: number; satuan: string; berat_kg: number | null };
+export type Produk = { id: number; nama_produk: string; sku: string | null; jumlah_stok: number; harga_jual: number; satuan: string; berat_kg: number | null; stok_minimum: number | null };
 export type BahanBakuFull = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number; aktif: boolean | null; updated_at: string | null };
 export type BahanBakuRef = { id: number; nama: string; satuan: string; kategori: string };
 export type PresetKemasan = { id: number; stok_barang_id: number; bahan_baku_id: number; berat_gram: number; nama_bahan?: string; satuan_bahan?: string };

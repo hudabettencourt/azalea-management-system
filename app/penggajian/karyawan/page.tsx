@@ -31,7 +31,7 @@ export default function PenggajianKaryawanPage() {
         ))}
       </div>
 
-      <div style={{ padding: "24px 28px", maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ padding: "24px 28px" }}>
         <KaryawanTab C={C} isDark={isDark} showToast={showToast} />
       </div>
     </AppShell>

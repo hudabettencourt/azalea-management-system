@@ -153,7 +153,7 @@ export default function ShopeeReturPage() {
   });
 
   return (
-    <AppShell pageTitle="Shopee · Retur" pageSubtitle="Retur masuk dari pembeli">
+    <AppShell>
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",

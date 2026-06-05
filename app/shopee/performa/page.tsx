@@ -180,7 +180,7 @@ export default function ShopeePerformaPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   return (
-    <AppShell pageTitle="Shopee · Performa" pageSubtitle="Skor & metrik toko">
+    <AppShell>
       <div style={{ padding: "24px 28px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
           <div>

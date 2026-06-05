@@ -595,7 +595,7 @@ export default function ShopeeKeuanganPage() {
   }, []);
 
   return (
-    <AppShell pageTitle="Shopee · Keuangan" pageSubtitle="Escrow, saldo, pencairan">
+    <AppShell>
       <div style={{ padding: "24px 28px" }}>
         {tokoConnectedCount !== null && tokoConnectedCount > 0 && (
           <div style={{

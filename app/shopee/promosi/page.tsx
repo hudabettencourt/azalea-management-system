@@ -252,7 +252,7 @@ export default function ShopeePromosiPage() {
   });
 
   return (
-    <AppShell pageTitle="Shopee · Promosi" pageSubtitle="Voucher & diskon (harga coret)">
+    <AppShell>
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",

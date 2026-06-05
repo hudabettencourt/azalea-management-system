@@ -350,7 +350,7 @@ export default function ShopeeStokPage() {
   };
 
   return (
-    <AppShell pageTitle="Shopee · Stok" pageSubtitle="Stok virtual & distribusi otomatis">
+    <AppShell>
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",

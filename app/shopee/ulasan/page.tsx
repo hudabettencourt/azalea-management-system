@@ -209,7 +209,7 @@ export default function ShopeeUlasanPage() {
   });
 
   return (
-    <AppShell pageTitle="Shopee · Ulasan" pageSubtitle="Review pembeli & balasan">
+    <AppShell>
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",

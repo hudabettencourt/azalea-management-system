@@ -228,7 +228,7 @@ export default function OrdersPage() {
   };
 
   return (
-    <AppShell pageTitle="Pesanan Shopee" pageSubtitle="Order management semua toko">
+    <AppShell>
       <style>{`
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .order-row:hover{background:${isDark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"}!important}

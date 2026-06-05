@@ -679,7 +679,7 @@ export default function OrdersPage() {
   const statusOptions = STATUS_TABS.map(s => ({ ...s, count: statusCounts.get(s.key) || 0 }));
 
   return (
-    <AppShell pageTitle="Shopee · Pesanan" pageSubtitle="Order management + logistics">
+    <AppShell>
       <style>{`
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .order-row:hover{background:${isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"}!important}

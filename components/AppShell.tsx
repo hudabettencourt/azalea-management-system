@@ -147,7 +147,14 @@ export default function AppShell({ children, actions }: AppShellProps) {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/login"); };
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
-  const isItemActive = (href: string) => { const base = href.split("?")[0]; return pathname === base || pathname?.startsWith(base + "/"); };
+  const isItemActive = (href: string) => {
+  const [base, query] = href.split("?");
+  if (query) {
+    return pathname === base &&
+      (typeof window !== "undefined" && window.location.search === "?" + query);
+  }
+  return pathname === base || pathname?.startsWith(base + "/");
+};
 
   const currentMod = NAVIGATION.find(m => m.key === activeModule);
   const breadcrumb = getBreadcrumb(pathname || "");

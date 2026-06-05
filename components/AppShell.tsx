@@ -31,7 +31,6 @@ import {
 } from "@tabler/icons-react";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
-import { NAVIGATION, getActiveModule, getBreadcrumb } from "@/config/navigation";
 
 const MODULE_ICONS: Record<string, React.ReactNode> = {
   shopee:     <IconShoppingBag size={22} />,

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number; aktif: boolean | null; updated_at: string | null };
@@ -244,18 +244,18 @@ export default function PembelianBahanPage() {
   ];
 
   if (loading) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", background: C.bgPage, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: C.fontSans }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 32, marginBottom: 12, color: statCardColors[0].color }}>◈</div>
           <div style={{ color: C.muted, fontWeight: 600 }}>Memuat data bahan...</div>
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         input:focus, select:focus, textarea:focus { border-color: ${statCardColors[0].color} !important; outline: none; }
         select option { background: ${isDark ? "#172218" : "#fff"}; color: ${C.text}; }
@@ -648,6 +648,6 @@ export default function PembelianBahanPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

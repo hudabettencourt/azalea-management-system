@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+//import AppShell from "@/components/AppShell";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import {
   AreaChart, Area, LineChart, Line,
@@ -250,7 +251,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
@@ -496,6 +497,6 @@ export default function DashboardPage() {
           </>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

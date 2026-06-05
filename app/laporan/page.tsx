@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
@@ -319,18 +319,18 @@ export default function LaporanPage() {
   const totalProfitProduk = produkProfit.reduce((a, p) => a + p.profit, 0);
 
   if (loading) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", background: C.bgPage, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: C.fontSans }}>
         <div style={{ textAlign: "center", color: C.muted }}>
           <div style={{ fontSize: 28, marginBottom: 12, color: CC.blue.color }}>📊</div>
           <div style={{ fontSize: 13 }}>Memuat laporan laba rugi...</div>
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         input:focus, select:focus { border-color: ${CC.blue.color} !important; outline: none; }
         select option { background: ${isDark ? "#172218" : "#fff"}; color: ${C.text}; }
@@ -606,6 +606,6 @@ export default function LaporanPage() {
           </>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

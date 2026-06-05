@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import ShopeeIncomeUpload from "@/components/ShopeeIncomeUpload";
 
 interface Toko {
@@ -86,7 +86,7 @@ export default function FeePlatformPage() {
 
   if (loading) {
     return (
-      <Sidebar>
+      <AppShell>
         <div style={{ 
           padding: 32, 
           background: '#0d0a14', 
@@ -101,12 +101,12 @@ export default function FeePlatformPage() {
             <div>Loading...</div>
           </div>
         </div>
-      </Sidebar>
+      </AppShell>
     );
   }
 
   return (
-    <Sidebar>
+    <AppShell>
       <div style={{ 
         padding: 32, 
         background: '#0d0a14', 
@@ -442,6 +442,6 @@ export default function FeePlatformPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

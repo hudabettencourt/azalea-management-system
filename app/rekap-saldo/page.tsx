@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import * as XLSX from "xlsx";
 
@@ -382,18 +382,18 @@ export default function RekapSaldoPage() {
   );
 
   if (loading) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", background: C.bgPage, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: C.fontSans }}>
         <div style={{ textAlign: "center", color: C.muted }}>
           <div style={{ fontSize: 28, marginBottom: 12, color: CC.total.color }}>◈</div>
           <div style={{ fontSize: 13 }}>Memuat...</div>
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         input:focus, select:focus { border-color: ${CC.total.color} !important; outline: none; }
         select option { background: ${isDark ? "#172218" : "#fff"}; color: ${C.text}; }
@@ -638,6 +638,6 @@ export default function RekapSaldoPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

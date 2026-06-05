@@ -7,7 +7,7 @@
 // 7 hari terakhir per toko.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -263,7 +263,7 @@ export default function ShopeeDashboardPage() {
   ];
 
   return (
-    <Sidebar pageTitle="Shopee Dashboard" pageSubtitle="Ringkasan semua toko">
+    <AppShell pageTitle="Shopee Dashboard" pageSubtitle="Ringkasan semua toko">
       <div style={{ padding: "24px 28px" }}>
         {/* Summary cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 24 }}>
@@ -365,6 +365,6 @@ export default function ShopeeDashboardPage() {
           </div>
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

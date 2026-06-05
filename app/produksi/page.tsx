@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 
 // ── TYPES ──
 type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number };
@@ -455,17 +455,17 @@ export default function ProduksiPage() {
   );
 
   if (loading) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
           <div style={{ fontSize: 28, marginBottom: 12 }}>◈</div>Memuat data produksi...
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; }
@@ -854,7 +854,7 @@ export default function ProduksiPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }
 

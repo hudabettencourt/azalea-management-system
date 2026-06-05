@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type Order = {
@@ -228,7 +228,7 @@ export default function OrdersPage() {
   };
 
   return (
-    <Sidebar pageTitle="Pesanan Shopee" pageSubtitle="Order management semua toko">
+    <AppShell pageTitle="Pesanan Shopee" pageSubtitle="Order management semua toko">
       <style>{`
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .order-row:hover{background:${isDark?"rgba(255,255,255,0.03)":"rgba(0,0,0,0.02)"}!important}
@@ -345,6 +345,6 @@ export default function OrdersPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

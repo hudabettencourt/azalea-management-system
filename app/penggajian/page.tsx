@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import GajiBoronganTab from "./GajiBoronganTab";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
@@ -321,17 +321,17 @@ export default function PenggajianPage() {
   };
 
   if (loading) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg }}>
         <div style={{ textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
           <div style={{ fontSize: 28, marginBottom: 12, color: C.accent }}>◈</div>Memuat data...
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         * { box-sizing: border-box; }
         input:focus, select:focus { border-color: ${C.accent}80 !important; outline: none; }
@@ -660,6 +660,6 @@ export default function PenggajianPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

@@ -4,7 +4,7 @@ import { useState, lazy, Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useRole } from "@/hooks/useRole";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { Toast } from "./adminTypes";
 
 // ── Lazy load tiap tab ──
@@ -76,18 +76,18 @@ function AdminPageInner() {
   );
 
   if (!isOwner) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, flexDirection: "column", gap: 16 }}>
         <div style={{ fontSize: 48 }}>🔐</div>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>Akses Ditolak</div>
         <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Halaman ini hanya untuk Owner / Super Admin</div>
         <a href="/dashboard" style={{ color: C.accent, fontFamily: C.fontMono, fontSize: 13 }}>← Kembali ke Dashboard</a>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         * { box-sizing: border-box; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -166,6 +166,6 @@ function AdminPageInner() {
           </Suspense>
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

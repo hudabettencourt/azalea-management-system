@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { ShopeeUploadTab } from "@/components/ShopeeUploadTab";
 
 // ── Types ──
@@ -443,11 +443,11 @@ export default function PenjualanPage() {
   };
 
   if (loading) return (
-    <Sidebar>
+    <AppShell>
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}>
         <div style={{ color: T.muted, fontFamily: T.font, fontSize: 14 }}>Memuat data...</div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 
   const summaryCards = [
@@ -458,7 +458,7 @@ export default function PenjualanPage() {
   ];
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
@@ -771,6 +771,6 @@ export default function PenjualanPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

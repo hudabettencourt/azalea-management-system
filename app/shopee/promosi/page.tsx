@@ -5,7 +5,7 @@
 // that sends Telegram for any promo ending within 24h.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type Promo = {
@@ -252,7 +252,7 @@ export default function ShopeePromosiPage() {
   });
 
   return (
-    <Sidebar pageTitle="Shopee · Promosi" pageSubtitle="Voucher & diskon (harga coret)">
+    <AppShell pageTitle="Shopee · Promosi" pageSubtitle="Voucher & diskon (harga coret)">
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",
@@ -442,6 +442,6 @@ export default function ShopeePromosiPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

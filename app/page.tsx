@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import {
   AreaChart, Area, LineChart, Line,
@@ -222,7 +222,7 @@ export default function HomePage() {
   ];
 
   return (
-    <Sidebar>
+    <AppShell>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; }
@@ -588,6 +588,6 @@ export default function HomePage() {
           </>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

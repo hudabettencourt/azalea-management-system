@@ -8,7 +8,7 @@
 //   [SHOPEE_TXN:{id}] in kas.keterangan)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
@@ -595,7 +595,7 @@ export default function ShopeeKeuanganPage() {
   }, []);
 
   return (
-    <Sidebar pageTitle="Shopee · Keuangan" pageSubtitle="Escrow, saldo, pencairan">
+    <AppShell pageTitle="Shopee · Keuangan" pageSubtitle="Escrow, saldo, pencairan">
       <div style={{ padding: "24px 28px" }}>
         {tokoConnectedCount !== null && tokoConnectedCount > 0 && (
           <div style={{
@@ -629,6 +629,6 @@ export default function ShopeeKeuanganPage() {
         {tab === "escrow" && <EscrowTab C={C} />}
         {tab === "pencairan" && <PencairanTab C={C} />}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

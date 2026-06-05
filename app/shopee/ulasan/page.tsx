@@ -5,7 +5,7 @@
 // per-review card with sensored buyer name, inline reply form.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type Review = {
@@ -209,7 +209,7 @@ export default function ShopeeUlasanPage() {
   });
 
   return (
-    <Sidebar pageTitle="Shopee · Ulasan" pageSubtitle="Review pembeli & balasan">
+    <AppShell pageTitle="Shopee · Ulasan" pageSubtitle="Review pembeli & balasan">
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",
@@ -413,6 +413,6 @@ export default function ShopeeUlasanPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

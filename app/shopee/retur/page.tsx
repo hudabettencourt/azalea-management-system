@@ -5,7 +5,7 @@
 // triggers /api/shopee/confirm-return which also restores stock on success.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type ReturItem = { sku: string; qty: number; nama: string };
@@ -153,7 +153,7 @@ export default function ShopeeReturPage() {
   });
 
   return (
-    <Sidebar pageTitle="Shopee · Retur" pageSubtitle="Retur masuk dari pembeli">
+    <AppShell pageTitle="Shopee · Retur" pageSubtitle="Retur masuk dari pembeli">
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",
@@ -222,7 +222,7 @@ export default function ShopeeReturPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }
 

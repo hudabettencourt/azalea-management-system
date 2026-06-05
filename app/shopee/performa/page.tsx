@@ -8,7 +8,7 @@
 // snapshot, not historical data.
 
 import { useCallback, useEffect, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
 type TokoPerf = {
@@ -180,7 +180,7 @@ export default function ShopeePerformaPage() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   return (
-    <Sidebar pageTitle="Shopee · Performa" pageSubtitle="Skor & metrik toko">
+    <AppShell pageTitle="Shopee · Performa" pageSubtitle="Skor & metrik toko">
       <div style={{ padding: "24px 28px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
           <div>
@@ -291,6 +291,6 @@ export default function ShopeePerformaPage() {
           </div>
         )}
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Sidebar from "@/components/Sidebar";
+import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 
@@ -350,7 +350,7 @@ export default function ShopeeStokPage() {
   };
 
   return (
-    <Sidebar pageTitle="Shopee · Stok" pageSubtitle="Stok virtual & distribusi otomatis">
+    <AppShell pageTitle="Shopee · Stok" pageSubtitle="Stok virtual & distribusi otomatis">
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",
@@ -584,6 +584,6 @@ export default function ShopeeStokPage() {
           })}
         </div>
       </div>
-    </Sidebar>
+    </AppShell>
   );
 }

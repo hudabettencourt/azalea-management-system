@@ -177,7 +177,7 @@ export const NAVIGATION: NavModule[] = [
       {
         label: "Karyawan",
         items: [
-          { label: "Data Karyawan",    href: "/admin?tab=karyawan" },
+          { label: "Data Karyawan",    href: "/penggajian/karyawan" },
         ],
       },
     ],

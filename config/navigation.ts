@@ -316,3 +316,10 @@ export function getBreadcrumb(pathname: string): { module: string; group: string
   }
   return { module: "Azalea", group: "", page: "Dashboard" };
 }
+// Helper: ambil href default suatu modul (item pertama yang defaultOpen, atau item pertama)
+export function getModuleDefaultHref(moduleKey: string): string {
+  const mod = NAVIGATION.find(m => m.key === moduleKey);
+  if (!mod) return "/dashboard";
+  const defaultGroup = mod.groups.find(g => g.defaultOpen) || mod.groups[0];
+  return defaultGroup?.items[0]?.href.split("?")[0] || "/dashboard";
+}

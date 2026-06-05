@@ -6,6 +6,7 @@
 // Layout: Activity Bar (56px) + Contextual Sidebar (210px) + Main + Status Bar (28px)
 // Responsive: desktop = IDE-style, mobile = bottom nav + drawer
 
+import { NAVIGATION, getActiveModule, getBreadcrumb, getModuleDefaultHref } from "@/config/navigation";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -308,7 +309,7 @@ export default function AppShell({ children, actions }: AppShellProps) {
                       <>
                         <IconChevronRight size={12} />
                         <a
-                          href={currentMod?.groups[0]?.items[0]?.href.split("?")[0] || "/dashboard"}
+                          href={currentMod?.groups.find(g => g.defaultOpen)?.items[0]?.href.split("?")[0] || currentMod?.groups[0]?.items[0]?.href.split("?")[0] || "/dashboard"}
                           style={{ color: C.muted, textDecoration: "none" }}
                           onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = C.text}
                           onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = C.muted}

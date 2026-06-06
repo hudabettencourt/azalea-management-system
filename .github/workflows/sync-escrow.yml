@@ -1,0 +1,30 @@
+# .github/workflows/sync-escrow.yml
+# Fetch escrow detail untuk pesanan COMPLETED setiap jam
+# Auto-pause jika pesanan pending > 500
+
+name: Sync Escrow Detail
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # setiap jam
+  workflow_dispatch:       # bisa trigger manual
+
+jobs:
+  sync-escrow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Escrow Detail & Auto-pause Check
+        run: |
+          RESPONSE=$(curl -s -X GET \
+            "https://azalea-management-system.vercel.app/api/shopee/sync-escrow")
+          echo "Response: $RESPONSE"
+          
+          # Cek apakah auto-paused
+          PAUSED=$(echo $RESPONSE | grep -o '"auto_paused":true' | head -1)
+          if [ ! -z "$PAUSED" ]; then
+            echo "⚠️ Sync auto-paused! Cek Telegram untuk detail."
+            exit 0
+          fi
+          
+          FETCHED=$(echo $RESPONSE | grep -o '"total_fetched":[0-9]*' | grep -o '[0-9]*')
+          echo "✅ Fetched: ${FETCHED:-0} escrow records"

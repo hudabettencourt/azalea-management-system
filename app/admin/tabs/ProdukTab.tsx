@@ -24,7 +24,6 @@ export default function ProdukTab({ C, isDark, showToast }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // Kemasan
   const [bahanBakuRefList, setBahanBakuRefList] = useState<BahanBakuRef[]>([]);
   const [bahanBakuRefLoading, setBahanBakuRefLoading] = useState(false);
   const [kemasanPanel, setKemasanPanel] = useState<number | null>(null);
@@ -76,7 +75,7 @@ export default function ProdukTab({ C, isDark, showToast }: Props) {
     jumlah_stok: parseInt(f.jumlah_stok) || 0,
     satuan: f.satuan,
     berat_kg: f.berat_kg ? parseFloat(f.berat_kg.replace(",", ".")) : null,
-    stok_minimum: f.stok_minimum ? parseInt(f.stok_minimum) : null,
+    stok_minimum: f.stok_minimum !== "" ? parseInt(f.stok_minimum) : null,
   });
 
   const handleTambah = async () => {
@@ -168,13 +167,15 @@ export default function ProdukTab({ C, isDark, showToast }: Props) {
       {showTambah && (
         <div style={{ background: `${C.accent}06`, border: `1px solid ${C.accent}30`, borderRadius: 14, padding: 24, marginBottom: 20, animation: "slideDown 0.2s ease" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ PRODUK BARU</div>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><Label C={C}>NAMA PRODUK *</Label><input value={tambah.nama_produk} onChange={e => setTambah(p => ({ ...p, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus /></div>
             <div><Label C={C}>SKU</Label><input value={tambah.sku} onChange={e => setTambah(p => ({ ...p, sku: e.target.value }))} placeholder="SKU-001" style={{ ...inputStyle, fontFamily: C.fontMono, textTransform: "uppercase" }} /></div>
             <div><Label C={C}>HARGA JUAL *</Label><input value={tambah.harga_jual} onChange={e => setTambah(p => ({ ...p, harga_jual: formatIDR(e.target.value) }))} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} /></div>
             <div><Label C={C}>STOK AWAL</Label><input type="number" value={tambah.jumlah_stok} onChange={e => setTambah(p => ({ ...p, jumlah_stok: e.target.value }))} style={{ ...inputStyle, fontFamily: C.fontMono }} /></div>
             <div><Label C={C}>SATUAN</Label><select value={tambah.satuan} onChange={e => setTambah(p => ({ ...p, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>{SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
             <div><Label C={C}>BERAT (kg)</Label><input type="number" value={tambah.berat_kg} onChange={e => setTambah(p => ({ ...p, berat_kg: e.target.value }))} placeholder="0.25" step="0.001" style={{ ...inputStyle, fontFamily: C.fontMono }} /></div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 12, marginBottom: 16 }}>
             <div><Label C={C}>STOK MINIMUM</Label><input type="number" value={tambah.stok_minimum} onChange={e => setTambah(p => ({ ...p, stok_minimum: e.target.value }))} placeholder="0" style={{ ...inputStyle, fontFamily: C.fontMono }} /></div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -207,8 +208,8 @@ export default function ProdukTab({ C, isDark, showToast }: Props) {
                     <div style={{ fontSize: 13, fontWeight: 700, color: p.jumlah_stok <= 0 ? C.red : stokKritis ? C.yellow : C.green, fontFamily: C.fontMono }}>{p.jumlah_stok}</div>
                     <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontMono }}>{rupiahFmt(p.harga_jual)}</div>
                     <div style={{ fontSize: 11, color: C.muted }}>{p.satuan}</div>
-                    <div style={{ fontSize: 12, color: p.stok_minimum != null ? C.orange : C.muted, fontFamily: C.fontMono, fontWeight: p.stok_minimum != null ? 700 : 400 }}>
-                      {p.stok_minimum != null ? p.stok_minimum : "—"}
+                    <div style={{ fontSize: 12, color: p.stok_minimum != null && p.stok_minimum > 0 ? C.orange : C.muted, fontFamily: C.fontMono, fontWeight: p.stok_minimum != null && p.stok_minimum > 0 ? 700 : 400 }}>
+                      {p.stok_minimum != null && p.stok_minimum > 0 ? p.stok_minimum : "—"}
                     </div>
                     <div style={{ fontSize: 12, color: p.berat_kg ? C.blue : C.muted, fontFamily: C.fontMono }}>{p.berat_kg != null ? `${p.berat_kg} kg` : "—"}</div>
                     <div style={{ display: "flex", gap: 5 }}>
@@ -220,7 +221,7 @@ export default function ProdukTab({ C, isDark, showToast }: Props) {
                       ) : (
                         <>
                           <button onClick={() => bukaKemasan(p.id)} style={{ background: kemasanPanel === p.id ? `${C.purple}30` : `${C.purple}10`, border: `1px solid ${C.purple}40`, color: C.purple, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 10, fontFamily: C.fontMono, fontWeight: 700, whiteSpace: "nowrap" }}>🎁 {kemasanPanel === p.id ? "▲" : "▼"}</button>
-                          <button className="btn-edit" onClick={() => { setEditingId(p.id); setEditForm({ nama_produk: p.nama_produk, sku: p.sku || "", harga_jual: formatIDR(String(p.harga_jual)), jumlah_stok: String(p.jumlah_stok), satuan: p.satuan, berat_kg: p.berat_kg != null ? String(p.berat_kg) : "", stok_minimum: p.stok_minimum != null ? String(p.stok_minimum) : "" }); setShowTambah(false); setKemasanPanel(null); }} style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>Edit</button>
+                          <button className="btn-edit" onClick={() => { setEditingId(p.id); setEditForm({ nama_produk: p.nama_produk, sku: p.sku || "", harga_jual: formatIDR(String(p.harga_jual)), jumlah_stok: String(p.jumlah_stok), satuan: p.satuan, berat_kg: p.berat_kg != null ? String(p.berat_kg) : "", stok_minimum: p.stok_minimum != null && p.stok_minimum > 0 ? String(p.stok_minimum) : "" }); setShowTambah(false); setKemasanPanel(null); }} style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>Edit</button>
                           <button className="btn-del" onClick={() => setConfirmDeleteId(p.id)} style={{ background: `${C.red}15`, border: `1px solid ${C.red}25`, color: C.red, padding: "5px 8px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontFamily: C.fontMono, fontWeight: 700 }}>🗑</button>
                         </>
                       )}
@@ -282,14 +283,19 @@ export default function ProdukTab({ C, isDark, showToast }: Props) {
                 </>
               ) : (
                 <div style={{ padding: "14px 24px", background: isDark ? "rgba(167,139,250,0.04)" : "rgba(167,139,250,0.05)" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 8 }}>
                     <input value={editForm.nama_produk} onChange={e => setEditForm(f => ({ ...f, nama_produk: e.target.value }))} placeholder="Nama produk" style={inputStyle} autoFocus />
                     <input value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} placeholder="SKU" style={{ ...inputStyle, fontFamily: C.fontMono, textTransform: "uppercase" }} />
                     <input value={editForm.harga_jual} onChange={e => setEditForm(f => ({ ...f, harga_jual: formatIDR(e.target.value) }))} placeholder="Harga" style={{ ...inputStyle, fontFamily: C.fontMono }} />
                     <input type="number" value={editForm.jumlah_stok} onChange={e => setEditForm(f => ({ ...f, jumlah_stok: e.target.value }))} placeholder="Stok" style={{ ...inputStyle, fontFamily: C.fontMono }} />
                     <select value={editForm.satuan} onChange={e => setEditForm(f => ({ ...f, satuan: e.target.value }))} style={{ ...inputStyle, cursor: "pointer" }}>{SATUAN_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}</select>
                     <input type="number" value={editForm.berat_kg} onChange={e => setEditForm(f => ({ ...f, berat_kg: e.target.value }))} placeholder="0.25" step="0.001" style={{ ...inputStyle, fontFamily: C.fontMono }} />
-                    <input type="number" value={editForm.stok_minimum} onChange={e => setEditForm(f => ({ ...f, stok_minimum: e.target.value }))} placeholder="Min stok" style={{ ...inputStyle, fontFamily: C.fontMono }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <Label C={C}>STOK MINIMUM</Label>
+                      <input type="number" value={editForm.stok_minimum} onChange={e => setEditForm(f => ({ ...f, stok_minimum: e.target.value }))} placeholder="Min stok" style={{ ...inputStyle, fontFamily: C.fontMono }} />
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => handleEdit(p.id)} disabled={savingEdit} style={{ padding: "8px 18px", background: `linear-gradient(135deg, #7c3aed, ${C.purple})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: C.fontMono }}>{savingEdit ? "..." : "✓ Simpan"}</button>

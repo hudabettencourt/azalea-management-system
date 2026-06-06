@@ -5,9 +5,9 @@
 export type NavItem = {
   label: string;
   href: string;
-  badge?: "count" | "dot"; // count = angka dari API, dot = titik merah
-  badgeKey?: string;       // key untuk fetch badge count
-  roles?: string[];        // kalau kosong = semua role bisa akses
+  badge?: "count" | "dot";
+  badgeKey?: string;
+  roles?: string[];
 };
 
 export type NavGroup = {
@@ -20,7 +20,7 @@ export type NavGroup = {
 export type NavModule = {
   key: string;
   label: string;
-  icon: string; // nama icon Tabler tanpa "Icon" prefix, e.g. "ShoppingBag"
+  icon: string;
   groups: NavGroup[];
   roles?: string[];
 };
@@ -79,7 +79,7 @@ export const NAVIGATION: NavModule[] = [
       {
         label: "Keuangan",
         items: [
-          { label: "Rekap Saldo",      href: "/shopee/keuangan" },
+          { label: "Rekap Saldo",      href: "/rekap-saldo" },
           { label: "Uang di Jalan",    href: "/shopee/keuangan/pending" },
           { label: "Pencairan",        href: "/shopee/keuangan/pencairan" },
         ],
@@ -195,7 +195,6 @@ export const NAVIGATION: NavModule[] = [
         items: [
           { label: "Kas Masuk/Keluar", href: "/kas" },
           { label: "Fee Platform",     href: "/fee-platform" },
-          { label: "Rekap Saldo",      href: "/rekap-saldo" },
         ],
       },
       {
@@ -291,12 +290,12 @@ export function getActiveModule(pathname: string): string {
       }
     }
   }
-  // fallback berdasarkan prefix path
   if (pathname.startsWith("/shopee")) return "shopee";
+  if (pathname.startsWith("/rekap-saldo")) return "shopee";
   if (pathname.startsWith("/produksi")) return "produksi";
   if (pathname.startsWith("/pembelian")) return "pembelian";
   if (pathname.startsWith("/penggajian")) return "penggajian";
-  if (pathname.startsWith("/kas") || pathname.startsWith("/rekap-saldo") || pathname.startsWith("/fee-platform") || pathname.startsWith("/penjualan") || pathname.startsWith("/piutang")) return "keuangan";
+  if (pathname.startsWith("/kas") || pathname.startsWith("/fee-platform") || pathname.startsWith("/penjualan") || pathname.startsWith("/piutang")) return "keuangan";
   if (pathname.startsWith("/laporan")) return "laporan";
   if (pathname.startsWith("/admin")) return "admin";
   return "shopee";
@@ -316,7 +315,8 @@ export function getBreadcrumb(pathname: string): { module: string; group: string
   }
   return { module: "Azalea", group: "", page: "Dashboard" };
 }
-// Helper: ambil href default suatu modul (item pertama yang defaultOpen, atau item pertama)
+
+// Helper: ambil href default suatu modul
 export function getModuleDefaultHref(moduleKey: string): string {
   const mod = NAVIGATION.find(m => m.key === moduleKey);
   if (!mod) return "/dashboard";

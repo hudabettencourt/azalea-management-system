@@ -109,7 +109,7 @@ export default function RekapSaldoPage() {
     });
   }, []);
 
-  const fetchAutoRekap = useCallback(async () => {
+    const fetchAutoRekap = useCallback(async () => {
     setLoadingAuto(true);
     try {
       const { data: tokoData } = await supabase.from("toko_online").select("id, nama").eq("platform", "Shopee").eq("aktif", true);
@@ -117,28 +117,29 @@ export default function RekapSaldoPage() {
 
       const results: AutoRekapItem[] = [];
       for (const toko of tokoData) {
+        // Hitung total COMPLETED untuk toko ini
         const { data: penjualanIds } = await supabase.from("penjualan_online").select("id").eq("toko_id", toko.id);
         const ids = (penjualanIds || []).map((p: any) => p.id);
-        if (!ids.length) continue;
+        let totalCompleted = 0;
+        if (ids.length) {
+          const { count } = await supabase
+            .from("detail_penjualan_online")
+            .select("no_pesanan", { count: "exact", head: true })
+            .eq("status_shopee", "COMPLETED")
+            .in("penjualan_online_id", ids);
+          totalCompleted = count || 0;
+        }
 
-        const { data: orders } = await supabase
-          .from("detail_penjualan_online")
-          .select("no_pesanan")
-          .eq("status_shopee", "COMPLETED")
-          .in("penjualan_online_id", ids);
-
-        const orderSns = (orders || []).map((o: any) => o.no_pesanan);
-        if (!orderSns.length) continue;
-
+        // Query escrow LANGSUNG by toko_id (escrow_detail punya kolom toko_id)
         const { data: escrows } = await supabase
           .from("escrow_detail")
           .select("escrow_amount, commission_fee, service_fee, seller_discount, buyer_total_amount")
-          .in("order_sn", orderSns);
+          .eq("toko_id", toko.id);
 
         results.push({
           toko_id: toko.id,
           nama_toko: toko.nama,
-          total_completed: orderSns.length,
+          total_completed: totalCompleted,
           total_escrow_synced: escrows?.length || 0,
           total_escrow_amount: (escrows || []).reduce((a: number, e: any) => a + (e.escrow_amount || 0), 0),
           total_commission: (escrows || []).reduce((a: number, e: any) => a + (e.commission_fee || 0), 0),
@@ -152,6 +153,7 @@ export default function RekapSaldoPage() {
       setLoadingAuto(false);
     }
   }, []);
+
 
   const fetchData = useCallback(async () => {
     try {

@@ -191,7 +191,7 @@ export default function PenjualanPage() {
   };
 
   const printNota = (pj: PenjualanOffline) => {
-    const w = window.open("", "_blank", "width=400,height=600");
+    const w = window.open("", "_blank", "width=800,height=700,left=200,top=50");
     if (!w) return;
     const lines = (pj.detail || []).map(d =>
       `<div class="row"><span>${d.nama_produk} x${d.qty}</span><span>${rupiahFmt(d.subtotal)}</span></div>`

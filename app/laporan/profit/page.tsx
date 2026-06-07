@@ -146,6 +146,9 @@ export default function ProfitReportPage() {
         const escrow_amount = escrow?.escrow_amount || 0;
         const commission_fee = escrow?.commission_fee || 0;
         const service_fee = escrow?.service_fee || 0;
+        // Skip pesanan yang belum ada data escrow (belum cair, bukan berarti escrow = 0)
+        if (!escrow) continue;
+
         const profit = escrow_amount - hpp_total;
         const margin_pct = escrow_amount > 0 ? (profit / escrow_amount) * 100 : 0;
 

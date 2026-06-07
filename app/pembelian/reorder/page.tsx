@@ -178,7 +178,7 @@ export default function ReorderPage() {
                   {/* Progress bar */}
                   {pct !== null && (
                     <div style={{ height: 3, background: C.dim, borderRadius: 2, marginTop: 4, overflow: "hidden", width: "80%" }}>
-                      <div style={{ height: "100%", width: `${pct}%`, background: pct <= 100 ? C.red : C.green, borderRadius: 2 }} />
+                      <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? C.green : C.red, borderRadius: 2 }} />
                     </div>
                   )}
                 </div>

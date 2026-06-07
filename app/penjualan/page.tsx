@@ -123,7 +123,7 @@ export default function PenjualanPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const prosesOffline = async () => {
+   const prosesOffline = async () => {
     setSubmitting(true);
     try {
       const { data: penjualanData, error: penjualanError } = await supabase.from("penjualan_offline").insert([{
@@ -136,9 +136,21 @@ export default function PenjualanPage() {
       }]).select().single();
       if (penjualanError) throw penjualanError;
 
-      await supabase.from("detail_penjualan_offline").insert(
-        keranjang.map(k => ({ penjualan_id: penjualanData.id, stok_barang_id: k.produk_id, nama_produk: k.nama_produk, qty: k.qty, harga_satuan: k.harga_jual, subtotal: k.subtotal }))
+      const { error: detailError } = await supabase.from("detail_penjualan_offline").insert(
+        keranjang.map(k => ({
+          penjualan_id: penjualanData.id,
+          stok_barang_id: k.produk_id,
+          nama_produk: k.nama_produk,
+          qty: k.qty,
+          harga_satuan: k.harga_jual,
+          subtotal: k.subtotal,
+        }))
       );
+      if (detailError) {
+        // Rollback header jika detail gagal
+        await supabase.from("penjualan_offline").delete().eq("id", penjualanData.id);
+        throw new Error("Gagal simpan detail: " + detailError.message);
+      }
 
       for (const item of keranjang) {
         const p = produk.find(x => x.id === item.produk_id);
@@ -153,7 +165,6 @@ export default function PenjualanPage() {
 
       showToast(`✓ ${keranjang.length} item terjual = ${rupiahFmt(totalKeranjang)}`);
       
-      // Auto print nota setelah simpan
       const newPenjualan: PenjualanOffline = {
         ...penjualanData,
         detail: keranjang.map((k, i) => ({ id: i, penjualan_id: penjualanData.id, stok_barang_id: k.produk_id, nama_produk: k.nama_produk, qty: k.qty, harga_satuan: k.harga_jual, subtotal: k.subtotal }))
@@ -168,6 +179,7 @@ export default function PenjualanPage() {
       showToast(err.message || "Gagal simpan transaksi", "error");
     } finally { setSubmitting(false); }
   };
+
 
   const lunaskanOffline = async (pj: PenjualanOffline) => {
     try {

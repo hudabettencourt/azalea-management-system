@@ -201,7 +201,7 @@ export default function PenjualanPage() {
       <html>
       <head>
         <style>
-          @page { size: 58mm auto; margin: 3mm; }
+          @page { size: 58mm 200mm; margin: 2mm; }
           body { font-family: monospace; font-size: 11px; color: black; width: 52mm; margin: 0; padding: 0; }
           .center { text-align: center; }
           .bold { font-weight: bold; }

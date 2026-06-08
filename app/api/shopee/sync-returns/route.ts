@@ -6,6 +6,16 @@ import { supabase } from "@/lib/supabase";
 import { shopeeApi } from "@/lib/shopee/helper";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
 
+export async function GET() {
+  return NextResponse.json(
+    {
+      message: "Gunakan metode POST untuk menjalankan sync retur.",
+      hint: "Endpoint ini hanya menerima POST. Klik tombol 'Sync Retur' di halaman /shopee/retur.",
+    },
+    { status: 405 }
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const tokoList = await fetchToko(null);
@@ -19,13 +29,18 @@ export async function POST(req: NextRequest) {
         let hasMore = true;
 
         while (hasMore) {
-          const res = await shopeeApi("/api/v2/returns/get_return_list", toko.shopee_shop_id, accessToken, {
-            page_no: pageNo,
-            page_size: 100,
-          });
+          const res = await shopeeApi(
+            "/api/v2/returns/get_return_list",
+            toko.shopee_shop_id,
+            accessToken,
+            {
+              page_no: pageNo,
+              page_size: 100,
+            }
+          );
 
           logShopeeResponse("sync_returns", toko.nama, res);
-          
+
           if (res.error) {
             console.error(`Sync returns error for ${toko.nama}:`, res.error);
             break;
@@ -38,7 +53,7 @@ export async function POST(req: NextRequest) {
               order_sn: ret.order_sn,
               return_sn: ret.return_sn,
               return_status: ret.status,
-              refund_amount: ret.refund_amount,
+              refund_amount: Number(ret.refund_amount) || 0,
               reason: ret.reason,
               text_reason: ret.text_reason,
               username_pembeli: ret.user?.username,
@@ -49,31 +64,31 @@ export async function POST(req: NextRequest) {
 
           hasMore = res.response?.more || false;
           pageNo++;
-          await new Promise(r => setTimeout(r, 300));
+          await new Promise((r) => setTimeout(r, 300));
         }
       } catch (err) {
         console.error(`Error sync returns for toko ${toko.id}:`, err);
       }
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
     }
 
     // Insert/update ke database (upsert by return_sn)
     if (allReturns.length > 0) {
-      const { error: upsertError } = await supabase
-        .from("retur_online")
-        .upsert(
-          allReturns.map(r => ({
-            toko_id: r.toko_id,
-            order_sn: r.order_sn,
-            return_sn: r.return_sn,
-            return_status: r.return_status,
-            refund_amount: r.refund_amount,
-            reason: r.reason,
-            username_pembeli: r.username_pembeli,
-            updated_at: new Date().toISOString(),
-          })),
-          { onConflict: "return_sn" }
-        );
+      const { error: upsertError } = await supabase.from("retur_online").upsert(
+        allReturns.map((r) => ({
+          toko_id: r.toko_id,
+          order_sn: r.order_sn,
+          return_sn: r.return_sn,
+          return_status: r.return_status,
+          refund_amount: r.refund_amount,
+          reason: r.reason,
+          text_reason: r.text_reason,
+          username_pembeli: r.username_pembeli,
+          product_name: r.product_name,
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: "return_sn" }
+      );
 
       if (upsertError) {
         console.error("Upsert error:", upsertError);

@@ -1,18 +1,18 @@
 "use client";
 
 // /shopee/retur — Retur masuk.
-// Tugas 7: list retur per toko, filter toko + status, "Terima Retur" button
-// triggers /api/shopee/confirm-return which also restores stock on success.
-// + Tombol "Sync Retur" → POST /api/shopee/sync-returns (simpan ke DB retur_online)
+// Sumber data: tabel retur_online (DB). Tombol "Sync Retur" → POST
+// /api/shopee/sync-returns untuk tarik dari Shopee & simpan ke DB.
+// Halaman baca dari DB, jadi konsisten dengan profit report.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
-
-type ReturItem = { sku: string; qty: number; nama: string };
+import { supabase } from "@/lib/supabase";
 
 type Retur = {
-  key: string;            // unique key (toko_id + return_sn)
+  key: string;
+  id: number;
   toko_id: number;
   toko_nama: string;
   return_sn: string;
@@ -20,40 +20,18 @@ type Retur = {
   buyer: string;
   status: string;
   reason: string;
-  create_time: number;    // unix sec
-  items: ReturItem[];
+  text_reason: string;
+  product_name: string;
+  refund_amount: number;
+  created_at: string;       // ISO
   raw: any;
 };
 
 const rupiah = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const unixToWIB = (unix: number) => {
-  if (!unix) return "-";
-  return new Date(unix * 1000).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
+const isoToWIB = (iso: string) => {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
 };
-
-function parseItems(rawItems: any[]): ReturItem[] {
-  if (!Array.isArray(rawItems)) return [];
-  return rawItems.map(it => ({
-    sku: String(it?.model_sku || it?.item_sku || it?.sku || "").trim(),
-    qty: Number(it?.amount || it?.qty || it?.quantity || it?.return_quantity || 0),
-    nama: String(it?.model_name || it?.item_name || it?.name || ""),
-  })).filter(i => i.sku || i.nama);
-}
-
-function parseReturn(toko_id: number, toko_nama: string, raw: any): Retur {
-  const items = parseItems(raw?.item || raw?.items || raw?.return_item_list || []);
-  return {
-    key: `${toko_id}-${raw?.return_sn || raw?.returnsn || ""}`,
-    toko_id, toko_nama,
-    return_sn: String(raw?.return_sn || raw?.returnsn || ""),
-    order_sn: String(raw?.order_sn || raw?.ordersn || ""),
-    buyer: String(raw?.user?.username || raw?.buyer_username || raw?.buyer || ""),
-    status: String(raw?.status || raw?.return_status || ""),
-    reason: String(raw?.reason || raw?.return_reason || raw?.refund_reason || ""),
-    create_time: Number(raw?.create_time || raw?.createtime || 0),
-    items, raw,
-  };
-}
 
 export default function ShopeeReturPage() {
   const { isDark } = useTheme();
@@ -65,7 +43,6 @@ export default function ShopeeReturPage() {
   const [syncing, setSyncing] = useState(false);
   const [filterToko, setFilterToko] = useState<string>("semua");
   const [filterStatus, setFilterStatus] = useState<string>("semua");
-  const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   const showToast = (msg: string, type: "success" | "error" = "success", ms = 3000) => {
@@ -76,22 +53,44 @@ export default function ShopeeReturPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/shopee/get-returns");
-      const data = await res.json();
-      const all: Retur[] = [];
+      // Ambil daftar toko untuk nama + filter
+      const { data: tokoData } = await supabase
+        .from("toko_online")
+        .select("id, nama");
+      const tokoMap = new Map<number, string>();
       const opts: { id: number; nama: string }[] = [];
-      for (const r of data.results || []) {
-        opts.push({ id: r.toko_id, nama: r.toko });
-        if (!r.ok) continue;
-        const list = r.raw?.response?.return_list ?? r.raw?.response?.returns ?? [];
-        if (!Array.isArray(list)) continue;
-        for (const rawReturn of list) {
-          all.push(parseReturn(r.toko_id, r.toko, rawReturn));
-        }
+      for (const t of tokoData || []) {
+        tokoMap.set(t.id, t.nama);
+        opts.push({ id: t.id, nama: t.nama });
       }
-      all.sort((a, b) => b.create_time - a.create_time);
-      setReturns(all);
       setTokoOpts(opts);
+
+      // Ambil retur dari DB
+      const { data, error } = await supabase
+        .from("retur_online")
+        .select("id, toko_id, order_sn, return_sn, return_status, refund_amount, reason, text_reason, product_name, username_pembeli, created_at")
+        .not("return_sn", "is", null)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const all: Retur[] = (data || []).map((r: any) => ({
+        key: `${r.toko_id}-${r.return_sn}`,
+        id: r.id,
+        toko_id: r.toko_id,
+        toko_nama: tokoMap.get(r.toko_id) || `Toko ${r.toko_id}`,
+        return_sn: String(r.return_sn || ""),
+        order_sn: String(r.order_sn || ""),
+        buyer: String(r.username_pembeli || ""),
+        status: String(r.return_status || ""),
+        reason: String(r.reason || ""),
+        text_reason: String(r.text_reason || ""),
+        product_name: String(r.product_name || ""),
+        refund_amount: Number(r.refund_amount) || 0,
+        created_at: r.created_at,
+        raw: r,
+      }));
+      setReturns(all);
     } catch (err: any) {
       showToast("Gagal load: " + err.message, "error");
     } finally {
@@ -99,8 +98,6 @@ export default function ShopeeReturPage() {
     }
   }, []);
 
-  // Sync retur ke DB (retur_online) via POST. Dipakai untuk profit report
-  // supaya pesanan retur tidak dihitung minus.
   const handleSync = useCallback(async () => {
     setSyncing(true);
     try {
@@ -120,7 +117,6 @@ export default function ShopeeReturPage() {
       } else {
         showToast(`✓ Sync selesai. ${inserted} retur tersimpan ke DB.`, "success", 4000);
       }
-      // refresh tampilan live setelah sync
       fetchAll();
     } catch (err: any) {
       showToast("Sync gagal: " + err.message, "error", 4000);
@@ -143,36 +139,10 @@ export default function ShopeeReturPage() {
     return true;
   }), [returns, filterToko, filterStatus]);
 
-  const handleConfirm = async (r: Retur) => {
-    if (!confirm(`Terima retur ${r.return_sn}?\n\nStok ${r.items.length} item akan dikembalikan ke stok_barang.`)) return;
-    setConfirmingKey(r.key);
-    try {
-      const res = await fetch("/api/shopee/confirm-return", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          toko_id: r.toko_id,
-          return_sn: r.return_sn,
-          items: r.items.map(i => ({ sku: i.sku, qty: i.qty })),
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        showToast(data.error || data.raw?.message || "Gagal", "error");
-        return;
-      }
-      const restored = (data.restored || []).length;
-      const missing = (data.missing_skus || []).length;
-      let msg = `✓ Retur diterima. Stok ${restored} produk dikembalikan.`;
-      if (missing > 0) msg += ` ⚠ ${missing} SKU tidak ditemukan di DB.`;
-      showToast(msg);
-      fetchAll();
-    } catch (err: any) {
-      showToast("Gagal: " + err.message, "error");
-    } finally {
-      setConfirmingKey(null);
-    }
-  };
+  const totalRefund = useMemo(
+    () => filtered.reduce((s, r) => s + r.refund_amount, 0),
+    [filtered]
+  );
 
   const pillStyle = (active: boolean): React.CSSProperties => ({
     padding: "4px 12px",
@@ -202,7 +172,7 @@ export default function ShopeeReturPage() {
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Retur</h1>
             <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
-              {filtered.length} retur · {tokoOpts.length} toko
+              {filtered.length} retur · {tokoOpts.length} toko · refund {rupiah(totalRefund)}
             </p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -254,14 +224,14 @@ export default function ShopeeReturPage() {
             padding: 40, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13,
             background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
           }}>
-            🎉 Tidak ada retur
+            {returns.length === 0
+              ? "Belum ada retur di DB. Klik “Sync Retur” untuk tarik dari Shopee."
+              : "🎉 Tidak ada retur untuk filter ini"}
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {filtered.map(r => (
-              <ReturCard key={r.key} r={r} C={C}
-                onConfirm={() => handleConfirm(r)}
-                confirming={confirmingKey === r.key} />
+              <ReturCard key={r.key} r={r} C={C} />
             ))}
           </div>
         )}
@@ -270,11 +240,13 @@ export default function ShopeeReturPage() {
   );
 }
 
-function ReturCard({ r, C, onConfirm, confirming }: { r: Retur; C: any; onConfirm: () => void; confirming: boolean }) {
-  // Disable Terima if the status looks already-terminal. We don't know all
-  // Shopee statuses, so block only on the common closed ones.
-  const closedSet = new Set(["COMPLETED", "ACCEPTED", "REFUNDED", "CLOSED", "CANCELLED", "JUDGING"]);
-  const alreadyClosed = closedSet.has(r.status.toUpperCase());
+function ReturCard({ r, C }: { r: Retur; C: any }) {
+  const closedSet = new Set(["COMPLETED", "ACCEPTED", "REFUNDED", "CLOSED", "CANCELLED"]);
+  const isClosed = closedSet.has(r.status.toUpperCase());
+  const isCancelled = r.status.toUpperCase() === "CANCELLED";
+
+  const badgeBg = isCancelled ? C.redDim : isClosed ? C.greenDim : C.yellowDim;
+  const badgeFg = isCancelled ? C.red : isClosed ? C.green : C.yellow;
 
   return (
     <div style={{
@@ -286,8 +258,7 @@ function ReturCard({ r, C, onConfirm, confirming }: { r: Retur; C: any; onConfir
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{
               fontSize: 11, padding: "3px 10px", borderRadius: 20,
-              background: alreadyClosed ? C.greenDim : C.yellowDim,
-              color: alreadyClosed ? C.green : C.yellow,
+              background: badgeBg, color: badgeFg,
               fontWeight: 700, fontFamily: C.fontMono,
             }}>{r.status || "—"}</span>
             <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{r.toko_nama}</span>
@@ -295,76 +266,43 @@ function ReturCard({ r, C, onConfirm, confirming }: { r: Retur; C: any; onConfir
           <div style={{ fontSize: 15, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>
             {r.buyer || "—"}
           </div>
+          {r.product_name && (
+            <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontSans, marginTop: 2 }}>
+              {r.product_name}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>
             Return: {r.return_sn || "—"} · Pesanan: {r.order_sn || "—"}
           </div>
           <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 1 }}>
-            {unixToWIB(r.create_time)}
+            {isoToWIB(r.created_at)}
           </div>
 
-          {r.reason && (
+          {(r.reason || r.text_reason) && (
             <div style={{
               marginTop: 10, padding: "8px 12px",
               background: isDarkColor(C) ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
               borderRadius: 8, fontSize: 12, color: C.textMid, fontFamily: C.fontSans,
             }}>
               <span style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 10 }}>ALASAN</span>
-              <div style={{ marginTop: 2 }}>{r.reason}</div>
-            </div>
-          )}
-
-          {r.items.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginBottom: 4 }}>ITEM DIRETUR</div>
-              {r.items.map((it, i) => (
-                <div key={i} style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "6px 10px", background: isDarkColor(C) ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)",
-                  borderRadius: 6, marginBottom: 4, fontSize: 12,
-                }}>
-                  <div style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    <span style={{ fontWeight: 700, color: C.text }}>{it.nama || it.sku}</span>
-                    {it.nama && it.sku && <span style={{ color: C.muted, marginLeft: 6, fontFamily: C.fontMono, fontSize: 11 }}>{it.sku}</span>}
-                  </div>
-                  <span style={{ fontFamily: C.fontMono, fontWeight: 700, color: C.text, marginLeft: 8 }}>×{it.qty}</span>
-                </div>
-              ))}
+              <div style={{ marginTop: 2 }}>
+                {r.reason}{r.text_reason ? ` — ${r.text_reason}` : ""}
+              </div>
             </div>
           )}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "stretch" }}>
-          <button onClick={onConfirm} disabled={confirming || alreadyClosed} style={{
-            padding: "10px 16px",
-            background: alreadyClosed
-              ? "transparent"
-              : `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
-            border: alreadyClosed ? `1.5px solid ${C.border}` : "none",
-            color: alreadyClosed ? C.muted : "#fff",
-            borderRadius: 10,
-            cursor: confirming || alreadyClosed ? "not-allowed" : "pointer",
-            fontWeight: 800, fontSize: 13, fontFamily: C.fontSans,
-            opacity: confirming ? 0.7 : 1, whiteSpace: "nowrap",
-          }}>
-            {confirming ? "Mengirim..." : alreadyClosed ? "Sudah Selesai" : "✓ Terima Retur"}
-          </button>
-          <details>
-            <summary style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, cursor: "pointer", textAlign: "center" }}>Raw</summary>
-            <pre style={{
-              marginTop: 4, padding: 8, background: C.bgPage, borderRadius: 6,
-              fontSize: 10, color: C.textMid, fontFamily: C.fontMono,
-              overflow: "auto", maxHeight: 200, maxWidth: 280,
-            }}>{JSON.stringify(r.raw, null, 2)}</pre>
-          </details>
+        <div style={{ textAlign: "right", minWidth: 120 }}>
+          <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>REFUND</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.red, fontFamily: C.fontMono, marginTop: 2 }}>
+            {rupiah(r.refund_amount)}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// Probe whether the theme palette looks like dark mode. Used so the inline
-// row background contrast looks right without threading isDark through every
-// subcomponent.
 function isDarkColor(C: any): boolean {
   return C.bg === "#0f1a16" || C.bg?.startsWith?.("#0") || C.text === "#e8f5f0";
 }

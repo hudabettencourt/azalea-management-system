@@ -44,13 +44,6 @@ type RingkasanSKU = {
 };
 
 const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)}jt`;
-  if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)}rb`;
-  return `${sign}${rupiahFmt(abs)}`;
-};
 const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 const pctFmt = (n: number) => `${(n || 0).toFixed(1)}%`;
 
@@ -333,10 +326,10 @@ export default function ProfitReportPage() {
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
           {[
-            { label: "Total Escrow", value: rupiahShort(totalEscrow), color: C.blue, icon: "💰" },
-            { label: "Total HPP", value: rupiahShort(totalHPP), color: C.red, icon: "🏭" },
-            { label: "Total Fee Shopee", value: rupiahShort(totalFee), color: C.yellow, icon: "🏪" },
-            { label: "Total Profit", value: rupiahShort(totalProfit), color: profitColor(totalProfit), icon: totalProfit >= 0 ? "📈" : "📉" },
+            { label: "Total Escrow", value: rupiahFmt(totalEscrow), color: C.blue, icon: "💰" },
+            { label: "Total HPP", value: rupiahFmt(totalHPP), color: C.red, icon: "🏭" },
+            { label: "Total Fee Shopee", value: rupiahFmt(totalFee), color: C.yellow, icon: "🏪" },
+            { label: "Total Profit", value: rupiahFmt(totalProfit), color: profitColor(totalProfit), icon: totalProfit >= 0 ? "📈" : "📉" },
             { label: "Margin", value: pctFmt(marginGlobal), color: profitColor(marginGlobal), icon: "%" },
           ].map((s, i) => (
             <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", boxShadow: C.shadow }}>
@@ -393,10 +386,10 @@ export default function ProfitReportPage() {
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>{r.jumlah_pesanan}</div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>{r.total_qty}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono }}>{rupiahShort(r.total_escrow)}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: C.red, fontFamily: C.fontMono }}>{rupiahShort(r.total_hpp)}</div>
-                      <div style={{ fontSize: 12, color: C.yellow, fontFamily: C.fontMono }}>{rupiahShort(r.total_fee)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 900, color: profitColor(r.total_profit), fontFamily: C.fontMono }}>{rupiahShort(r.total_profit)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_escrow)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_hpp)}</div>
+                      <div style={{ fontSize: 12, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_fee)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: profitColor(r.total_profit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_profit)}</div>
                       <div>
                         <span style={{ padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 800, background: isProfit ? `${C.green}20` : `${C.red}20`, color: isProfit ? C.green : C.red }}>
                           {pctFmt(r.margin_pct)}
@@ -410,10 +403,10 @@ export default function ProfitReportPage() {
                   <div style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>TOTAL</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: C.accent, fontFamily: C.fontMono }}>{filtered.length}</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: C.accent, fontFamily: C.fontMono }}>{filtered.reduce((a, p) => a + p.qty, 0)}</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.blue, fontFamily: C.fontMono }}>{rupiahShort(totalEscrow)}</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.red, fontFamily: C.fontMono }}>{rupiahShort(totalHPP)}</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.yellow, fontFamily: C.fontMono }}>{rupiahShort(totalFee)}</div>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: profitColor(totalProfit), fontFamily: C.fontMono }}>{rupiahShort(totalProfit)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalEscrow)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalHPP)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalFee)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: profitColor(totalProfit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalProfit)}</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: profitColor(marginGlobal) }}>{pctFmt(marginGlobal)}</div>
                 </div>
               </div>
@@ -427,9 +420,9 @@ export default function ProfitReportPage() {
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 14 }}>🏪 {r.nama}</div>
                     {[
                       { label: "Pesanan", value: r.jumlah, color: C.text },
-                      { label: "Total Escrow", value: rupiahShort(r.total_escrow), color: C.blue },
-                      { label: "Total HPP", value: rupiahShort(r.total_hpp), color: C.red },
-                      { label: "Profit", value: rupiahShort(r.total_profit), color: profitColor(r.total_profit) },
+                      { label: "Total Escrow", value: rupiahFmt(r.total_escrow), color: C.blue },
+                      { label: "Total HPP", value: rupiahFmt(r.total_hpp), color: C.red },
+                      { label: "Profit", value: rupiahFmt(r.total_profit), color: profitColor(r.total_profit) },
                     ].map((s, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
                         <span style={{ fontSize: 12, color: C.muted }}>{s.label}</span>
@@ -476,10 +469,10 @@ export default function ProfitReportPage() {
                         {p.hpp_per_unit === 0 && <div style={{ fontSize: 10, color: C.yellow }}>⚠ HPP belum ada</div>}
                       </div>
                       <div style={{ fontSize: 11, color: C.muted }}>{p.nama_toko}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono }}>{rupiahShort(p.escrow_amount)}</div>
-                      <div style={{ fontSize: 12, color: C.red, fontFamily: C.fontMono }}>{rupiahShort(p.hpp_total)}</div>
-                      <div style={{ fontSize: 11, color: C.yellow, fontFamily: C.fontMono }}>{rupiahShort(p.commission_fee + p.service_fee)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: profitColor(p.profit), fontFamily: C.fontMono }}>{rupiahShort(p.profit)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.escrow_amount)}</div>
+                      <div style={{ fontSize: 12, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.hpp_total)}</div>
+                      <div style={{ fontSize: 11, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.commission_fee + p.service_fee)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: profitColor(p.profit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.profit)}</div>
                       <div>
                         <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 10, background: p.profit >= 0 ? `${C.green}20` : `${C.red}20`, color: p.profit >= 0 ? C.green : C.red, fontFamily: C.fontMono, fontWeight: 700 }}>
                           {pctFmt(p.margin_pct)}

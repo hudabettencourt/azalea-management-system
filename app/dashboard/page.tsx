@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 //import AppShell from "@/components/AppShell";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort, tanggalFmt } from "@/lib/format";
 import {
   AreaChart, Area, LineChart, Line,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -18,18 +19,6 @@ type ProduksiBatch = { total_hpp: number; created_at: string };
 type GajiRow = { nominal: number; tipe_beban: string; tanggal: string };
 
 const bulanNama = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)}M`;
-  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)}jt`;
-  if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)}rb`;
-  return `${sign}${rupiahFmt(abs)}`;
-};
-const tanggalFmt = (s: string) =>
-  new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", timeZone: "Asia/Jakarta" });
 
 // Warna card pastel hardcoded — tidak bergantung pada theme
 const CARD_COLORS = [
@@ -237,7 +226,7 @@ export default function DashboardPage() {
     { label: "Laba Bersih",     value: rupiahShort(labaBulanIni),  sub: labaBulanIni >= 0 ? "Profit bulan ini 🎉" : "Rugi bulan ini ⚠", icon: labaBulanIni >= 0 ? "✓" : "!", href: "/laporan", hint: "Lihat laporan →", ci: labaBulanIni >= 0 ? 3 : 7 },
     { label: "Piutang",         value: rupiahShort(piutangTotal),  sub: "Online + Offline",        icon: "📝", href: "/penjualan",     hint: "Lihat piutang →",    ci: 4 },
     { label: "Hutang Supplier", value: rupiahShort(hutangTotal),   sub: "Belum dibayar",           icon: "⚠",  href: "/pembelian-bahan", hint: "Lihat hutang →",   ci: 5 },
-    { label: "Gaji Hari Ini",   value: rupiahFmt(gajiHariIni),     sub: "Total dibayarkan",        icon: "👥", href: "/penggajian",    hint: "Lihat gaji →",       ci: 6 },
+    { label: "Gaji Hari Ini",   value: rupiah(gajiHariIni),        sub: "Total dibayarkan",        icon: "👥", href: "/penggajian",    hint: "Lihat gaji →",       ci: 6 },
     { label: "Stok Kritis",     value: `${stokKritis.length} produk`, sub: stokKritis.length > 0 ? stokKritis.map(s => s.nama_produk).slice(0, 2).join(", ") : "Semua aman ✓", icon: "📦", href: "/produksi", hint: "Lihat stok →", ci: stokKritis.length > 0 ? 7 : 3 },
   ];
 

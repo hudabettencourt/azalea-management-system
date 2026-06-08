@@ -3,6 +3,7 @@
 // /shopee/retur — Retur masuk.
 // Tugas 7: list retur per toko, filter toko + status, "Terima Retur" button
 // triggers /api/shopee/confirm-return which also restores stock on success.
+// + Tombol "Sync Retur" → POST /api/shopee/sync-returns (simpan ke DB retur_online)
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
@@ -61,14 +62,15 @@ export default function ShopeeReturPage() {
   const [returns, setReturns] = useState<Retur[]>([]);
   const [tokoOpts, setTokoOpts] = useState<{ id: number; nama: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [filterToko, setFilterToko] = useState<string>("semua");
   const [filterStatus, setFilterStatus] = useState<string>("semua");
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
-  const showToast = (msg: string, type: "success" | "error" = "success") => {
+  const showToast = (msg: string, type: "success" | "error" = "success", ms = 3000) => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), ms);
   };
 
   const fetchAll = useCallback(async () => {
@@ -96,6 +98,36 @@ export default function ShopeeReturPage() {
       setLoading(false);
     }
   }, []);
+
+  // Sync retur ke DB (retur_online) via POST. Dipakai untuk profit report
+  // supaya pesanan retur tidak dihitung minus.
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/shopee/sync-returns", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        showToast("Sync gagal: " + (data.error || res.status), "error", 4000);
+        return;
+      }
+      const total = data.totalReturns ?? 0;
+      const inserted = data.inserted ?? 0;
+      const errors = data.errors ?? 0;
+      if (errors > 0) {
+        showToast(`⚠ ${total} retur ditarik, tapi ${errors} gagal disimpan ke DB (cek RLS/kolom).`, "error", 5000);
+      } else if (total === 0) {
+        showToast("Sync selesai — belum ada retur dari Shopee.", "success", 4000);
+      } else {
+        showToast(`✓ Sync selesai. ${inserted} retur tersimpan ke DB.`, "success", 4000);
+      }
+      // refresh tampilan live setelah sync
+      fetchAll();
+    } catch (err: any) {
+      showToast("Sync gagal: " + err.message, "error", 4000);
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchAll]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -152,13 +184,15 @@ export default function ShopeeReturPage() {
     fontFamily: C.fontSans, transition: "all 0.15s",
   });
 
+  const busy = loading || syncing;
+
   return (
     <AppShell>
       {toast && (
         <div style={{
           position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px",
           background: toast.type === "success" ? C.green : C.red, color: "#fff",
-          borderRadius: 10, fontSize: 13, fontWeight: 700, boxShadow: C.shadowMd,
+          borderRadius: 10, fontSize: 13, fontWeight: 700, boxShadow: C.shadowMd, maxWidth: 360,
         }}>{toast.msg}</div>
       )}
 
@@ -171,12 +205,22 @@ export default function ShopeeReturPage() {
               {filtered.length} retur · {tokoOpts.length} toko
             </p>
           </div>
-          <button onClick={fetchAll} disabled={loading} style={{
-            padding: "8px 16px",
-            background: "transparent", border: `1.5px solid ${C.border}`,
-            color: C.muted, borderRadius: 8, cursor: "pointer",
-            fontSize: 13, fontWeight: 700, opacity: loading ? 0.5 : 1,
-          }}>{loading ? "⏳" : "↻"} Refresh</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={fetchAll} disabled={busy} style={{
+              padding: "8px 16px",
+              background: "transparent", border: `1.5px solid ${C.border}`,
+              color: C.muted, borderRadius: 8, cursor: busy ? "not-allowed" : "pointer",
+              fontSize: 13, fontWeight: 700, opacity: busy ? 0.5 : 1,
+            }}>{loading ? "⏳" : "↻"} Refresh</button>
+            <button onClick={handleSync} disabled={busy} style={{
+              padding: "8px 16px",
+              background: syncing ? "transparent" : `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
+              border: syncing ? `1.5px solid ${C.border}` : "none",
+              color: syncing ? C.muted : "#fff", borderRadius: 8,
+              cursor: busy ? "not-allowed" : "pointer",
+              fontSize: 13, fontWeight: 800, opacity: busy && !syncing ? 0.5 : 1,
+            }}>{syncing ? "⏳ Menyinkronkan..." : "⇅ Sync Retur"}</button>
+          </div>
         </div>
 
         {/* Filters */}

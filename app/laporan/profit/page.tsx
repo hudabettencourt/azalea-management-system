@@ -2,6 +2,8 @@
 
 // /app/laporan/profit/page.tsx
 // Profit Report per Pesanan — Shopee escrow - HPP produksi
+// + Skip pesanan yang ada di retur_online (status retur aktif, bukan CANCELLED)
+//   karena Shopee tandai COMPLETED dengan escrow tereduksi → profit minus palsu.
 
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
@@ -24,6 +26,7 @@ type ProfitItem = {
   margin_pct: number;
   nama_toko: string;
   toko_id: number;
+  retur_dibatalkan: boolean; // pernah ada retur tapi dibatalkan Shopee → tetap dihitung
 };
 
 type RingkasanSKU = {
@@ -51,11 +54,15 @@ const rupiahShort = (n: number) => {
 const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 const pctFmt = (n: number) => `${(n || 0).toFixed(1)}%`;
 
+// Status retur yang dianggap "batal" → pesanan tetap valid, jangan di-skip.
+const RETUR_BATAL = new Set(["CANCELLED", "CANCELED", "CLOSED", "REJECTED"]);
+
 export default function ProfitReportPage() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
 
   const [items, setItems] = useState<ProfitItem[]>([]);
+  const [skippedRetur, setSkippedRetur] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"per_pesanan" | "per_sku" | "per_toko">("per_sku");
   const [filterToko, setFilterToko] = useState("semua");
@@ -85,6 +92,25 @@ export default function ProfitReportPage() {
       // Penjualan online mapping
       const { data: penjualanData } = await supabase.from("penjualan_online").select("id, toko_id");
       const penjualanTokoMap = new Map((penjualanData || []).map((p: any) => [p.id, p.toko_id]));
+
+      // Daftar pesanan yang DIRETUR (status retur aktif, bukan dibatalkan).
+      // Pesanan di set ini di-skip dari profit karena escrow tereduksi → minus palsu.
+      const { data: returData } = await supabase
+        .from("retur_online")
+        .select("order_sn, return_status")
+        .not("order_sn", "is", null);
+      const returActiveSet = new Set<string>();
+      const returBatalSet = new Set<string>();
+      for (const r of returData || []) {
+        const st = String((r as any).return_status || "").toUpperCase();
+        const sn = (r as any).order_sn ? String((r as any).order_sn) : "";
+        if (!sn) continue;
+        if (RETUR_BATAL.has(st)) {
+          returBatalSet.add(sn); // retur batal → pesanan tetap valid, tandai untuk audit
+        } else {
+          returActiveSet.add(sn); // retur aktif → skip dari profit
+        }
+      }
 
       // HPP per unit dari produksi (rata-rata)
       const { data: hppData } = await supabase
@@ -137,7 +163,14 @@ export default function ProfitReportPage() {
 
       // Build profit items
       const result: ProfitItem[] = [];
+      const skippedSet = new Set<string>();
       for (const d of detailData || [] as any[]) {
+        // Skip pesanan yang diretur (escrow Shopee sudah tereduksi → minus palsu)
+        if (returActiveSet.has(d.no_pesanan)) {
+          skippedSet.add(d.no_pesanan);
+          continue;
+        }
+
         const tokoId = penjualanTokoMap.get(d.penjualan_online_id) || 0;
         const escrow = escrowMap.get(d.no_pesanan);
         const hppData2 = d.stok_barang_id ? hppAvgMap.get(d.stok_barang_id) : null;
@@ -168,10 +201,12 @@ export default function ProfitReportPage() {
           margin_pct,
           nama_toko: tokoMap.get(tokoId) as string || "-",
           toko_id: tokoId,
+          retur_dibatalkan: returBatalSet.has(d.no_pesanan),
         });
       }
 
       setItems(result);
+      setSkippedRetur(skippedSet.size);
     } finally { setLoading(false); }
   }, [bulan]);
 
@@ -263,6 +298,9 @@ export default function ProfitReportPage() {
           <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Profit Report</h1>
           <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
             Profit per pesanan = Escrow Shopee − HPP Produksi · Hanya pesanan COMPLETED
+            {skippedRetur > 0 && (
+              <span style={{ color: C.yellow }}> · {skippedRetur} pesanan retur dikecualikan</span>
+            )}
           </p>
         </div>
 
@@ -430,6 +468,11 @@ export default function ProfitReportPage() {
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{p.nama_produk} <span style={{ color: C.muted, fontWeight: 400 }}>×{p.qty}</span></div>
                         <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{p.no_pesanan} · {tanggalFmt(p.tanggal_pesanan)}</div>
+                        {p.retur_dibatalkan && (
+                          <span style={{ display: "inline-block", marginTop: 3, fontSize: 9, padding: "1px 6px", borderRadius: 8, background: `${C.yellow}20`, color: C.yellow, fontFamily: C.fontMono, fontWeight: 700 }}>
+                            ↩ retur dibatalkan
+                          </span>
+                        )}
                         {p.hpp_per_unit === 0 && <div style={{ fontSize: 10, color: C.yellow }}>⚠ HPP belum ada</div>}
                       </div>
                       <div style={{ fontSize: 11, color: C.muted }}>{p.nama_toko}</div>

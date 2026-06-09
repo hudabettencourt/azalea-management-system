@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort } from "@/lib/format";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 interface GajiRow {
@@ -28,12 +29,6 @@ interface KaryawanRekap {
   byTanggal: Record<string, { rows: GajiRow[]; subtotal: number }>;
 }
 
-const rupiahFmt = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}jt`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}rb`;
-  return n.toString();
-};
 const getTipeBeban = (tipe: string) =>
   ["Operator Produksi", "Packing", "Pencetak"].includes(tipe) ? "HPP" : "Operasional";
 
@@ -51,7 +46,6 @@ const parseKeterangan = (ket: string) =>
     return { label: label || ket, qty: qty || "" };
   });
 
-// Parse kg dari keterangan "Siomay Besar: 2.5kg"
 const parseKgFromKet = (ket: string): number => {
   const match = ket.match(/(\d+\.?\d*)\s*kg/i);
   return match ? parseFloat(match[1]) : 0;
@@ -115,7 +109,6 @@ export default function GajiBoronganTab() {
 
   useEffect(() => { fetchRekap(); }, [fetchRekap]);
 
-  // ── Analytics ──
   const hariIni = hariIniWIB();
   const totalHariIni = allRows.filter(g => g.tanggal === hariIni).reduce((a, g) => a + g.nominal, 0);
 
@@ -139,12 +132,9 @@ export default function GajiBoronganTab() {
       .reduce((a, g) => a + parseKgFromKet(g.keterangan), 0);
   }, [allRows]);
 
-  // Chart data — gaji per hari
   const chartData = useMemo(() => {
     const byTgl: Record<string, number> = {};
-    allRows.forEach(g => {
-      byTgl[g.tanggal] = (byTgl[g.tanggal] || 0) + g.nominal;
-    });
+    allRows.forEach(g => { byTgl[g.tanggal] = (byTgl[g.tanggal] || 0) + g.nominal; });
     return Object.entries(byTgl)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([tgl, total]) => ({
@@ -154,7 +144,6 @@ export default function GajiBoronganTab() {
       }));
   }, [allRows, hariIni]);
 
-  // Ranking produktivitas
   const ranking = useMemo(() => {
     return [...filtered]
       .sort((a, b) => (b.totalNominal + b.totalUangMakan) - (a.totalNominal + a.totalUangMakan))
@@ -164,9 +153,7 @@ export default function GajiBoronganTab() {
   const handlePrintSlip = (k: KaryawanRekap, tanggal: string) => {
     const dayData = k.byTanggal[tanggal];
     const rows = dayData.rows.length === 1
-      ? parseKeterangan(dayData.rows[0].keterangan).map((r) => ({
-          label: r.label, qty: r.qty, total: dayData.rows[0].nominal,
-        }))
+      ? parseKeterangan(dayData.rows[0].keterangan).map((r) => ({ label: r.label, qty: r.qty, total: dayData.rows[0].nominal }))
       : dayData.rows.map((g) => ({ label: g.keterangan, qty: "", total: g.nominal }));
     const totalDenganMakan = dayData.subtotal + k.uang_makan;
     const rowsHtml = rows.map(r => `
@@ -224,7 +211,7 @@ export default function GajiBoronganTab() {
     return (
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: C.fontMono, color: C.text }}>
         <div style={{ color: C.muted, marginBottom: 2 }}>{payload[0]?.payload?.tgl}</div>
-        <div style={{ color: C.accent, fontWeight: 700 }}>{rupiahFmt(payload[0]?.value)}</div>
+        <div style={{ color: C.accent, fontWeight: 700 }}>{rupiah(payload[0]?.value)}</div>
       </div>
     );
   };
@@ -253,12 +240,12 @@ export default function GajiBoronganTab() {
         <button onClick={fetchRekap} style={{ marginLeft: "auto", padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.muted, cursor: "pointer", fontSize: 12, fontFamily: C.fontMono }}>↻ Refresh</button>
       </div>
 
-      {/* Summary cards — 4 cards */}
+      {/* Summary cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
         {[
-          { label: "Gaji Hari Ini", value: rupiahFmt(totalHariIni), color: C.blue, icon: "📅", sub: "hari ini" },
-          { label: "Total Bulan Ini", value: rupiahFmt(totalBulan), color: C.accent, icon: "💰", sub: `${jumlahHariAktif} hari aktif` },
-          { label: "Rata-rata/Hari", value: rupiahFmt(rataRataHarian), color: C.yellow, icon: "📊", sub: "per hari kerja" },
+          { label: "Gaji Hari Ini", value: rupiah(totalHariIni), color: C.blue, icon: "📅", sub: "hari ini" },
+          { label: "Total Bulan Ini", value: rupiah(totalBulan), color: C.accent, icon: "💰", sub: `${jumlahHariAktif} hari aktif` },
+          { label: "Rata-rata/Hari", value: rupiah(rataRataHarian), color: C.yellow, icon: "📊", sub: "per hari kerja" },
           { label: "Total Kg Produksi", value: `${totalKgBulan.toFixed(1)} kg`, color: C.green, icon: "⚖️", sub: "borongan pencetak" },
         ].map((s, i) => (
           <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", boxShadow: C.shadow }}>
@@ -271,11 +258,11 @@ export default function GajiBoronganTab() {
         ))}
       </div>
 
-      {/* HPP vs Ops mini summary */}
+      {/* HPP vs Ops */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
         {[
-          { label: "HPP Produksi", value: rupiahFmt(totalHPP), color: C.green, icon: "⚙️", pct: totalBulan > 0 ? Math.round(totalHPP / totalBulan * 100) : 0 },
-          { label: "Beban Operasional", value: rupiahFmt(totalOps), color: C.orange, icon: "📋", pct: totalBulan > 0 ? Math.round(totalOps / totalBulan * 100) : 0 },
+          { label: "HPP Produksi", value: rupiah(totalHPP), color: C.green, icon: "⚙️", pct: totalBulan > 0 ? Math.round(totalHPP / totalBulan * 100) : 0 },
+          { label: "Beban Operasional", value: rupiah(totalOps), color: C.orange, icon: "📋", pct: totalBulan > 0 ? Math.round(totalOps / totalBulan * 100) : 0 },
         ].map((s, i) => (
           <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 20px", boxShadow: C.shadow }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -294,10 +281,7 @@ export default function GajiBoronganTab() {
 
       {/* View toggle */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        {[
-          { id: "rekap", label: "📋 Rekap Karyawan" },
-          { id: "grafik", label: "📈 Grafik & Ranking" },
-        ].map(v => (
+        {[{ id: "rekap", label: "📋 Rekap Karyawan" }, { id: "grafik", label: "📈 Grafik & Ranking" }].map(v => (
           <button key={v.id} onClick={() => setActiveView(v.id as any)} style={{
             padding: "8px 18px", borderRadius: 8, cursor: "pointer",
             border: `1px solid ${activeView === v.id ? C.accent + "60" : C.border}`,
@@ -308,10 +292,9 @@ export default function GajiBoronganTab() {
         ))}
       </div>
 
-      {/* ── VIEW: GRAFIK & RANKING ── */}
+      {/* ── VIEW: GRAFIK ── */}
       {activeView === "grafik" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 16 }}>
-          {/* Bar chart gaji per hari */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px 24px", boxShadow: C.shadow }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>Gaji Per Hari</div>
             <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 16 }}>{filterBulan}</div>
@@ -332,8 +315,6 @@ export default function GajiBoronganTab() {
               </ResponsiveContainer>
             )}
           </div>
-
-          {/* Ranking produktivitas */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px 24px", boxShadow: C.shadow }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>🏆 Ranking Produktivitas</div>
             <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 16 }}>Bulan ini</div>
@@ -357,9 +338,7 @@ export default function GajiBoronganTab() {
                             <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{k.jumlahHari} hari</div>
                           </div>
                         </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: tipeColor, fontFamily: C.fontMono }}>
-                          {rupiahFmt(k.totalNominal + k.totalUangMakan)}
-                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: tipeColor, fontFamily: C.fontMono }}>{rupiah(k.totalNominal + k.totalUangMakan)}</div>
                       </div>
                       <div style={{ height: 4, background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)", borderRadius: 2 }}>
                         <div style={{ height: "100%", width: `${pct}%`, background: tipeColor, borderRadius: 2, transition: "width 0.5s ease" }} />
@@ -373,16 +352,14 @@ export default function GajiBoronganTab() {
         </div>
       )}
 
-      {/* ── VIEW: REKAP KARYAWAN ── */}
+      {/* ── VIEW: REKAP ── */}
       {activeView === "rekap" && (
         loading ? (
           <div style={{ textAlign: "center", padding: "60px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
             <div style={{ fontSize: 28, marginBottom: 8, color: C.accent }}>◈</div>Memuat data...
           </div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
-            Belum ada data gaji untuk bulan ini
-          </div>
+          <div style={{ textAlign: "center", padding: "60px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Belum ada data gaji untuk bulan ini</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {filtered.map((k) => {
@@ -390,7 +367,6 @@ export default function GajiBoronganTab() {
               const isHPP = getTipeBeban(k.tipe) === "HPP";
               const tipeColor = isHPP ? C.green : C.orange;
               const tanggalList = Object.keys(k.byTanggal).sort((a, b) => b.localeCompare(a));
-
               return (
                 <div key={k.id} style={{ background: C.card, border: `1px solid ${isExpanded ? C.accent + "60" : C.border}`, borderRadius: 14, overflow: "hidden", transition: "border-color 0.2s", boxShadow: C.shadow }}>
                   <div onClick={() => { setExpandedKaryawan(isExpanded ? null : k.id); setExpandedTanggal(null); }}
@@ -403,17 +379,16 @@ export default function GajiBoronganTab() {
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: `${tipeColor}20`, color: tipeColor, fontFamily: C.fontMono, fontWeight: 600 }}>{k.tipe}</span>
                         <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{k.jumlahHari} hari kerja</span>
-                        <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>~{rupiahFmt(k.jumlahHari > 0 ? (k.totalNominal + k.totalUangMakan) / k.jumlahHari : 0)}/hari</span>
+                        <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>~{rupiah(k.jumlahHari > 0 ? (k.totalNominal + k.totalUangMakan) / k.jumlahHari : 0)}/hari</span>
                         {k.uang_makan > 0 && <span style={{ fontSize: 10, color: C.yellow, fontFamily: C.fontMono }}>🍚 Rp{k.uang_makan.toLocaleString("id-ID")}/hari</span>}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: tipeColor, fontFamily: C.fontMono }}>{rupiahFmt(k.totalNominal + k.totalUangMakan)}</div>
-                      {k.uang_makan > 0 && <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>+{rupiahFmt(k.totalUangMakan)} makan</div>}
+                      <div style={{ fontSize: 16, fontWeight: 800, color: tipeColor, fontFamily: C.fontMono }}>{rupiah(k.totalNominal + k.totalUangMakan)}</div>
+                      {k.uang_makan > 0 && <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>+{rupiah(k.totalUangMakan)} makan</div>}
                     </div>
                     <div style={{ fontSize: 12, color: C.muted, marginLeft: 8, transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)" }}>▼</div>
                   </div>
-
                   {isExpanded && (
                     <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 20px" }}>
                       <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginBottom: 10, letterSpacing: "0.06em", textTransform: "uppercase" }}>Detail Per Hari</div>
@@ -432,7 +407,7 @@ export default function GajiBoronganTab() {
                                   <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{dayData.rows.length} entri</span>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(totalHari)}</span>
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiah(totalHari)}</span>
                                   <button onClick={(e) => { e.stopPropagation(); handlePrintSlip(k, tgl); }}
                                     style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.accent}40`, background: `${C.accent}15`, color: C.accent, cursor: "pointer", fontSize: 12, fontFamily: C.fontMono }}>
                                     🖨 Print
@@ -445,18 +420,18 @@ export default function GajiBoronganTab() {
                                   {dayData.rows.map((g) => (
                                     <div key={g.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
                                       <span style={{ color: C.textMid, fontFamily: C.fontMono, flex: 1 }}>{g.keterangan}</span>
-                                      <span style={{ color: tipeColor, fontFamily: C.fontMono, fontWeight: 600, marginLeft: 12 }}>{rupiahFmt(g.nominal)}</span>
+                                      <span style={{ color: tipeColor, fontFamily: C.fontMono, fontWeight: 600, marginLeft: 12 }}>{rupiah(g.nominal)}</span>
                                     </div>
                                   ))}
                                   {k.uang_makan > 0 && (
                                     <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12 }}>
                                       <span style={{ color: C.yellow, fontFamily: C.fontMono }}>🍚 Uang Makan</span>
-                                      <span style={{ color: C.yellow, fontFamily: C.fontMono, fontWeight: 600 }}>+{rupiahFmt(k.uang_makan)}</span>
+                                      <span style={{ color: C.yellow, fontFamily: C.fontMono, fontWeight: 600 }}>+{rupiah(k.uang_makan)}</span>
                                     </div>
                                   )}
                                   <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 2px", borderTop: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700 }}>
                                     <span style={{ color: C.muted, fontFamily: C.fontMono }}>Total hari ini</span>
-                                    <span style={{ color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(totalHari)}</span>
+                                    <span style={{ color: C.text, fontFamily: C.fontMono }}>{rupiah(totalHari)}</span>
                                   </div>
                                 </div>
                               )}
@@ -466,9 +441,9 @@ export default function GajiBoronganTab() {
                       </div>
                       <div style={{ marginTop: 12, padding: "12px 16px", borderRadius: 10, background: `${tipeColor}08`, border: `1px solid ${tipeColor}20`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
-                          Total {filterBulan} · {k.jumlahHari} hari{k.uang_makan > 0 && ` · +${rupiahFmt(k.totalUangMakan)} makan`}
+                          Total {filterBulan} · {k.jumlahHari} hari{k.uang_makan > 0 && ` · +${rupiah(k.totalUangMakan)} makan`}
                         </div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: tipeColor, fontFamily: C.fontMono }}>{rupiahFmt(k.totalNominal + k.totalUangMakan)}</div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: tipeColor, fontFamily: C.fontMono }}>{rupiah(k.totalNominal + k.totalUangMakan)}</div>
                       </div>
                     </div>
                   )}

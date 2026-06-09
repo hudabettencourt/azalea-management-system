@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort, tanggalFmt } from "@/lib/format";
 
 type BahanBaku = { id: number; nama: string; satuan: string; kategori: string; stok: number; harga_beli_avg: number; aktif: boolean | null; updated_at: string | null };
 type PembelianBahan = { id: number; tanggal: string; supplier_nama: string; total_bayar: number; metode_bayar: string; status_bayar: string; total_item: number; catatan: string | null; created_at: string };
@@ -12,24 +13,12 @@ type DetailPembelian = { id: number; bahan_baku_id: number; qty: number; harga_b
 type ItemBeli = { bahan_id: string; nama: string; qty: string; harga_beli: string; satuan: string };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)}M`;
-  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)}jt`;
-  if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)}rb`;
-  return rupiahFmt(abs);
-};
-const tanggalFmt = (s: string) =>
-  new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
 const tanggalFull = (s: string) =>
   new Date(s).toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
 
 const SATUAN_LIST = ["kg", "liter", "pack", "pcs", "roll", "karung", "lusin", "box", "gram", "ml"];
 const PAGE_SIZE = 10;
 
-// Warna pastel per metode/status
 const METODE_COLOR: Record<string, string> = { Tunai: "#22c55e", Transfer: "#3b82f6", Hutang: "#f59e0b" };
 const STATUS_COLOR: Record<string, string> = { Lunas: "#22c55e", "Belum Lunas": "#f59e0b" };
 
@@ -45,18 +34,15 @@ export default function PembelianBahanPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [activeTab, setActiveTab] = useState<"beli" | "riwayat" | "hutang" | "stok">("beli");
 
-  // Detail modal
   const [detailModal, setDetailModal] = useState<PembelianBahan | null>(null);
   const [detailItems, setDetailItems] = useState<DetailPembelian[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Form
   const [supplierNama, setSupplierNama] = useState("");
   const [metodeBayar, setMetodeBayar] = useState("Tunai");
   const [catatan, setCatatan] = useState("");
   const [items, setItems] = useState<ItemBeli[]>([{ bahan_id: "", nama: "", qty: "", harga_beli: "", satuan: "" }]);
 
-  // Filter riwayat
   const [filterSupplier, setFilterSupplier] = useState("");
   const [filterMetode, setFilterMetode] = useState("Semua");
   const [filterStatus, setFilterStatus] = useState("Semua");
@@ -64,7 +50,6 @@ export default function PembelianBahanPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Filter stok
   const [filterKategoriStok, setFilterKategoriStok] = useState("Semua");
   const [searchStok, setSearchStok] = useState("");
 
@@ -92,7 +77,6 @@ export default function PembelianBahanPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Buka detail modal
   const openDetail = async (r: PembelianBahan) => {
     setDetailModal(r);
     setLoadingDetail(true);
@@ -109,7 +93,6 @@ export default function PembelianBahanPage() {
     }
   };
 
-  // Stats
   const now = new Date();
   const bulanMulai = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const riwayatBulanIni = riwayat.filter(r => r.created_at >= bulanMulai);
@@ -118,7 +101,6 @@ export default function PembelianBahanPage() {
   const avgTransaksi = riwayat.length > 0 ? riwayat.reduce((a, r) => a + r.total_bayar, 0) / riwayat.length : 0;
   const stokKritis = bahan.filter(b => b.stok <= 0).length;
 
-  // Filter riwayat
   const riwayatFiltered = useMemo(() => {
     let data = [...riwayat];
     if (filterSupplier.trim()) data = data.filter(r => r.supplier_nama.toLowerCase().includes(filterSupplier.toLowerCase()));
@@ -142,7 +124,6 @@ export default function PembelianBahanPage() {
     setCurrentPage(1);
   };
 
-  // Filter stok
   const kategoriList = Array.from(new Set(bahan.map(b => b.kategori).filter(Boolean)));
   const bahanFiltered = useMemo(() => {
     let data = filterKategoriStok === "Semua" ? bahan : bahan.filter(b => b.kategori === filterKategoriStok);
@@ -150,7 +131,6 @@ export default function PembelianBahanPage() {
     return data;
   }, [bahan, filterKategoriStok, searchStok]);
 
-  // Form helpers
   const addItem = () => setItems([...items, { bahan_id: "", nama: "", qty: "", harga_beli: "", satuan: "" }]);
   const removeItem = (idx: number) => { if (items.length > 1) setItems(items.filter((_, i) => i !== idx)); };
   const updateItem = (idx: number, field: keyof ItemBeli, value: string) => {
@@ -200,7 +180,7 @@ export default function PembelianBahanPage() {
       if (metodeBayar !== "Hutang") await supabase.from("kas").insert([{ tipe: "Keluar", kategori: "Beli Bahan", nominal: totalBayar, keterangan: `Beli bahan dari ${supplierNama} (${validItems.length} item)` }]);
       if (metodeBayar === "Hutang") await supabase.from("hutang_supplier_bahan").insert([{ pembelian_bahan_id: pembelianData.id, supplier_nama: supplierNama.trim(), nominal: totalBayar, status: "Belum Lunas" }]);
       await supabase.from("data_zakat").insert([{ nominal_belanja: totalBayar, zakat_keluar: 0, saldo_zakat: saldoZakatLalu + zakatBaru, pj: `Beli Bahan - ${supplierNama}` }]);
-      showToast(`Pembelian ${rupiahFmt(totalBayar)} berhasil! Zakat +${rupiahFmt(zakatBaru)}`);
+      showToast(`Pembelian ${rupiah(totalBayar)} berhasil! Zakat +${rupiah(zakatBaru)}`);
       setSupplierNama(""); setMetodeBayar("Tunai"); setCatatan("");
       setItems([{ bahan_id: "", nama: "", qty: "", harga_beli: "", satuan: "" }]);
       fetchData(); setActiveTab("riwayat");
@@ -218,7 +198,6 @@ export default function PembelianBahanPage() {
     showToast(`Hutang ke ${nama} lunas!`); fetchData();
   };
 
-  // Styles
   const inputS: React.CSSProperties = {
     width: "100%", padding: "9px 12px",
     background: isDark ? "rgba(255,255,255,0.05)" : "#f8fffe",
@@ -263,7 +242,6 @@ export default function PembelianBahanPage() {
         .btn-hover:hover { filter: brightness(1.08); transform: translateY(-1px); }
       `}</style>
 
-      {/* Toast */}
       {toast && (
         <div style={{
           position: "fixed", top: 24, right: 24, zIndex: 9999,
@@ -274,44 +252,25 @@ export default function PembelianBahanPage() {
         }}>{toast.msg}</div>
       )}
 
-      {/* Detail Modal */}
       {detailModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
           onClick={() => setDetailModal(null)}>
           <div style={{ background: C.card, borderRadius: 20, padding: 28, width: "100%", maxWidth: 560, boxShadow: "0 24px 64px rgba(0,0,0,0.3)", border: `1px solid ${C.border}` }}
             onClick={e => e.stopPropagation()}>
-            
-            {/* Modal Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: C.text, fontFamily: C.fontSans }}>
-                  {detailModal.supplier_nama}
-                </div>
-                <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 3 }}>
-                  {tanggalFull(detailModal.created_at)}
-                </div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: C.text, fontFamily: C.fontSans }}>{detailModal.supplier_nama}</div>
+                <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 3 }}>{tanggalFull(detailModal.created_at)}</div>
               </div>
               <button onClick={() => setDetailModal(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
             </div>
-
-            {/* Badges */}
             <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-              <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: (METODE_COLOR[detailModal.metode_bayar] || C.accent) + "20", color: METODE_COLOR[detailModal.metode_bayar] || C.accent }}>
-                {detailModal.metode_bayar}
-              </span>
-              <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: (STATUS_COLOR[detailModal.status_bayar] || C.muted) + "20", color: STATUS_COLOR[detailModal.status_bayar] || C.muted }}>
-                {detailModal.status_bayar}
-              </span>
-              <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: statCardColors[2].bg, color: statCardColors[2].color }}>
-                {detailModal.total_item} bahan
-              </span>
+              <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: (METODE_COLOR[detailModal.metode_bayar] || C.accent) + "20", color: METODE_COLOR[detailModal.metode_bayar] || C.accent }}>{detailModal.metode_bayar}</span>
+              <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: (STATUS_COLOR[detailModal.status_bayar] || C.muted) + "20", color: STATUS_COLOR[detailModal.status_bayar] || C.muted }}>{detailModal.status_bayar}</span>
+              <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: statCardColors[2].bg, color: statCardColors[2].color }}>{detailModal.total_item} bahan</span>
             </div>
-
-            {/* Items */}
             <div style={{ background: isDark ? "rgba(255,255,255,0.03)" : "#f8fffe", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.fontMono }}>
-                Detail Bahan
-              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12, fontFamily: C.fontMono }}>Detail Bahan</div>
               {loadingDetail ? (
                 <div style={{ textAlign: "center", padding: "20px 0", color: C.muted, fontSize: 13 }}>Memuat detail...</div>
               ) : detailItems.length === 0 ? (
@@ -334,13 +293,10 @@ export default function PembelianBahanPage() {
                 </>
               )}
             </div>
-
-            {/* Total */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: statCardColors[0].bg, borderRadius: 12, border: `1px solid ${statCardColors[0].border}` }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: statCardColors[0].color }}>TOTAL BAYAR</span>
-              <span style={{ fontSize: 22, fontWeight: 900, color: statCardColors[0].color, fontFamily: C.fontSans }}>{rupiahFmt(detailModal.total_bayar)}</span>
+              <span style={{ fontSize: 22, fontWeight: 900, color: statCardColors[0].color, fontFamily: C.fontSans }}>{rupiah(detailModal.total_bayar)}</span>
             </div>
-
             {detailModal.catatan && (
               <div style={{ marginTop: 12, padding: "10px 14px", background: isDark ? "rgba(255,255,255,0.04)" : "#f8fffe", borderRadius: 10, fontSize: 13, color: C.muted, fontStyle: "italic" }}>
                 📝 {detailModal.catatan}
@@ -386,7 +342,6 @@ export default function PembelianBahanPage() {
         {activeTab === "beli" && (
           <div style={{ background: C.card, padding: 24, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 20 }}>Input Pembelian Bahan</div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: C.muted, display: "block", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>Supplier / Toko</label>
@@ -401,24 +356,20 @@ export default function PembelianBahanPage() {
                 </select>
               </div>
             </div>
-
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: C.muted, display: "block", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>Catatan</label>
               <input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Opsional" style={inputS} />
             </div>
-
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>Bahan yang Dibeli</label>
                 <button onClick={addItem} className="btn-hover" style={{ background: statCardColors[0].bg, border: `1px solid ${statCardColors[0].border}`, color: statCardColors[0].color, padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>+ Tambah Bahan</button>
               </div>
-
               <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 80px 140px 36px", gap: 8, marginBottom: 6 }}>
                 {["BAHAN", "QTY", "SATUAN", "HARGA/SAT", ""].map((h, i) => (
                   <div key={i} style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.06em" }}>{h}</div>
                 ))}
               </div>
-
               {items.map((item, idx) => (
                 <div key={idx} style={{ marginBottom: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 80px 80px 140px 36px", gap: 8, alignItems: "center" }}>
@@ -443,31 +394,27 @@ export default function PembelianBahanPage() {
                   </div>
                   {item.qty && item.harga_beli && (
                     <div style={{ fontSize: 11, color: statCardColors[0].color, marginTop: 3, paddingLeft: 4, fontWeight: 700, fontFamily: C.fontMono }}>
-                      Subtotal: {rupiahFmt(parseFloat(item.qty) * parseInt(item.harga_beli))}
+                      Subtotal: {rupiah(parseFloat(item.qty) * parseInt(item.harga_beli))}
                     </div>
                   )}
                 </div>
               ))}
             </div>
-
-            {/* Total box */}
             <div style={{ background: statCardColors[0].bg, border: `1px solid ${statCardColors[0].border}`, borderRadius: 12, padding: "14px 18px", marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontWeight: 700, color: C.muted, fontSize: 13 }}>TOTAL BAYAR</span>
-                <span style={{ fontWeight: 900, fontSize: 22, color: statCardColors[0].color }}>{rupiahFmt(totalBayar)}</span>
+                <span style={{ fontWeight: 900, fontSize: 22, color: statCardColors[0].color }}>{rupiah(totalBayar)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>🌙 Zakat Tijarah (2.5%)</span>
-                <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700, fontFamily: C.fontMono }}>+{rupiahFmt(Math.floor(totalBayar * 0.025))}</span>
+                <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700, fontFamily: C.fontMono }}>+{rupiah(Math.floor(totalBayar * 0.025))}</span>
               </div>
             </div>
-
             {metodeBayar === "Hutang" && (
               <div style={{ background: statCardColors[1].bg, border: `1px solid ${statCardColors[1].border}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: statCardColors[1].color, fontWeight: 600 }}>
-                ⚠️ Akan dicatat sebagai hutang ke supplier sebesar {rupiahFmt(totalBayar)}
+                ⚠️ Akan dicatat sebagai hutang ke supplier sebesar {rupiah(totalBayar)}
               </div>
             )}
-
             <button onClick={simpanPembelian} disabled={submitting} className="btn-hover" style={{
               width: "100%", padding: 13, borderRadius: 12,
               background: submitting ? C.dim : statCardColors[0].bg,
@@ -488,7 +435,6 @@ export default function PembelianBahanPage() {
               <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>Riwayat Pembelian</div>
               <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>Klik baris untuk detail</div>
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 10, marginBottom: 16 }}>
               <input type="text" value={filterSupplier} placeholder="🔍 Cari supplier..." onChange={e => { setFilterSupplier(e.target.value); setCurrentPage(1); }} style={{ ...inputS, padding: "8px 12px" }} />
               <select value={filterMetode} onChange={e => { setFilterMetode(e.target.value); setCurrentPage(1); }} style={{ ...inputS, width: 130 }}>
@@ -503,8 +449,6 @@ export default function PembelianBahanPage() {
                 <option value="Belum Lunas">Belum Lunas</option>
               </select>
             </div>
-
-            {/* Table header */}
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 0.8fr 0.8fr", gap: 8, padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 8, marginBottom: 4 }}>
               {[
                 { label: "Supplier", field: "supplier_nama" as const },
@@ -513,42 +457,24 @@ export default function PembelianBahanPage() {
                 { label: "Metode", field: null },
                 { label: "Status", field: null },
               ].map(col => (
-                <button key={col.label} onClick={() => col.field && handleSort(col.field)} style={{
-                  background: "none", border: "none", color: C.muted, fontSize: 11, fontWeight: 700,
-                  textAlign: "left", cursor: col.field ? "pointer" : "default", padding: 0,
-                  letterSpacing: "0.06em", fontFamily: C.fontSans, textTransform: "uppercase",
-                }}>
+                <button key={col.label} onClick={() => col.field && handleSort(col.field)} style={{ background: "none", border: "none", color: C.muted, fontSize: 11, fontWeight: 700, textAlign: "left", cursor: col.field ? "pointer" : "default", padding: 0, letterSpacing: "0.06em", fontFamily: C.fontSans, textTransform: "uppercase" }}>
                   {col.label}{col.field && (sortField === col.field ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕")}
                 </button>
               ))}
             </div>
-
-            {riwayatFiltered.length === 0 && (
-              <div style={{ textAlign: "center", color: C.muted, padding: 32, fontSize: 14 }}>Tidak ada data</div>
-            )}
-
+            {riwayatFiltered.length === 0 && <div style={{ textAlign: "center", color: C.muted, padding: 32, fontSize: 14 }}>Tidak ada data</div>}
             {riwayatPage.map(r => (
-              <div key={r.id} className="row-hover" onClick={() => openDetail(r)} style={{
-                display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 0.8fr 0.8fr", gap: 8,
-                alignItems: "center", padding: "12px 12px",
-                borderBottom: `1px solid ${C.border}`,
-                borderRadius: 8, transition: "background 0.12s",
-              }}>
+              <div key={r.id} className="row-hover" onClick={() => openDetail(r)} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.2fr 0.8fr 0.8fr", gap: 8, alignItems: "center", padding: "12px 12px", borderBottom: `1px solid ${C.border}`, borderRadius: 8, transition: "background 0.12s" }}>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{r.supplier_nama}</div>
                   <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{r.total_item} bahan {r.catatan ? `· ${r.catatan.slice(0, 20)}` : ""}</div>
                 </div>
                 <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(r.created_at)}</div>
-                <div style={{ fontWeight: 800, fontSize: 14, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(r.total_bayar)}</div>
-                <div>
-                  <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: (METODE_COLOR[r.metode_bayar] || C.accent) + "20", color: METODE_COLOR[r.metode_bayar] || C.accent }}>{r.metode_bayar}</span>
-                </div>
-                <div>
-                  <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: (STATUS_COLOR[r.status_bayar] || C.muted) + "20", color: STATUS_COLOR[r.status_bayar] || C.muted }}>{r.status_bayar}</span>
-                </div>
+                <div style={{ fontWeight: 800, fontSize: 14, color: C.text, fontFamily: C.fontMono }}>{rupiah(r.total_bayar)}</div>
+                <div><span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: (METODE_COLOR[r.metode_bayar] || C.accent) + "20", color: METODE_COLOR[r.metode_bayar] || C.accent }}>{r.metode_bayar}</span></div>
+                <div><span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: (STATUS_COLOR[r.status_bayar] || C.muted) + "20", color: STATUS_COLOR[r.status_bayar] || C.muted }}>{r.status_bayar}</span></div>
               </div>
             ))}
-
             {totalPages > 1 && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 12, color: C.muted }}>{riwayatFiltered.length} hasil · hal {currentPage}/{totalPages}</div>
@@ -557,9 +483,7 @@ export default function PembelianBahanPage() {
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     const page = currentPage <= 3 ? i + 1 : currentPage - 2 + i;
                     if (page < 1 || page > totalPages) return null;
-                    return (
-                      <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: "6px 10px", background: page === currentPage ? statCardColors[0].bg : "transparent", border: `1px solid ${page === currentPage ? statCardColors[0].border : C.border}`, borderRadius: 8, color: page === currentPage ? statCardColors[0].color : C.muted, cursor: "pointer", fontSize: 12, fontWeight: page === currentPage ? 700 : 400 }}>{page}</button>
-                    );
+                    return <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: "6px 10px", background: page === currentPage ? statCardColors[0].bg : "transparent", border: `1px solid ${page === currentPage ? statCardColors[0].border : C.border}`, borderRadius: 8, color: page === currentPage ? statCardColors[0].color : C.muted, cursor: "pointer", fontSize: 12, fontWeight: page === currentPage ? 700 : 400 }}>{page}</button>;
                   })}
                   <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, cursor: "pointer", fontSize: 12 }}>Next →</button>
                 </div>
@@ -572,10 +496,8 @@ export default function PembelianBahanPage() {
         {activeTab === "hutang" && (
           <div style={{ background: C.card, padding: 20, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>Hutang ke Supplier</div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Total hutang: <strong style={{ color: statCardColors[1].color }}>{rupiahFmt(totalHutang)}</strong></div>
-            {hutang.length === 0 && (
-              <div style={{ textAlign: "center", color: "#22c55e", padding: 32, fontSize: 14, fontWeight: 600 }}>Tidak ada hutang supplier 🎉</div>
-            )}
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Total hutang: <strong style={{ color: statCardColors[1].color }}>{rupiah(totalHutang)}</strong></div>
+            {hutang.length === 0 && <div style={{ textAlign: "center", color: "#22c55e", padding: 32, fontSize: 14, fontWeight: 600 }}>Tidak ada hutang supplier 🎉</div>}
             {hutang.map(h => (
               <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: `1px solid ${C.border}` }}>
                 <div>
@@ -583,10 +505,8 @@ export default function PembelianBahanPage() {
                   <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{tanggalFmt(h.created_at)}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: statCardColors[1].color, fontFamily: C.fontMono }}>{rupiahFmt(h.nominal)}</div>
-                  <button onClick={() => lunaskanHutang(h.id, h.nominal, h.supplier_nama)} className="btn-hover" style={{ background: "#22c55e20", border: "1px solid #22c55e40", color: "#22c55e", padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>
-                    ✓ Lunas
-                  </button>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: statCardColors[1].color, fontFamily: C.fontMono }}>{rupiah(h.nominal)}</div>
+                  <button onClick={() => lunaskanHutang(h.id, h.nominal, h.supplier_nama)} className="btn-hover" style={{ background: "#22c55e20", border: "1px solid #22c55e40", color: "#22c55e", padding: "7px 16px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>✓ Lunas</button>
                 </div>
               </div>
             ))}
@@ -604,43 +524,30 @@ export default function PembelianBahanPage() {
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <input type="text" value={searchStok} onChange={e => setSearchStok(e.target.value)} placeholder="🔍 Cari nama..." style={{ ...inputS, width: 140, padding: "7px 10px" }} />
                 {["Semua", ...kategoriList].map(k => (
-                  <button key={k} onClick={() => setFilterKategoriStok(k)} style={{
-                    padding: "5px 12px", borderRadius: 20,
-                    border: `1.5px solid ${filterKategoriStok === k ? statCardColors[2].border : C.border}`,
-                    background: filterKategoriStok === k ? statCardColors[2].bg : "transparent",
-                    color: filterKategoriStok === k ? statCardColors[2].color : C.muted,
-                    fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
-                  }}>{k}</button>
+                  <button key={k} onClick={() => setFilterKategoriStok(k)} style={{ padding: "5px 12px", borderRadius: 20, border: `1.5px solid ${filterKategoriStok === k ? statCardColors[2].border : C.border}`, background: filterKategoriStok === k ? statCardColors[2].bg : "transparent", color: filterKategoriStok === k ? statCardColors[2].color : C.muted, fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>{k}</button>
                 ))}
               </div>
             </div>
-
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1.2fr", gap: 8, padding: "8px 12px", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 8, marginBottom: 4 }}>
               {["NAMA BAHAN", "KATEGORI", "STOK", "HPP / SAT", "DIPERBARUI"].map(h => (
                 <div key={h} style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.06em", textTransform: "uppercase" }}>{h}</div>
               ))}
             </div>
-
-            {bahanFiltered.length === 0 && (
-              <div style={{ textAlign: "center", color: C.muted, padding: 32, fontSize: 14 }}>{searchStok ? "Tidak ditemukan." : "Belum ada bahan."}</div>
-            )}
-
+            {bahanFiltered.length === 0 && <div style={{ textAlign: "center", color: C.muted, padding: 32, fontSize: 14 }}>{searchStok ? "Tidak ditemukan." : "Belum ada bahan."}</div>}
             {bahanFiltered.map(b => {
               const catColor = b.kategori === "Bahan Baku" ? statCardColors[2].color : b.kategori === "Bahan Penolong" ? statCardColors[1].color : statCardColors[0].color;
               const isHabis = b.stok <= 0;
               return (
                 <div key={b.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1.2fr", gap: 8, alignItems: "center", padding: "10px 12px", borderBottom: `1px solid ${C.border}`, borderRadius: 8 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: C.text }}>{b.nama}</div>
-                  <div>
-                    <span style={{ background: catColor + "20", color: catColor, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{b.kategori}</span>
-                  </div>
+                  <div><span style={{ background: catColor + "20", color: catColor, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{b.kategori}</span></div>
                   <div>
                     <span style={{ fontWeight: 800, fontSize: 14, color: isHabis ? "#ef4444" : C.text, fontFamily: C.fontMono }}>
                       {b.stok} <span style={{ fontSize: 11, fontWeight: 400, color: C.muted }}>{b.satuan}</span>
                     </span>
                     {isHabis && <div style={{ fontSize: 10, color: "#ef4444", fontWeight: 700, marginTop: 1 }}>⚠ Habis</div>}
                   </div>
-                  <div style={{ fontSize: 12, color: statCardColors[0].color, fontFamily: C.fontMono, fontWeight: 700 }}>{rupiahFmt(b.harga_beli_avg)}/{b.satuan}</div>
+                  <div style={{ fontSize: 12, color: statCardColors[0].color, fontFamily: C.fontMono, fontWeight: 700 }}>{rupiah(b.harga_beli_avg)}/{b.satuan}</div>
                   <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{b.updated_at ? tanggalFmt(b.updated_at) : "—"}</div>
                 </div>
               );

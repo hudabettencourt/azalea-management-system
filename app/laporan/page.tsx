@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort, pctFmt } from "@/lib/format";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
 type LaporanData = {
@@ -41,15 +42,6 @@ type ProdukProfit = {
 
 type ChartDataPoint = { tanggal: string; omzet: number; laba: number; beban: number };
 type Toast = { msg: string; type: "success" | "error" | "info" };
-
-const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const val = Math.round(n || 0);
-  if (Math.abs(val) >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}jt`;
-  if (Math.abs(val) >= 1_000) return `${(val / 1_000).toFixed(0)}rb`;
-  return val.toString();
-};
-const pctFmt = (n: number) => `${(n || 0).toFixed(1)}%`;
 
 export default function LaporanPage() {
   const { isDark } = useTheme();
@@ -144,15 +136,11 @@ export default function LaporanPage() {
         supabase.from("kas").select("nominal").eq("tipe", "Keluar").in("kategori", ["Operasional", "Lain-lain"]).gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("data_zakat").select("zakat_keluar").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("gaji_harian").select("nominal").eq("tipe_beban", "Operasional").gte("tanggal", startDateStr).lte("tanggal", endDateStr),
-
-        // ── HPP per produk: dari detail penjualan online ──
         supabase.from("detail_penjualan_online")
           .select("stok_barang_id, qty, harga_satuan, total_pembayaran, penjualan_online_id, stok_barang(nama_produk)")
           .gte("tanggal_pesanan", startDateStr)
           .lte("tanggal_pesanan", endDateStr)
           .not("stok_barang_id", "is", null),
-
-        // ── HPP per unit dari detail_produksi_output ──
         supabase.from("detail_produksi_output")
           .select("stok_barang_id, qty, hpp_per_unit, stok_barang(nama_produk)")
           .not("stok_barang_id", "is", null),
@@ -165,7 +153,6 @@ export default function LaporanPage() {
       const retur_pembatalan = sum(returRes.data || []);
       const fee_platform = sum(feeRes.data || [], "total_fee");
 
-      // HPP dari produksi_batch
       let hpp_bahan = 0, hpp_gaji_operator = 0, hpp_gaji_packing = 0;
       (produksiRes.data || []).forEach((p: any) => {
         const gaji_op = p.gaji_operator || 0;
@@ -176,8 +163,6 @@ export default function LaporanPage() {
         hpp_bahan += hpp_total - gaji_op - gaji_pack;
       });
 
-      // ── HPP per produk dari data real ──
-      // Build HPP per unit map dari detail_produksi_output (ambil rata-rata terbaru)
       const hppPerUnitMap: Record<number, { hpp: number; count: number; nama: string }> = {};
       (detailProduksiRes.data || []).forEach((d: any) => {
         const id = d.stok_barang_id;
@@ -186,24 +171,20 @@ export default function LaporanPage() {
         hppPerUnitMap[id].hpp += d.hpp_per_unit || 0;
         hppPerUnitMap[id].count += 1;
       });
-      // Rata-rata hpp_per_unit
       const hppAvgMap: Record<number, { hpp_per_unit: number; nama: string }> = {};
       Object.entries(hppPerUnitMap).forEach(([id, v]) => {
         hppAvgMap[Number(id)] = { hpp_per_unit: v.count > 0 ? v.hpp / v.count : 0, nama: v.nama };
       });
 
-      // Build penjualan per stok_barang_id
       const penjualanMap: Record<number, { qty: number; omzet: number; nama: string }> = {};
       (detailPenjualanRes.data || []).forEach((d: any) => {
         const id = d.stok_barang_id;
         const nama = d.stok_barang?.nama_produk || `Produk #${id}`;
         if (!penjualanMap[id]) penjualanMap[id] = { qty: 0, omzet: 0, nama };
         penjualanMap[id].qty += Number(d.qty) || 0;
-        // Gunakan total_pembayaran jika ada, fallback ke qty * harga_satuan
         penjualanMap[id].omzet += Number(d.total_pembayaran) || (Number(d.qty) * Number(d.harga_satuan)) || 0;
       });
 
-      // Gabungkan penjualan + HPP per produk
       const produkProfitList: ProdukProfit[] = Object.entries(penjualanMap).map(([idStr, penjualan]) => {
         const id = Number(idStr);
         const hppData = hppAvgMap[id];
@@ -242,7 +223,6 @@ export default function LaporanPage() {
 
       setLaporan({ omzet_shopee, omzet_offline, retur_pembatalan, fee_platform, total_pendapatan, hpp_bahan, hpp_gaji_operator, hpp_gaji_packing, total_hpp, laba_kotor, margin_kotor, biaya_gaji, biaya_transport, biaya_operasional_lain, biaya_zakat, total_biaya_operasional, laba_bersih, margin_bersih });
 
-      // Chart data
       const [shopeeChartRes, offlineChartRes, returChartRes, produksiChartRes, kasKeluarChartRes] = await Promise.all([
         supabase.from("penjualan_online").select("total_nominal, created_at").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal, created_at").eq("tipe", "Masuk").eq("kategori", "Offline").gte("created_at", startDate).lte("created_at", endDate),
@@ -307,15 +287,14 @@ export default function LaporanPage() {
   };
 
   const barData = laporan ? [
-    { kategori: "Pendapatan", nilai: laporan.total_pendapatan, color: CC.blue.color },
-    { kategori: "HPP",        nilai: -laporan.total_hpp,              color: CC.red.color },
-    { kategori: "Biaya Ops",  nilai: -laporan.total_biaya_operasional, color: CC.yellow.color },
-    { kategori: "Laba Bersih",nilai: laporan.laba_bersih,             color: CC.green.color },
+    { kategori: "Pendapatan", nilai: laporan.total_pendapatan,          color: CC.blue.color },
+    { kategori: "HPP",        nilai: -laporan.total_hpp,                color: CC.red.color },
+    { kategori: "Biaya Ops",  nilai: -laporan.total_biaya_operasional,  color: CC.yellow.color },
+    { kategori: "Laba Bersih",nilai: laporan.laba_bersih,               color: CC.green.color },
   ] : [];
 
-  // Total per produk
-  const totalOmzetProduk = produkProfit.reduce((a, p) => a + p.omzet, 0);
-  const totalHppProduk   = produkProfit.reduce((a, p) => a + p.hpp, 0);
+  const totalOmzetProduk  = produkProfit.reduce((a, p) => a + p.omzet, 0);
+  const totalHppProduk    = produkProfit.reduce((a, p) => a + p.hpp, 0);
   const totalProfitProduk = produkProfit.reduce((a, p) => a + p.profit, 0);
 
   if (loading) return (
@@ -384,16 +363,16 @@ export default function LaporanPage() {
             {/* Summary Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
               {[
-                { label: "Omzet Netto",   value: laporan.total_pendapatan,         col: CC.blue,   pct: null },
-                { label: "HPP",           value: laporan.total_hpp,                col: CC.red,    pct: null },
-                { label: "Laba Kotor",    value: laporan.laba_kotor,               col: CC.green,  pct: laporan.margin_kotor },
-                { label: "Biaya Ops",     value: laporan.total_biaya_operasional,  col: CC.yellow, pct: null },
-                { label: "Laba Bersih",   value: laporan.laba_bersih,              col: CC.purple, pct: laporan.margin_bersih },
+                { label: "Omzet Netto",  value: laporan.total_pendapatan,        col: CC.blue,   pct: null },
+                { label: "HPP",          value: laporan.total_hpp,               col: CC.red,    pct: null },
+                { label: "Laba Kotor",   value: laporan.laba_kotor,              col: CC.green,  pct: laporan.margin_kotor },
+                { label: "Biaya Ops",    value: laporan.total_biaya_operasional, col: CC.yellow, pct: null },
+                { label: "Laba Bersih",  value: laporan.laba_bersih,             col: CC.purple, pct: laporan.margin_bersih },
               ].map((s, i) => (
                 <div key={i} style={{ background: s.col.bg, border: `1px solid ${s.col.border}`, borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden" }}>
                   <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: s.col.color, borderRadius: "14px 14px 0 0" }} />
                   <div style={{ fontSize: 10, fontWeight: 700, color: s.col.color, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, marginTop: 4 }}>{s.label}</div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: s.col.color, letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: s.pct !== null ? 3 : 0 }}>{rupiahFmt(s.value)}</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: s.col.color, letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: s.pct !== null ? 3 : 0 }}>{rupiah(s.value)}</div>
                   {s.pct !== null && <div style={{ fontSize: 12, color: s.col.color, fontWeight: 700, fontFamily: C.fontMono }}>{pctFmt(s.pct)}</div>}
                 </div>
               ))}
@@ -411,7 +390,7 @@ export default function LaporanPage() {
                       <YAxis stroke={C.muted} style={{ fontSize: 10, fontFamily: C.fontMono }} tickFormatter={rupiahShort} width={55} />
                       <Tooltip content={<CustomTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 12, fontFamily: C.fontSans }} />
-                      <Line type="monotone" dataKey="omzet" stroke={CC.blue.color} strokeWidth={2} name="Omzet" dot={false} />
+                      <Line type="monotone" dataKey="omzet" stroke={CC.blue.color}  strokeWidth={2} name="Omzet" dot={false} />
                       <Line type="monotone" dataKey="laba"  stroke={CC.green.color} strokeWidth={2} name="Laba"  dot={false} />
                       <Line type="monotone" dataKey="beban" stroke={CC.red.color}   strokeWidth={2} name="Beban" dot={false} strokeDasharray="4 3" />
                     </LineChart>
@@ -447,7 +426,6 @@ export default function LaporanPage() {
                   Detail Laporan L/R — {periodeLabel}
                 </div>
 
-                {/* PENDAPATAN */}
                 {[
                   {
                     title: "PENDAPATAN", col: CC.blue,
@@ -475,13 +453,13 @@ export default function LaporanPage() {
                       <div key={i} className="row-hover" style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", borderBottom: `1px solid ${C.border}`, borderRadius: 6 }}>
                         <span style={{ fontSize: 13, color: item.neg ? CC.orange.color : C.textMid }}>{item.label}</span>
                         <span style={{ fontSize: 13, fontWeight: 600, color: item.neg ? CC.orange.color : C.text, fontFamily: C.fontMono }}>
-                          {item.neg && item.value > 0 ? `(${rupiahFmt(item.value)})` : rupiahFmt(item.value)}
+                          {item.neg && item.value > 0 ? `(${rupiah(item.value)})` : rupiah(item.value)}
                         </span>
                       </div>
                     ))}
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: section.col.bg, marginTop: 4, borderRadius: 10, border: `1px solid ${section.col.border}` }}>
                       <span style={{ fontSize: 13, fontWeight: 800, color: section.col.color }}>{section.totalLabel}</span>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: section.col.color, fontFamily: C.fontMono }}>{rupiahFmt(section.total)}</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: section.col.color, fontFamily: C.fontMono }}>{rupiah(section.total)}</span>
                     </div>
                   </div>
                 ))}
@@ -490,12 +468,12 @@ export default function LaporanPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px", background: CC.green.bg, borderRadius: 12, border: `1px solid ${CC.green.border}`, marginBottom: 20 }}>
                   <div>
                     <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>Laba Kotor (Gross Profit)</div>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: CC.green.color }}>{rupiahFmt(laporan.laba_kotor)}</div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: CC.green.color }}>{rupiah(laporan.laba_kotor)}</div>
                   </div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{pctFmt(laporan.margin_kotor)}</div>
                 </div>
 
-                {/* BIAYA OPERASIONAL */}
+                {/* Biaya Operasional */}
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: CC.yellow.color, marginBottom: 10, letterSpacing: "0.05em", textTransform: "uppercase" }}>BIAYA OPERASIONAL</div>
                   {[
@@ -506,12 +484,12 @@ export default function LaporanPage() {
                   ].map((item, i) => (
                     <div key={i} className="row-hover" style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", borderBottom: `1px solid ${C.border}`, borderRadius: 6 }}>
                       <span style={{ fontSize: 13, color: C.textMid }}>{item.label}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(item.value)}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>{rupiah(item.value)}</span>
                     </div>
                   ))}
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: CC.yellow.bg, marginTop: 4, borderRadius: 10, border: `1px solid ${CC.yellow.border}` }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: CC.yellow.color }}>TOTAL BIAYA OPERASIONAL</span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: CC.yellow.color, fontFamily: C.fontMono }}>{rupiahFmt(laporan.total_biaya_operasional)}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: CC.yellow.color, fontFamily: C.fontMono }}>{rupiah(laporan.total_biaya_operasional)}</span>
                   </div>
                 </div>
 
@@ -519,7 +497,7 @@ export default function LaporanPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", background: CC.purple.bg, borderRadius: 14, border: `2px solid ${CC.purple.border}` }}>
                   <div>
                     <div style={{ fontSize: 12, color: C.muted, marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>Laba Bersih (Net Profit)</div>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: CC.purple.color }}>{rupiahFmt(laporan.laba_bersih)}</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: CC.purple.color }}>{rupiah(laporan.laba_bersih)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Margin</div>
@@ -541,21 +519,16 @@ export default function LaporanPage() {
                     <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>HPP & Profitabilitas per Produk</div>
                     <div style={{ fontSize: 12, color: C.muted }}>Data real dari penjualan × HPP per unit produksi</div>
                   </div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <div style={{ textAlign: "right", padding: "8px 14px", background: CC.green.bg, borderRadius: 10, border: `1px solid ${CC.green.border}` }}>
-                      <div style={{ fontSize: 10, color: CC.green.color, fontWeight: 700, textTransform: "uppercase" }}>Total Profit</div>
-                      <div style={{ fontSize: 16, fontWeight: 900, color: CC.green.color }}>{rupiahFmt(totalProfitProduk)}</div>
-                    </div>
+                  <div style={{ textAlign: "right", padding: "8px 14px", background: CC.green.bg, borderRadius: 10, border: `1px solid ${CC.green.border}` }}>
+                    <div style={{ fontSize: 10, color: CC.green.color, fontWeight: 700, textTransform: "uppercase" }}>Total Profit</div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: CC.green.color }}>{rupiah(totalProfitProduk)}</div>
                   </div>
                 </div>
 
                 {produkProfit.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 13, fontFamily: C.fontMono }}>
-                    Belum ada data penjualan untuk periode ini
-                  </div>
+                  <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 13, fontFamily: C.fontMono }}>Belum ada data penjualan untuk periode ini</div>
                 ) : (
                   <>
-                    {/* Table header */}
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 1.2fr 1.2fr 1.2fr 0.8fr 0.8fr", gap: 8, padding: "8px 14px", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 8, marginBottom: 4 }}>
                       {["PRODUK", "QTY", "OMZET", "HPP TOTAL", "PROFIT", "MARGIN", "HPP/UNIT"].map(h => (
                         <div key={h} style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.06em", textTransform: "uppercase" }}>{h}</div>
@@ -570,15 +543,14 @@ export default function LaporanPage() {
                         <div key={i} className="row-hover" style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 1.2fr 1.2fr 1.2fr 0.8fr 0.8fr", gap: 8, padding: "12px 14px", borderBottom: `1px solid ${C.border}`, borderRadius: 8, alignItems: "center" }}>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{p.nama_produk}</div>
-                            {/* Progress bar margin */}
                             <div style={{ height: 3, borderRadius: 2, background: C.dim, overflow: "hidden" }}>
                               <div style={{ height: "100%", width: `${marginPct}%`, background: isProfit ? CC.green.color : CC.red.color, borderRadius: 2, transition: "width 0.5s ease" }} />
                             </div>
                           </div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: C.textMid, fontFamily: C.fontMono }}>{p.qty_terjual}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: CC.blue.color, fontFamily: C.fontMono }}>{rupiahFmt(p.omzet)}</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: CC.red.color, fontFamily: C.fontMono }}>{rupiahFmt(p.hpp)}</div>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: profitCol.color, fontFamily: C.fontMono }}>{rupiahFmt(p.profit)}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: CC.blue.color, fontFamily: C.fontMono }}>{rupiah(p.omzet)}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: CC.red.color, fontFamily: C.fontMono }}>{rupiah(p.hpp)}</div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: profitCol.color, fontFamily: C.fontMono }}>{rupiah(p.profit)}</div>
                           <div>
                             <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 800, background: profitCol.bg, color: profitCol.color, border: `1px solid ${profitCol.border}` }}>
                               {pctFmt(p.margin)}
@@ -589,13 +561,12 @@ export default function LaporanPage() {
                       );
                     })}
 
-                    {/* Footer total */}
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 1.2fr 1.2fr 1.2fr 0.8fr 0.8fr", gap: 8, padding: "12px 14px", background: CC.green.bg, borderRadius: 10, marginTop: 4, border: `1px solid ${CC.green.border}` }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color }}>TOTAL</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{produkProfit.reduce((a, p) => a + p.qty_terjual, 0)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{rupiahFmt(totalOmzetProduk)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{rupiahFmt(totalHppProduk)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{rupiahFmt(totalProfitProduk)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{rupiah(totalOmzetProduk)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{rupiah(totalHppProduk)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{rupiah(totalProfitProduk)}</div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: CC.green.color, fontFamily: C.fontMono }}>{pctFmt(totalOmzetProduk > 0 ? (totalProfitProduk / totalOmzetProduk) * 100 : 0)}</div>
                       <div />
                     </div>

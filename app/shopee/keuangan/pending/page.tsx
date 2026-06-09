@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort } from "@/lib/format";
 
 type TokoOption = { id: number; nama: string };
 type PesananDijalan = {
@@ -29,14 +30,6 @@ type RingkasanToko = {
   total_nilai: number;
   shipped: number;
   to_confirm: number;
-};
-
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `Rp ${(abs / 1_000_000).toFixed(1)}jt`;
-  if (abs >= 1_000) return `Rp ${(abs / 1_000).toFixed(0)}rb`;
-  return rupiahFmt(abs);
 };
 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
@@ -73,7 +66,6 @@ export default function UangDiJalanPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Load toko
       const { data: tokoData } = await supabase
         .from("toko_online")
         .select("id, nama")
@@ -84,13 +76,9 @@ export default function UangDiJalanPage() {
       setTokoList(tokoData || []);
       const tokoMap = new Map((tokoData || []).map((t: any) => [t.id, t.nama]));
 
-      // Load penjualan_online untuk mapping toko
-      const { data: penjualanData } = await supabase
-        .from("penjualan_online")
-        .select("id, toko_id");
+      const { data: penjualanData } = await supabase.from("penjualan_online").select("id, toko_id");
       const penjualanMap = new Map((penjualanData || []).map((p: any) => [p.id, p.toko_id]));
 
-      // Load pesanan di jalan
       const { data: detailData } = await supabase
         .from("detail_penjualan_online")
         .select("no_pesanan, sku, qty, total_pembayaran, status_shopee, tanggal_pesanan, jasa_kirim, nama_pembeli, penjualan_online_id, stok_barang(nama_produk)")
@@ -116,7 +104,6 @@ export default function UangDiJalanPage() {
 
       setPesananList(mapped);
 
-      // Hitung ringkasan per toko
       const ringkasanMap = new Map<number, RingkasanToko>();
       for (const p of mapped) {
         if (!ringkasanMap.has(p.toko_id)) {
@@ -137,7 +124,6 @@ export default function UangDiJalanPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Filter
   const pesananFiltered = pesananList.filter(p => {
     if (selectedToko !== "semua" && p.toko_id !== selectedToko) return false;
     if (selectedStatus !== "semua" && p.status_shopee !== selectedStatus) return false;
@@ -168,10 +154,10 @@ export default function UangDiJalanPage() {
           </button>
         </div>
 
-        {/* Summary card total */}
+        {/* Summary total */}
         <div style={{ background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, borderRadius: 16, padding: "20px 24px", marginBottom: 20, boxShadow: `0 4px 20px ${C.accentGlow}` }}>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", fontFamily: C.fontMono, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Total Uang di Jalan</div>
-          <div style={{ fontSize: 32, fontWeight: 900, color: "#fff", letterSpacing: "-0.02em", marginBottom: 8 }}>{rupiahFmt(grandTotal)}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, color: "#fff", letterSpacing: "-0.02em", marginBottom: 8 }}>{rupiah(grandTotal)}</div>
           <div style={{ display: "flex", gap: 16 }}>
             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)" }}>🚚 {pesananList.filter(p => p.status_shopee === "SHIPPED").length} dikirim</div>
             <div style={{ fontSize: 13, color: "rgba(255,255,255,0.85)" }}>📬 {pesananList.filter(p => p.status_shopee === "TO_CONFIRM_RECEIVE").length} konfirmasi</div>
@@ -187,9 +173,7 @@ export default function UangDiJalanPage() {
                 style={{ background: selectedToko === r.toko_id ? `${C.accent}15` : C.card, border: `1.5px solid ${selectedToko === r.toko_id ? C.accent : C.border}`, borderRadius: 12, padding: "14px 16px", cursor: "pointer", transition: "all 0.15s" }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>{r.nama_toko}</div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: C.accent, fontFamily: C.fontMono, marginBottom: 4 }}>{rupiahShort(r.total_nilai)}</div>
-                <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                  {r.jumlah_pesanan} pesanan · 🚚{r.shipped} 📬{r.to_confirm}
-                </div>
+                <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{r.jumlah_pesanan} pesanan · 🚚{r.shipped} 📬{r.to_confirm}</div>
               </div>
             ))}
           </div>
@@ -209,21 +193,16 @@ export default function UangDiJalanPage() {
             ))}
           </div>
           <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
-            {pesananFiltered.length} pesanan · <span style={{ color: C.accent, fontWeight: 700 }}>{rupiahFmt(totalNilai)}</span>
+            {pesananFiltered.length} pesanan · <span style={{ color: C.accent, fontWeight: 700 }}>{rupiah(totalNilai)}</span>
           </div>
         </div>
 
         {/* Tabel */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
-          {/* Header */}
           <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr 1fr 1fr 1fr", gap: 8, padding: "10px 20px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const }}>
-            <span>Produk / Pesanan</span>
-            <span>Pembeli</span>
-            <span>Jasa Kirim</span>
-            <span>Toko</span>
-            <span>Tgl Pesanan</span>
-            <span style={{ textAlign: "right" as const }}>Nilai</span>
-            <span>Status</span>
+            <span>Produk / Pesanan</span><span>Pembeli</span><span>Jasa Kirim</span>
+            <span>Toko</span><span>Tgl Pesanan</span>
+            <span style={{ textAlign: "right" as const }}>Nilai</span><span>Status</span>
           </div>
 
           {loading ? (
@@ -249,7 +228,7 @@ export default function UangDiJalanPage() {
                 <div style={{ fontSize: 11, color: C.muted }}>{p.jasa_kirim || "—"}</div>
                 <div style={{ fontSize: 12, color: C.textMid }}>{p.nama_toko}</div>
                 <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{p.tanggal_pesanan || "—"}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: C.fontMono, textAlign: "right" as const }}>{rupiahFmt(p.total_pembayaran)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.green, fontFamily: C.fontMono, textAlign: "right" as const }}>{rupiah(p.total_pembayaran)}</div>
                 <div>
                   <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: sc.bg, color: sc.color, whiteSpace: "nowrap" as const }}>
                     {STATUS_LABELS[p.status_shopee] || p.status_shopee}
@@ -259,18 +238,16 @@ export default function UangDiJalanPage() {
             );
           })}
 
-          {/* Footer total */}
           {pesananFiltered.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 0.8fr 0.8fr 1fr 1fr 1fr", gap: 8, padding: "12px 20px", background: `${C.accent}08`, borderTop: `2px solid ${C.accent}20`, alignItems: "center" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>TOTAL · {pesananFiltered.length} pesanan</div>
               <div /><div /><div /><div />
-              <div style={{ fontSize: 15, fontWeight: 900, color: C.accent, fontFamily: C.fontMono, textAlign: "right" as const }}>{rupiahFmt(totalNilai)}</div>
+              <div style={{ fontSize: 15, fontWeight: 900, color: C.accent, fontFamily: C.fontMono, textAlign: "right" as const }}>{rupiah(totalNilai)}</div>
               <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>🚚{totalShipped} · 📬{totalConfirm}</div>
             </div>
           )}
         </div>
 
-        {/* Info */}
         <div style={{ marginTop: 16, background: `${C.blue}08`, border: `1px solid ${C.blue}20`, borderRadius: 10, padding: "12px 18px", fontSize: 12, color: C.blue, fontFamily: C.fontMono }}>
           ℹ️ <strong>Uang di Jalan</strong> = estimasi bruto (belum dipotong fee Shopee). &nbsp;·&nbsp;
           🚚 <strong>Dikirim</strong> = dalam perjalanan ke pembeli. &nbsp;·&nbsp;

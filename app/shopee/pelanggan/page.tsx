@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort, tanggalFmt } from "@/lib/format";
 
 type Pelanggan = {
   username: string;
@@ -25,14 +26,6 @@ type DetailPesanan = {
   status_shopee: string;
   nama_toko: string;
 };
-
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)}jt`;
-  if (n >= 1_000) return `Rp ${(n / 1_000).toFixed(0)}rb`;
-  return rupiahFmt(n);
-};
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
 const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "#22c55e", SHIPPED: "#2dd4bf", TO_CONFIRM_RECEIVE: "#60a5fa",
@@ -75,7 +68,6 @@ export default function PelangganShopeePage() {
         .not("status_shopee", "in", '("CANCELLED","IN_CANCEL")')
         .order("tanggal_pesanan", { ascending: false });
 
-      // Agregasi per username
       const map = new Map<string, { total_pesanan: number; total_belanja: number; last_order: string; toko_set: Set<string> }>();
       const seenPesanan = new Set<string>();
 
@@ -168,7 +160,6 @@ export default function PelangganShopeePage() {
 
       <div style={{ padding: "24px 28px", animation: "fadeUp 0.3s ease" }}>
 
-        {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Pelanggan Shopee</h1>
           <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
@@ -206,20 +197,13 @@ export default function PelangganShopeePage() {
               </button>
             ))}
           </div>
-          <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
-            {filtered.length} pelanggan
-          </div>
+          <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>{filtered.length} pelanggan</div>
         </div>
 
         {/* List */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
-          {/* Header */}
           <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 1.2fr 1fr 1fr", gap: 8, padding: "10px 20px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const }}>
-            <span>Username</span>
-            <span>Pesanan</span>
-            <span>Total Belanja</span>
-            <span>Terakhir Order</span>
-            <span>Toko</span>
+            <span>Username</span><span>Pesanan</span><span>Total Belanja</span><span>Terakhir Order</span><span>Toko</span>
           </div>
 
           {loading ? (
@@ -255,7 +239,6 @@ export default function PelangganShopeePage() {
                 </div>
               </div>
 
-              {/* Detail expand */}
               {expandedUsername === p.username && (
                 <div style={{ background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)", borderBottom: `1px solid ${C.border}`, padding: "12px 20px 16px 60px" }}>
                   {loadingDetail && !detailCache[p.username] ? (
@@ -272,7 +255,7 @@ export default function PelangganShopeePage() {
                             <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{d.no_pesanan} · {tanggalFmt(d.tanggal_pesanan)} · {d.nama_toko}</div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(d.total_pembayaran)}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiah(d.total_pembayaran)}</span>
                             <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: `${STATUS_COLORS[d.status_shopee] || C.muted}20`, color: STATUS_COLORS[d.status_shopee] || C.muted, fontFamily: C.fontMono, fontWeight: 700 }}>{d.status_shopee}</span>
                           </div>
                         </div>

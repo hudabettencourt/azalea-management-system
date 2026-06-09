@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort } from "@/lib/format";
 import {
   AreaChart, Area, LineChart, Line,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -16,16 +17,6 @@ type ProduksiBatch = { total_hpp: number; created_at: string };
 type GajiRow = { nominal: number; tipe_beban: string; tanggal: string };
 
 const bulanNama = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)}M`;
-  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)}jt`;
-  if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)}rb`;
-  return `${sign}${rupiahFmt(abs)}`;
-};
 
 export default function HomePage() {
   const { isDark } = useTheme();
@@ -117,7 +108,6 @@ export default function HomePage() {
       if (user?.user_metadata?.name) setUserName(user.user_metadata.name);
       else if (user?.email) setUserName(user.email.split("@")[0]);
 
-      // Chart bulanan 12 bulan
       const bulanChart: any[] = [];
       for (let i = 11; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -139,7 +129,6 @@ export default function HomePage() {
       }
       setChartBulanan(bulanChart);
 
-      // Chart L/R 6 bulan
       const lrChart: any[] = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -208,7 +197,7 @@ export default function HomePage() {
     { label: "Laba Bersih", value: rupiahShort(labaBulanIni), sub: labaBulanIni >= 0 ? "Profit bulan ini 🎉" : "Rugi bulan ini ⚠", color: labaBulanIni >= 0 ? C.green : C.red, dim: labaBulanIni >= 0 ? C.greenDim : C.redDim, icon: labaBulanIni >= 0 ? "✓" : "!", href: "/laporan", hint: "Lihat laporan L/R →" },
     { label: "Piutang Aktif", value: rupiahShort(piutangTotal), sub: "Belum lunas", color: C.yellow, dim: C.yellowDim, icon: "📝", href: "/penjualan", hint: "Lihat piutang →" },
     { label: "Hutang Supplier", value: rupiahShort(hutangTotal), sub: "Belum dibayar", color: C.orange, dim: C.orangeDim, icon: "⚠", href: "/pembelian-bahan", hint: "Lihat hutang →" },
-    { label: "Gaji Hari Ini", value: rupiahFmt(gajiHariIni), sub: "Total dibayarkan", color: C.purple, dim: C.purpleDim, icon: "👥", href: "/penggajian", hint: "Lihat penggajian →" },
+    { label: "Gaji Hari Ini", value: rupiah(gajiHariIni), sub: "Total dibayarkan", color: C.purple, dim: C.purpleDim, icon: "👥", href: "/penggajian", hint: "Lihat penggajian →" },
     { label: "Stok Kritis", value: `${stokKritis.length} produk`, sub: stokKritis.length > 0 ? stokKritis.map(s => s.nama_produk).slice(0, 2).join(", ") + (stokKritis.length > 2 ? "..." : "") : "Semua stok aman ✓", color: stokKritis.length > 0 ? C.red : C.green, dim: stokKritis.length > 0 ? C.redDim : C.greenDim, icon: "📦", href: "/produksi", hint: "Lihat stok →" },
   ];
 
@@ -226,68 +215,24 @@ export default function HomePage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; }
-
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-
-        .stat-card {
-          animation: fadeUp 0.3s ease both;
-          transition: transform 0.18s ease, box-shadow 0.18s ease;
-          text-decoration: none !important;
-          display: block;
-        }
-        .stat-card:hover {
-          transform: translateY(-3px);
-        }
-        .quick-btn {
-          transition: all 0.15s ease;
-          text-decoration: none !important;
-        }
-        .quick-btn:hover {
-          transform: translateY(-2px);
-          filter: brightness(1.08);
-        }
-        .chart-card {
-          transition: box-shadow 0.18s ease;
-        }
-        .chart-card:hover {
-          box-shadow: ${isDark ? "0 4px 24px rgba(0,0,0,0.4)" : "0 4px 24px rgba(0,0,0,0.1)"};
-        }
-        .stok-row {
-          transition: background 0.12s ease;
-          border-radius: 8px;
-        }
-        .stok-row:hover {
-          background: ${isDark ? "rgba(167,139,250,0.06)" : "rgba(16,185,129,0.06)"} !important;
-        }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .stat-card { animation: fadeUp 0.3s ease both; transition: transform 0.18s ease, box-shadow 0.18s ease; text-decoration: none !important; display: block; }
+        .stat-card:hover { transform: translateY(-3px); }
+        .quick-btn { transition: all 0.15s ease; text-decoration: none !important; }
+        .quick-btn:hover { transform: translateY(-2px); filter: brightness(1.08); }
+        .chart-card { transition: box-shadow 0.18s ease; }
+        .chart-card:hover { box-shadow: ${isDark ? "0 4px 24px rgba(0,0,0,0.4)" : "0 4px 24px rgba(0,0,0,0.1)"}; }
+        .stok-row { transition: background 0.12s ease; border-radius: 8px; }
+        .stok-row:hover { background: ${isDark ? "rgba(167,139,250,0.06)" : "rgba(16,185,129,0.06)"} !important; }
         .filter-btn { cursor: pointer; transition: all 0.12s ease; border: none; }
         .filter-btn:hover { opacity: 1 !important; }
       `}</style>
 
-      <div style={{
-        background: C.bgPage,
-        minHeight: "100vh",
-        padding: "24px 24px",
-        fontFamily: C.fontSans,
-        color: C.text,
-      }}>
+      <div style={{ background: C.bgPage, minHeight: "100vh", padding: "24px 24px", fontFamily: C.fontSans, color: C.text }}>
 
-        {/* ── Header ── */}
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginBottom: 24,
-          padding: "16px 20px",
-          background: C.card,
-          borderRadius: 14,
-          border: `1px solid ${C.border}`,
-          boxShadow: C.shadow,
-        }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, padding: "16px 20px", background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
           <div>
             <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 4, letterSpacing: "0.06em" }}>
               {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" })}
@@ -296,24 +241,11 @@ export default function HomePage() {
             <h1 style={{ fontFamily: C.fontDisplay, fontSize: 26, color: C.text, fontWeight: 400, lineHeight: 1.2 }}>
               {greeting()}, <span style={{ color: C.accent }}>{userName}</span> 🌸
             </h1>
-            <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 3 }}>
-              Ringkasan bisnis Azalea hari ini
-            </p>
+            <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 3 }}>Ringkasan bisnis Azalea hari ini</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <a href="/laporan" className="quick-btn" style={{
-              padding: "8px 16px", borderRadius: 8,
-              background: C.accentGlow, border: `1px solid ${C.accent}40`,
-              color: C.accent, fontWeight: 700, fontSize: 12,
-              fontFamily: C.fontSans, display: "flex", alignItems: "center", gap: 6,
-            }}>📊 Laporan L/R</a>
-            <a href="/rekap-saldo" className="quick-btn" style={{
-              padding: "8px 16px", borderRadius: 8,
-              background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-              border: `1px solid ${C.border}`,
-              color: C.muted, fontWeight: 600, fontSize: 12,
-              fontFamily: C.fontSans,
-            }}>Rekap Saldo</a>
+            <a href="/laporan" className="quick-btn" style={{ padding: "8px 16px", borderRadius: 8, background: C.accentGlow, border: `1px solid ${C.accent}40`, color: C.accent, fontWeight: 700, fontSize: 12, fontFamily: C.fontSans, display: "flex", alignItems: "center", gap: 6 }}>📊 Laporan L/R</a>
+            <a href="/rekap-saldo" className="quick-btn" style={{ padding: "8px 16px", borderRadius: 8, background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", border: `1px solid ${C.border}`, color: C.muted, fontWeight: 600, fontSize: 12, fontFamily: C.fontSans }}>Rekap Saldo</a>
           </div>
         </div>
 
@@ -324,72 +256,25 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {/* ── Stat Cards — 4 kolom ── */}
+            {/* Stat Cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
               {statCards.map((s, i) => (
-                <a key={i} href={s.href} className="stat-card" style={{
-                  background: C.card,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 14,
-                  padding: "16px 18px",
-                  position: "relative",
-                  overflow: "hidden",
-                  animationDelay: `${i * 40}ms`,
-                  boxShadow: C.shadow,
-                  color: "inherit",
-                }}>
-                  {/* Top color bar */}
-                  <div style={{
-                    position: "absolute", top: 0, left: 0, right: 0, height: 3,
-                    background: `linear-gradient(90deg, ${s.color}, ${s.color}40)`,
-                    borderRadius: "14px 14px 0 0",
-                  }} />
-                  {/* Glow bg */}
-                  <div style={{
-                    position: "absolute", top: 0, right: 0, width: 80, height: 80,
-                    background: `radial-gradient(circle at top right, ${s.color}15, transparent 70%)`,
-                  }} />
-
+                <a key={i} href={s.href} className="stat-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", animationDelay: `${i * 40}ms`, boxShadow: C.shadow, color: "inherit" }}>
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${s.color}, ${s.color}40)`, borderRadius: "14px 14px 0 0" }} />
+                  <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, background: `radial-gradient(circle at top right, ${s.color}15, transparent 70%)` }} />
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, marginTop: 4 }}>
-                    <div style={{
-                      fontSize: 10, fontWeight: 700, color: C.muted,
-                      letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: C.fontMono,
-                    }}>
-                      {s.label}
-                    </div>
-                    <div style={{
-                      width: 30, height: 30, borderRadius: 8,
-                      background: s.dim,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 14, color: s.color, flexShrink: 0,
-                    }}>
-                      {s.icon}
-                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", fontFamily: C.fontMono }}>{s.label}</div>
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: s.dim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: s.color, flexShrink: 0 }}>{s.icon}</div>
                   </div>
-
-                  <div style={{
-                    fontSize: 20, fontWeight: 700, color: C.text,
-                    fontFamily: C.fontDisplay, marginBottom: 3, lineHeight: 1.15,
-                  }}>
-                    {s.value}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontFamily: C.fontMono }}>
-                    {s.sub}
-                  </div>
-                  <div style={{
-                    fontSize: 10, color: s.color, fontFamily: C.fontMono, fontWeight: 700,
-                    display: "flex", alignItems: "center", gap: 3,
-                  }}>
-                    {s.hint}
-                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: C.text, fontFamily: C.fontDisplay, marginBottom: 3, lineHeight: 1.15 }}>{s.value}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, fontFamily: C.fontMono }}>{s.sub}</div>
+                  <div style={{ fontSize: 10, color: s.color, fontFamily: C.fontMono, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>{s.hint}</div>
                 </a>
               ))}
             </div>
 
-            {/* ── Charts Row ── */}
+            {/* Charts Row */}
             <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 0.65fr", gap: 12, marginBottom: 16 }}>
-
-              {/* Area Chart Omzet */}
               <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, boxShadow: C.shadow }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
                   <div>
@@ -398,13 +283,7 @@ export default function HomePage() {
                   </div>
                   <div style={{ display: "flex", gap: 3, background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)", borderRadius: 8, padding: 3 }}>
                     {(["3", "6", "12"] as const).map(f => (
-                      <button key={f} className="filter-btn" onClick={() => setFilterChart(f)} style={{
-                        padding: "4px 10px", borderRadius: 6, fontSize: 11,
-                        fontFamily: C.fontMono, fontWeight: 700,
-                        background: filterChart === f ? C.accent : "transparent",
-                        color: filterChart === f ? "#fff" : C.muted,
-                        opacity: filterChart === f ? 1 : 0.7,
-                      }}>{f}B</button>
+                      <button key={f} className="filter-btn" onClick={() => setFilterChart(f)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, fontFamily: C.fontMono, fontWeight: 700, background: filterChart === f ? C.accent : "transparent", color: filterChart === f ? "#fff" : C.muted, opacity: filterChart === f ? 1 : 0.7 }}>{f}B</button>
                     ))}
                   </div>
                 </div>
@@ -427,7 +306,7 @@ export default function HomePage() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.dim} vertical={false} />
                     <XAxis dataKey="bulan" tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={(v) => rupiahShort(v)} tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} width={55} />
+                    <YAxis tickFormatter={rupiahShort} tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} width={55} />
                     <Tooltip content={<CustomTooltip />} />
                     <Area type="monotone" dataKey="omzet" name="Omzet" stroke={C.accent} strokeWidth={2} fill="url(#gOmzet)" dot={false} />
                     <Area type="monotone" dataKey="laba" name="Laba" stroke={C.green} strokeWidth={2} fill="url(#gLaba)" dot={false} />
@@ -436,7 +315,6 @@ export default function HomePage() {
                 </ResponsiveContainer>
               </div>
 
-              {/* Bar Chart L/R */}
               <a href="/laporan" style={{ textDecoration: "none" }}>
                 <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, height: "100%", cursor: "pointer", boxShadow: C.shadow }}>
                   <div style={{ marginBottom: 14 }}>
@@ -452,7 +330,7 @@ export default function HomePage() {
                     <BarChart data={chartLR} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke={C.dim} vertical={false} />
                       <XAxis dataKey="bulan" tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} />
-                      <YAxis tickFormatter={(v) => rupiahShort(v)} tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} width={50} />
+                      <YAxis tickFormatter={rupiahShort} tick={{ fill: C.muted, fontSize: 10, fontFamily: C.fontMono }} axisLine={false} tickLine={false} width={50} />
                       <Tooltip content={<CustomTooltip />} />
                       <Bar dataKey="Laba Kotor" fill={C.blue} radius={[3, 3, 0, 0]} opacity={0.85} />
                       <Bar dataKey="Laba Bersih" fill={C.green} radius={[3, 3, 0, 0]} />
@@ -462,7 +340,6 @@ export default function HomePage() {
                 </div>
               </a>
 
-              {/* Donut */}
               <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, boxShadow: C.shadow }}>
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontFamily: C.fontDisplay, fontSize: 15, color: C.text }}>Distribusi Beban</div>
@@ -473,14 +350,9 @@ export default function HomePage() {
                     <ResponsiveContainer width="100%" height={120}>
                       <PieChart>
                         <Pie data={donutData} cx="50%" cy="50%" innerRadius={32} outerRadius={50} paddingAngle={3} dataKey="value">
-                          {donutData.map((_, i) => (
-                            <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
-                          ))}
+                          {donutData.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
                         </Pie>
-                        <Tooltip
-                          formatter={(v: any) => rupiahShort(v)}
-                          contentStyle={{ background: C.card, border: `1px solid ${C.borderStrong}`, borderRadius: 8, fontFamily: C.fontMono, fontSize: 11, color: C.text }}
-                        />
+                        <Tooltip formatter={(v: any) => rupiahShort(v)} contentStyle={{ background: C.card, border: `1px solid ${C.borderStrong}`, borderRadius: 8, fontFamily: C.fontMono, fontSize: 11, color: C.text }} />
                       </PieChart>
                     </ResponsiveContainer>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
@@ -496,17 +368,13 @@ export default function HomePage() {
                     </div>
                   </>
                 ) : (
-                  <div style={{ textAlign: "center", padding: "30px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>
-                    Belum ada data<br />bulan ini
-                  </div>
+                  <div style={{ textAlign: "center", padding: "30px 0", color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Belum ada data<br />bulan ini</div>
                 )}
               </div>
             </div>
 
-            {/* ── Bottom: Stok + Quick Actions ── */}
+            {/* Bottom */}
             <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
-
-              {/* Stok Monitor */}
               <a href="/produksi" style={{ textDecoration: "none", color: "inherit" }}>
                 <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, cursor: "pointer", boxShadow: C.shadow }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -526,58 +394,29 @@ export default function HomePage() {
                       const isKritis = s.jumlah_stok <= 10;
                       const pct = Math.min(100, (s.jumlah_stok / 100) * 100);
                       return (
-                        <div key={s.id} className="stok-row" style={{
-                          display: "grid", gridTemplateColumns: "1fr 50px 36px",
-                          alignItems: "center", gap: 10,
-                          padding: "7px 10px",
-                          background: "transparent",
-                        }}>
+                        <div key={s.id} className="stok-row" style={{ display: "grid", gridTemplateColumns: "1fr 50px 36px", alignItems: "center", gap: 10, padding: "7px 10px", background: "transparent" }}>
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 600, color: C.textMid, marginBottom: 4 }}>{s.nama_produk}</div>
                             <div style={{ height: 4, borderRadius: 2, background: C.dim, overflow: "hidden" }}>
-                              <div style={{
-                                height: "100%", width: `${pct}%`,
-                                background: isKritis
-                                  ? `linear-gradient(90deg, ${C.red}, ${C.red}80)`
-                                  : `linear-gradient(90deg, ${C.green}, ${C.teal})`,
-                                borderRadius: 2, transition: "width 0.5s ease",
-                              }} />
+                              <div style={{ height: "100%", width: `${pct}%`, background: isKritis ? `linear-gradient(90deg, ${C.red}, ${C.red}80)` : `linear-gradient(90deg, ${C.green}, ${C.teal})`, borderRadius: 2, transition: "width 0.5s ease" }} />
                             </div>
                           </div>
-                          <div style={{ fontSize: 17, fontWeight: 800, color: isKritis ? C.red : C.green, fontFamily: C.fontDisplay, textAlign: "right" }}>
-                            {s.jumlah_stok}
-                          </div>
-                          <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>
-                            {s.satuan}
-                          </div>
+                          <div style={{ fontSize: 17, fontWeight: 800, color: isKritis ? C.red : C.green, fontFamily: C.fontDisplay, textAlign: "right" }}>{s.jumlah_stok}</div>
+                          <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{s.satuan}</div>
                         </div>
                       );
                     })}
-                    {stokBarang.length > 6 && (
-                      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, textAlign: "center", paddingTop: 4 }}>
-                        +{stokBarang.length - 6} produk lainnya
-                      </div>
-                    )}
+                    {stokBarang.length > 6 && <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, textAlign: "center", paddingTop: 4 }}>+{stokBarang.length - 6} produk lainnya</div>}
                   </div>
                 </div>
               </a>
 
-              {/* Quick Actions */}
               <div className="chart-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, boxShadow: C.shadow }}>
                 <div style={{ fontFamily: C.fontDisplay, fontSize: 15, color: C.text, marginBottom: 4 }}>Aksi Cepat</div>
                 <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 14 }}>Shortcut input data</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   {quickLinks.map((link, i) => (
-                    <a key={i} href={link.href} className="quick-btn" style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      padding: "12px 14px",
-                      background: isDark ? `${link.color}12` : `${link.color}10`,
-                      border: `1px solid ${link.color}25`,
-                      borderRadius: 10,
-                      color: link.color,
-                      fontWeight: 600, fontSize: 12,
-                      fontFamily: C.fontSans,
-                    }}>
+                    <a key={i} href={link.href} className="quick-btn" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", background: isDark ? `${link.color}12` : `${link.color}10`, border: `1px solid ${link.color}25`, borderRadius: 10, color: link.color, fontWeight: 600, fontSize: 12, fontFamily: C.fontSans }}>
                       <span style={{ fontSize: 16 }}>{link.icon}</span>
                       <span>{link.label}</span>
                     </a>

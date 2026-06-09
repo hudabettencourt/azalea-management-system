@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, pctFmt, tanggalFmt } from "@/lib/format";
 
 type ProfitItem = {
   no_pesanan: string;
@@ -26,7 +27,7 @@ type ProfitItem = {
   margin_pct: number;
   nama_toko: string;
   toko_id: number;
-  retur_dibatalkan: boolean; // pernah ada retur tapi dibatalkan Shopee → tetap dihitung
+  retur_dibatalkan: boolean;
 };
 
 type RingkasanSKU = {
@@ -42,10 +43,6 @@ type RingkasanSKU = {
   margin_pct: number;
   avg_hpp: number;
 };
-
-const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
-const pctFmt = (n: number) => `${(n || 0).toFixed(1)}%`;
 
 // Status retur yang dianggap "batal" → pesanan tetap valid, jangan di-skip.
 const RETUR_BATAL = new Set(["CANCELLED", "CANCELED", "CLOSED", "REJECTED"]);
@@ -77,17 +74,13 @@ export default function ProfitReportPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Toko
       const { data: tokoData } = await supabase.from("toko_online").select("id, nama").eq("platform", "Shopee").eq("aktif", true);
       setTokoList(tokoData || []);
       const tokoMap = new Map((tokoData || []).map((t: any) => [t.id, t.nama]));
 
-      // Penjualan online mapping
       const { data: penjualanData } = await supabase.from("penjualan_online").select("id, toko_id");
       const penjualanTokoMap = new Map((penjualanData || []).map((p: any) => [p.id, p.toko_id]));
 
-      // Daftar pesanan yang DIRETUR (status retur aktif, bukan dibatalkan).
-      // Pesanan di set ini di-skip dari profit karena escrow tereduksi → minus palsu.
       const { data: returData } = await supabase
         .from("retur_online")
         .select("order_sn, return_status")
@@ -99,13 +92,12 @@ export default function ProfitReportPage() {
         const sn = (r as any).order_sn ? String((r as any).order_sn) : "";
         if (!sn) continue;
         if (RETUR_BATAL.has(st)) {
-          returBatalSet.add(sn); // retur batal → pesanan tetap valid, tandai untuk audit
+          returBatalSet.add(sn);
         } else {
-          returActiveSet.add(sn); // retur aktif → skip dari profit
+          returActiveSet.add(sn);
         }
       }
 
-      // HPP per unit dari produksi (rata-rata)
       const { data: hppData } = await supabase
         .from("detail_produksi_output")
         .select("stok_barang_id, hpp_per_unit, stok_barang(nama_produk, sku)");
@@ -123,12 +115,10 @@ export default function ProfitReportPage() {
         hppAvgMap.set(id, { hpp_per_unit: v.count > 0 ? v.hpp / v.count : 0, nama: v.nama, sku: v.sku });
       }
 
-      // Filter bulan
       const [year, month] = bulan.split("-").map(Number);
       const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
       const endDate = new Date(year, month, 0).toISOString().slice(0, 10);
 
-      // Detail penjualan COMPLETED dengan escrow
       const { data: detailData } = await supabase
         .from("detail_penjualan_online")
         .select("no_pesanan, tanggal_pesanan, sku, qty, harga_satuan, total_pembayaran, penjualan_online_id, stok_barang_id, stok_barang(nama_produk)")
@@ -136,12 +126,10 @@ export default function ProfitReportPage() {
         .gte("tanggal_pesanan", startDate)
         .lte("tanggal_pesanan", endDate);
 
-      // Escrow detail
       const orderSns = [...new Set((detailData || []).map((d: any) => d.no_pesanan))];
       const escrowMap = new Map<string, { escrow_amount: number; commission_fee: number; service_fee: number }>();
 
       if (orderSns.length > 0) {
-        // Fetch in batches of 100
         for (let i = 0; i < orderSns.length; i += 100) {
           const batch = orderSns.slice(i, i + 100);
           const { data: escrowData } = await supabase
@@ -154,11 +142,9 @@ export default function ProfitReportPage() {
         }
       }
 
-      // Build profit items
       const result: ProfitItem[] = [];
       const skippedSet = new Set<string>();
       for (const d of detailData || [] as any[]) {
-        // Skip pesanan yang diretur (escrow Shopee sudah tereduksi → minus palsu)
         if (returActiveSet.has(d.no_pesanan)) {
           skippedSet.add(d.no_pesanan);
           continue;
@@ -172,7 +158,6 @@ export default function ProfitReportPage() {
         const escrow_amount = escrow?.escrow_amount || 0;
         const commission_fee = escrow?.commission_fee || 0;
         const service_fee = escrow?.service_fee || 0;
-        // Skip pesanan yang belum ada data escrow (belum cair, bukan berarti escrow = 0)
         if (!escrow) continue;
 
         const profit = escrow_amount - hpp_total;
@@ -205,14 +190,12 @@ export default function ProfitReportPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Filter
   const filtered = items.filter(p => {
     if (filterToko !== "semua" && String(p.toko_id) !== filterToko) return false;
     if (filterSKU !== "semua" && p.sku !== filterSKU) return false;
     return true;
   });
 
-  // Ringkasan per SKU
   const ringkasanSKU = useMemo((): RingkasanSKU[] => {
     const map = new Map<string, RingkasanSKU>();
     for (const p of filtered) {
@@ -234,7 +217,6 @@ export default function ProfitReportPage() {
     return Array.from(map.values()).sort((a, b) => b.total_profit - a.total_profit);
   }, [filtered]);
 
-  // Ringkasan per toko
   const ringkasanToko = useMemo(() => {
     const map = new Map<string, { nama: string; total_profit: number; total_escrow: number; total_hpp: number; jumlah: number }>();
     for (const p of filtered) {
@@ -248,7 +230,6 @@ export default function ProfitReportPage() {
     return Array.from(map.values()).sort((a, b) => b.total_profit - a.total_profit);
   }, [filtered]);
 
-  // Total summary
   const totalEscrow = filtered.reduce((a, p) => a + p.escrow_amount, 0);
   const totalHPP = filtered.reduce((a, p) => a + p.hpp_total, 0);
   const totalFee = filtered.reduce((a, p) => a + p.commission_fee + p.service_fee, 0);
@@ -256,7 +237,6 @@ export default function ProfitReportPage() {
   const marginGlobal = totalEscrow > 0 ? (totalProfit / totalEscrow) * 100 : 0;
   const skuList = [...new Set(items.map(p => p.sku))];
 
-  // Daftar bulan (12 bulan terakhir)
   const daftarBulan = useMemo(() => {
     const result = [];
     const now = new Date();
@@ -326,10 +306,10 @@ export default function ProfitReportPage() {
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
           {[
-            { label: "Total Escrow", value: rupiahFmt(totalEscrow), color: C.blue, icon: "💰" },
-            { label: "Total HPP", value: rupiahFmt(totalHPP), color: C.red, icon: "🏭" },
-            { label: "Total Fee Shopee", value: rupiahFmt(totalFee), color: C.yellow, icon: "🏪" },
-            { label: "Total Profit", value: rupiahFmt(totalProfit), color: profitColor(totalProfit), icon: totalProfit >= 0 ? "📈" : "📉" },
+            { label: "Total Escrow", value: rupiah(totalEscrow), color: C.blue, icon: "💰" },
+            { label: "Total HPP", value: rupiah(totalHPP), color: C.red, icon: "🏭" },
+            { label: "Total Fee Shopee", value: rupiah(totalFee), color: C.yellow, icon: "🏪" },
+            { label: "Total Profit", value: rupiah(totalProfit), color: profitColor(totalProfit), icon: totalProfit >= 0 ? "📈" : "📉" },
             { label: "Margin", value: pctFmt(marginGlobal), color: profitColor(marginGlobal), icon: "%" },
           ].map((s, i) => (
             <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", boxShadow: C.shadow }}>
@@ -361,14 +341,9 @@ export default function ProfitReportPage() {
             {activeTab === "per_sku" && (
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1.5fr 0.7fr 0.7fr 1fr 1fr 1fr 1fr 0.8fr", gap: 8, padding: "10px 20px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const }}>
-                  <span>Produk / SKU</span>
-                  <span>Pesanan</span>
-                  <span>Qty</span>
-                  <span>Total Escrow</span>
-                  <span>Total HPP</span>
-                  <span>Total Fee</span>
-                  <span>Profit</span>
-                  <span>Margin</span>
+                  <span>Produk / SKU</span><span>Pesanan</span><span>Qty</span>
+                  <span>Total Escrow</span><span>Total HPP</span><span>Total Fee</span>
+                  <span>Profit</span><span>Margin</span>
                 </div>
                 {ringkasanSKU.map(r => {
                   const isProfit = r.total_profit >= 0;
@@ -379,17 +354,16 @@ export default function ProfitReportPage() {
                         <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{r.nama_produk}</div>
                         <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{r.sku}</div>
                         {r.avg_hpp === 0 && <div style={{ fontSize: 10, color: C.yellow, marginTop: 2 }}>⚠ HPP belum ada</div>}
-                        {/* Profit bar */}
                         <div style={{ height: 3, background: C.dim, borderRadius: 2, marginTop: 4, overflow: "hidden", width: "60%" }}>
                           <div style={{ height: "100%", width: `${marginPct}%`, background: isProfit ? C.green : C.red, borderRadius: 2 }} />
                         </div>
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>{r.jumlah_pesanan}</div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: C.fontMono }}>{r.total_qty}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_escrow)}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_hpp)}</div>
-                      <div style={{ fontSize: 12, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_fee)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 900, color: profitColor(r.total_profit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(r.total_profit)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(r.total_escrow)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(r.total_hpp)}</div>
+                      <div style={{ fontSize: 12, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(r.total_fee)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: profitColor(r.total_profit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(r.total_profit)}</div>
                       <div>
                         <span style={{ padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 800, background: isProfit ? `${C.green}20` : `${C.red}20`, color: isProfit ? C.green : C.red }}>
                           {pctFmt(r.margin_pct)}
@@ -398,15 +372,14 @@ export default function ProfitReportPage() {
                     </div>
                   );
                 })}
-                {/* Footer total */}
                 <div style={{ display: "grid", gridTemplateColumns: "1.5fr 0.7fr 0.7fr 1fr 1fr 1fr 1fr 0.8fr", gap: 8, padding: "14px 20px", background: `${C.accent}08`, borderTop: `2px solid ${C.accent}20`, alignItems: "center" }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: C.accent }}>TOTAL</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: C.accent, fontFamily: C.fontMono }}>{filtered.length}</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: C.accent, fontFamily: C.fontMono }}>{filtered.reduce((a, p) => a + p.qty, 0)}</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalEscrow)}</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalHPP)}</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalFee)}</div>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: profitColor(totalProfit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(totalProfit)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(totalEscrow)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(totalHPP)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(totalFee)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: profitColor(totalProfit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(totalProfit)}</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: profitColor(marginGlobal) }}>{pctFmt(marginGlobal)}</div>
                 </div>
               </div>
@@ -420,9 +393,9 @@ export default function ProfitReportPage() {
                     <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 14 }}>🏪 {r.nama}</div>
                     {[
                       { label: "Pesanan", value: r.jumlah, color: C.text },
-                      { label: "Total Escrow", value: rupiahFmt(r.total_escrow), color: C.blue },
-                      { label: "Total HPP", value: rupiahFmt(r.total_hpp), color: C.red },
-                      { label: "Profit", value: rupiahFmt(r.total_profit), color: profitColor(r.total_profit) },
+                      { label: "Total Escrow", value: rupiah(r.total_escrow), color: C.blue },
+                      { label: "Total HPP", value: rupiah(r.total_hpp), color: C.red },
+                      { label: "Profit", value: rupiah(r.total_profit), color: profitColor(r.total_profit) },
                     ].map((s, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
                         <span style={{ fontSize: 12, color: C.muted }}>{s.label}</span>
@@ -444,13 +417,8 @@ export default function ProfitReportPage() {
             {activeTab === "per_pesanan" && (
               <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1.8fr 0.8fr 1fr 1fr 1fr 1fr 0.8fr", gap: 8, padding: "10px 20px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const }}>
-                  <span>Pesanan / Produk</span>
-                  <span>Toko</span>
-                  <span>Escrow</span>
-                  <span>HPP</span>
-                  <span>Fee</span>
-                  <span>Profit</span>
-                  <span>Margin</span>
+                  <span>Pesanan / Produk</span><span>Toko</span><span>Escrow</span>
+                  <span>HPP</span><span>Fee</span><span>Profit</span><span>Margin</span>
                 </div>
                 <div style={{ maxHeight: 600, overflowY: "auto" }}>
                   {filtered.slice(0, 200).map((p, i) => (
@@ -469,10 +437,10 @@ export default function ProfitReportPage() {
                         {p.hpp_per_unit === 0 && <div style={{ fontSize: 10, color: C.yellow }}>⚠ HPP belum ada</div>}
                       </div>
                       <div style={{ fontSize: 11, color: C.muted }}>{p.nama_toko}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.escrow_amount)}</div>
-                      <div style={{ fontSize: 12, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.hpp_total)}</div>
-                      <div style={{ fontSize: 11, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.commission_fee + p.service_fee)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: profitColor(p.profit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiahFmt(p.profit)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(p.escrow_amount)}</div>
+                      <div style={{ fontSize: 12, color: C.red, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(p.hpp_total)}</div>
+                      <div style={{ fontSize: 11, color: C.yellow, fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(p.commission_fee + p.service_fee)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: profitColor(p.profit), fontFamily: C.fontMono, whiteSpace: "nowrap" }}>{rupiah(p.profit)}</div>
                       <div>
                         <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 10, background: p.profit >= 0 ? `${C.green}20` : `${C.red}20`, color: p.profit >= 0 ? C.green : C.red, fontFamily: C.fontMono, fontWeight: 700 }}>
                           {pctFmt(p.margin_pct)}
@@ -484,7 +452,6 @@ export default function ProfitReportPage() {
               </div>
             )}
 
-            {/* Catatan HPP */}
             {items.some(p => p.hpp_per_unit === 0) && (
               <div style={{ marginTop: 14, background: `${C.yellow}10`, border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: "10px 16px", fontSize: 12, color: C.yellow, fontFamily: C.fontMono }}>
                 ⚠️ Beberapa produk belum ada data HPP produksi — profit untuk produk tersebut = escrow saja (belum dikurangi HPP). Input batch produksi untuk hasil yang akurat.

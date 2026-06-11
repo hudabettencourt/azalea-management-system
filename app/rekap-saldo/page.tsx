@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, rupiahShort, tanggalFmt as tanggalFmtBase } from "@/lib/format";
 import * as XLSX from "xlsx";
 
 type Toko = { id: number; nama: string; username_shopee: string | null };
@@ -28,17 +29,10 @@ type AutoRekapItem = {
 type Toast = { msg: string; type: "success" | "error" | "info" };
 type FilterSaldo = "Semua" | "Pending" | "Masuk" | "Batal";
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const rupiahShort = (n: number) => {
-  const abs = Math.abs(n); const sign = n < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)}M`;
-  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)}jt`;
-  if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)}rb`;
-  return rupiahFmt(abs);
-};
+// tanggalFmt lokal support null (berbeda dari helper yang hanya terima string)
 const tanggalFmt = (s: string | null) => {
   if (!s) return "-";
-  return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
+  return tanggalFmtBase(s);
 };
 
 export default function RekapSaldoPage() {
@@ -58,14 +52,12 @@ export default function RekapSaldoPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"auto" | "upload" | "riwayat">("auto");
 
-  // Auto sync state
   const [syncStatus, setSyncStatus] = useState<EscrowSyncStatus | null>(null);
   const [autoRekap, setAutoRekap] = useState<AutoRekapItem[]>([]);
   const [loadingAuto, setLoadingAuto] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [togglingPause, setTogglingPause] = useState(false);
 
-  // Upload state
   const [fileOrder, setFileOrder] = useState<File | null>(null);
   const [fileBalance, setFileBalance] = useState<File | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -77,7 +69,6 @@ export default function RekapSaldoPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [filterPreview, setFilterPreview] = useState<FilterSaldo>("Semua");
 
-  // Riwayat state
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailCache, setDetailCache] = useState<Record<number, RekapDetail[]>>({});
   const [filterDetailSaldo, setFilterDetailSaldo] = useState<Record<number, FilterSaldo>>({});
@@ -109,7 +100,7 @@ export default function RekapSaldoPage() {
     });
   }, []);
 
-    const fetchAutoRekap = useCallback(async () => {
+  const fetchAutoRekap = useCallback(async () => {
     setLoadingAuto(true);
     try {
       const { data: tokoData } = await supabase.from("toko_online").select("id, nama").eq("platform", "Shopee").eq("aktif", true);
@@ -117,7 +108,6 @@ export default function RekapSaldoPage() {
 
       const results: AutoRekapItem[] = [];
       for (const toko of tokoData) {
-        // Hitung total COMPLETED untuk toko ini
         const { data: penjualanIds } = await supabase.from("penjualan_online").select("id").eq("toko_id", toko.id);
         const ids = (penjualanIds || []).map((p: any) => p.id);
         let totalCompleted = 0;
@@ -130,7 +120,6 @@ export default function RekapSaldoPage() {
           totalCompleted = count || 0;
         }
 
-        // Query escrow LANGSUNG by toko_id (escrow_detail punya kolom toko_id)
         const { data: escrows } = await supabase
           .from("escrow_detail")
           .select("escrow_amount, commission_fee, service_fee, seller_discount, buyer_total_amount")
@@ -153,7 +142,6 @@ export default function RekapSaldoPage() {
       setLoadingAuto(false);
     }
   }, []);
-
 
   const fetchData = useCallback(async () => {
     try {
@@ -381,7 +369,7 @@ export default function RekapSaldoPage() {
       <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_pesanan)}</div>
       <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(d.tgl_selesai)}</div>
       <div>
-        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(d.total_bayar)}</div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, fontFamily: C.fontMono }}>{rupiah(d.total_bayar)}</div>
         {d.status_saldo === "Masuk" && d.nominal_diterima > 0 && <div style={{ fontSize: 10, color: CC.masuk.color, fontFamily: C.fontMono, marginTop: 1 }}>+{rupiahShort(d.nominal_diterima)}</div>}
       </div>
       <div>
@@ -420,7 +408,6 @@ export default function RekapSaldoPage() {
 
       <div style={{ padding: 24, fontFamily: C.fontSans, background: C.bgPage, minHeight: "100vh" }}>
 
-        {/* ── BANNER AUTO-PAUSE (paling atas, sangat mencolok) ── */}
         {isAutoPaused && (
           <div style={{ background: "#ef4444", borderRadius: 14, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, boxShadow: "0 4px 20px rgba(239,68,68,0.4)" }}>
             <div style={{ fontSize: 28 }}>🚨</div>
@@ -435,7 +422,6 @@ export default function RekapSaldoPage() {
           </div>
         )}
 
-        {/* ── BANNER MANUAL PAUSE ── */}
         {isManualPaused && (
           <div style={{ background: CC.orange.bg, border: `2px solid ${CC.orange.color}`, borderRadius: 14, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ fontSize: 24 }}>⏸️</div>
@@ -458,18 +444,14 @@ export default function RekapSaldoPage() {
           <button onClick={() => setActiveTab("riwayat")} style={tabStyle(activeTab === "riwayat", CC.pending.color)}>📋 Riwayat Upload ({riwayat.length})</button>
         </div>
 
-        {/* ══ TAB AUTO ══ */}
+        {/* TAB AUTO */}
         {activeTab === "auto" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-            {/* Status card */}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", boxShadow: C.shadow }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>Status Escrow Sync</div>
-                  <div style={{ fontSize: 12, color: C.muted, marginTop: 2, fontFamily: C.fontMono }}>
-                    Data dari Shopee API · Auto-pause jika &gt; 500 pesanan pending
-                  </div>
+                  <div style={{ fontSize: 12, color: C.muted, marginTop: 2, fontFamily: C.fontMono }}>Data dari Shopee API · Auto-pause jika &gt; 500 pesanan pending</div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={handleManualSync} disabled={syncing || !syncStatus?.enabled} style={{ padding: "8px 18px", background: (!syncStatus?.enabled || syncing) ? "transparent" : `${CC.masuk.color}15`, border: `1.5px solid ${(!syncStatus?.enabled || syncing) ? C.border : CC.masuk.color}`, color: (!syncStatus?.enabled || syncing) ? C.muted : CC.masuk.color, borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 13, opacity: syncing ? 0.7 : 1 }}>
@@ -480,7 +462,6 @@ export default function RekapSaldoPage() {
                   </button>
                 </div>
               </div>
-
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
                 {[
                   { label: "Status", value: syncStatus?.enabled ? "🟢 Aktif" : "🔴 Pause", color: syncStatus?.enabled ? CC.masuk.color : "#ef4444" },
@@ -494,8 +475,6 @@ export default function RekapSaldoPage() {
                   </div>
                 ))}
               </div>
-
-              {/* Warning jika mendekati threshold */}
               {syncStatus && syncStatus.pending_count > 300 && syncStatus.enabled && (
                 <div style={{ marginTop: 12, padding: "10px 14px", background: CC.orange.bg, border: `1px solid ${CC.orange.border}`, borderRadius: 10, fontSize: 12, color: CC.orange.color, fontWeight: 600 }}>
                   ⚠️ {syncStatus.pending_count} pesanan pending — mendekati batas auto-pause (500). Pertimbangkan beralih ke Upload Excel.
@@ -503,7 +482,6 @@ export default function RekapSaldoPage() {
               )}
             </div>
 
-            {/* Rekap per toko */}
             {loadingAuto ? (
               <div style={{ padding: 40, textAlign: "center", color: C.muted, fontFamily: C.fontMono }}>Memuat rekap...</div>
             ) : autoRekap.length === 0 ? (
@@ -521,9 +499,7 @@ export default function RekapSaldoPage() {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
                         <div>
                           <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>{r.nama_toko}</div>
-                          <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>
-                            {r.total_escrow_synced}/{r.total_completed} pesanan ter-sync ({coveragePct}%)
-                          </div>
+                          <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{r.total_escrow_synced}/{r.total_completed} pesanan ter-sync ({coveragePct}%)</div>
                         </div>
                         {coveragePct < 100 && (
                           <span style={{ padding: "4px 12px", background: CC.pending.bg, color: CC.pending.color, borderRadius: 20, fontSize: 11, fontWeight: 700, border: `1px solid ${CC.pending.border}` }}>
@@ -531,12 +507,9 @@ export default function RekapSaldoPage() {
                           </span>
                         )}
                       </div>
-
-                      {/* Progress bar */}
                       <div style={{ height: 6, background: C.dim, borderRadius: 3, marginBottom: 16, overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${coveragePct}%`, background: coveragePct === 100 ? CC.masuk.color : CC.pending.color, borderRadius: 3, transition: "width 0.5s ease" }} />
                       </div>
-
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
                         {[
                           { label: "Total Diterima", value: rupiahShort(r.total_escrow_amount), color: CC.masuk.color, desc: "escrow_amount" },
@@ -551,10 +524,9 @@ export default function RekapSaldoPage() {
                           </div>
                         ))}
                       </div>
-
                       {coveragePct < 100 && (
                         <div style={{ marginTop: 12, fontSize: 11, color: C.muted, fontFamily: C.fontMono, fontStyle: "italic" }}>
-                          * Data belum lengkap — {r.total_completed - r.total_escrow_synced} pesanan belum ter-sync. Angka di atas hanya dari {r.total_escrow_synced} pesanan yang sudah ada data escrow.
+                          * Data belum lengkap — {r.total_completed - r.total_escrow_synced} pesanan belum ter-sync.
                         </div>
                       )}
                     </div>
@@ -565,7 +537,7 @@ export default function RekapSaldoPage() {
           </div>
         )}
 
-        {/* ══ TAB UPLOAD ══ */}
+        {/* TAB UPLOAD */}
         {activeTab === "upload" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div style={{ background: C.card, padding: 24, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
@@ -642,7 +614,7 @@ export default function RekapSaldoPage() {
           </div>
         )}
 
-        {/* ══ TAB RIWAYAT ══ */}
+        {/* TAB RIWAYAT */}
         {activeTab === "riwayat" && (
           <div>
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>

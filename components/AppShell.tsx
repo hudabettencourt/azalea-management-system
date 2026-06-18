@@ -6,9 +6,9 @@
 // Layout: Activity Bar (56px) + Contextual Sidebar (210px) + Main + Status Bar (28px)
 // Responsive: desktop = IDE-style, mobile = bottom nav + drawer
 
-import { NAVIGATION, getActiveModule, getBreadcrumb, getModuleDefaultHref } from "@/config/navigation";
+import { NAVIGATION, getActiveModule, getBreadcrumb, getModuleDefaultHref, isNavItemActive } from "@/config/navigation";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   IconShoppingBag,
   IconTool,
@@ -59,12 +59,14 @@ interface AppShellProps {
 export default function AppShell({ children, actions }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
   const { isDark, toggleTheme } = useTheme();
   const C = isDark ? DARK : LIGHT;
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [activeModule, setActiveModule] = useState(() => getActiveModule(pathname || ""));
+  const [activeModule, setActiveModule] = useState(() => getActiveModule(pathname || "", search));
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
@@ -84,22 +86,19 @@ export default function AppShell({ children, actions }: AppShellProps) {
   }, []);
 
   useEffect(() => {
-    const mod = getActiveModule(pathname || "");
+    const mod = getActiveModule(pathname || "", search);
     setActiveModule(mod);
     const currentMod = NAVIGATION.find(m => m.key === mod);
     if (currentMod) {
       const newOpenGroups: Record<string, boolean> = {};
       currentMod.groups.forEach(g => {
         const key = `${mod}-${g.label}`;
-        const hasActive = g.items.some(item => {
-          const base = item.href.split("?")[0];
-          return pathname === base || pathname?.startsWith(base + "/");
-        });
+        const hasActive = g.items.some(item => isNavItemActive(pathname || "", search, item.href));
         newOpenGroups[key] = g.defaultOpen || hasActive || false;
       });
       setOpenGroups(newOpenGroups);
     }
-  }, [pathname]);
+  }, [pathname, search]);
 
   useEffect(() => {
     const fetchRole = async (userId: string, email: string) => {
@@ -147,17 +146,10 @@ export default function AppShell({ children, actions }: AppShellProps) {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push("/login"); };
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
-  const isItemActive = (href: string) => {
-  const [base, query] = href.split("?");
-  if (query) {
-    return pathname === base &&
-      (typeof window !== "undefined" && window.location.search === "?" + query);
-  }
-  return pathname === base || pathname?.startsWith(base + "/");
-};
+  const isItemActive = (href: string) => isNavItemActive(pathname || "", search, href);
 
   const currentMod = NAVIGATION.find(m => m.key === activeModule);
-  const breadcrumb = getBreadcrumb(pathname || "");
+  const breadcrumb = getBreadcrumb(pathname || "", search);
   const visibleModules = NAVIGATION.filter(mod => { if (!mod.roles) return true; if (!roleReady) return false; return role && mod.roles.includes(role); });
   const notifColor = (type: Notif["type"]) => ({ error: C.red, warning: C.yellow, info: C.blue }[type]);
 
@@ -183,7 +175,7 @@ export default function AppShell({ children, actions }: AppShellProps) {
                 if (item.roles && (!role || !item.roles.includes(role))) return null;
                 const active = isItemActive(item.href);
                 return (
-                  <a key={item.href} href={item.href} onClick={() => isMobile && setMobileDrawerOpen(false)}
+                  <a key={item.href + item.label} href={item.href} onClick={() => isMobile && setMobileDrawerOpen(false)}
                     style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px 6px 20px", textDecoration: "none", borderLeft: `2px solid ${active ? C.accent : "transparent"}`, background: active ? C.sidebarActive : "transparent", color: active ? C.accent : C.muted, fontWeight: active ? 700 : 500, fontSize: 12.5, fontFamily: C.fontSans, transition: "all 0.12s" }}
                     onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"; (e.currentTarget as HTMLElement).style.color = C.text; } }}
                     onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = C.muted; } }}

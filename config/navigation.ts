@@ -234,7 +234,7 @@ export const NAVIGATION: NavModule[] = [
         items: [
           { label: "Laporan Produksi",    href: "/laporan/produksi" },
           { label: "Laporan Stok",        href: "/laporan/stok" },
-          { label: "Rekap Pelanggan",     href: "/laporan/pelanggan" },
+          { label: "Rekap Pelanggan",     href: "/laporan?tab=pelanggan" },
         ],
       },
     ],
@@ -278,18 +278,52 @@ export const NAVIGATION: NavModule[] = [
   },
 ];
 
-// Helper: cari modul berdasarkan pathname
-export function getActiveModule(pathname: string): string {
+function navItemScore(pathname: string, search: string, href: string): number {
+  const [base, query] = href.split("?");
+  const normSearch = search.startsWith("?") ? search : search ? `?${search}` : "";
+
+  if (query) {
+    const expected = new URLSearchParams(query);
+    const actual = new URLSearchParams(normSearch.replace(/^\?/, ""));
+    for (const [k, v] of expected.entries()) {
+      if (actual.get(k) !== v) return -1;
+    }
+    if (pathname === base) return 1000 + base.length;
+    if (href.includes("tab=pelanggan") && pathname === "/laporan/pelanggan") return 1000 + base.length;
+    return -1;
+  }
+
+  if (pathname === base) {
+    if (base === "/laporan" && normSearch.includes("tab=")) return -1;
+    return base.length;
+  }
+  if (pathname.startsWith(base + "/")) return base.length;
+  return -1;
+}
+
+export function isNavItemActive(pathname: string, search: string, href: string): boolean {
+  return navItemScore(pathname, search, href) >= 0;
+}
+
+function findBestNavMatch(pathname: string, search: string) {
+  let best: { mod: NavModule; group: NavGroup; item: NavItem; score: number } | null = null;
   for (const mod of NAVIGATION) {
     for (const group of mod.groups) {
       for (const item of group.items) {
-        const base = item.href.split("?")[0];
-        if (pathname === base || pathname.startsWith(base + "/")) {
-          return mod.key;
+        const score = navItemScore(pathname, search, item.href);
+        if (score >= 0 && (!best || score > best.score)) {
+          best = { mod, group, item, score };
         }
       }
     }
   }
+  return best;
+}
+
+// Helper: cari modul berdasarkan pathname
+export function getActiveModule(pathname: string, search = ""): string {
+  const best = findBestNavMatch(pathname, search);
+  if (best) return best.mod.key;
   if (pathname.startsWith("/shopee")) return "shopee";
   if (pathname.startsWith("/rekap-saldo")) return "shopee";
   if (pathname.startsWith("/produksi")) return "produksi";
@@ -302,16 +336,10 @@ export function getActiveModule(pathname: string): string {
 }
 
 // Helper: cari breadcrumb dari pathname
-export function getBreadcrumb(pathname: string): { module: string; group: string; page: string } {
-  for (const mod of NAVIGATION) {
-    for (const group of mod.groups) {
-      for (const item of group.items) {
-        const base = item.href.split("?")[0];
-        if (pathname === base || pathname.startsWith(base + "/")) {
-          return { module: mod.label, group: group.label, page: item.label };
-        }
-      }
-    }
+export function getBreadcrumb(pathname: string, search = ""): { module: string; group: string; page: string } {
+  const best = findBestNavMatch(pathname, search);
+  if (best) {
+    return { module: best.mod.label, group: best.group.label, page: best.item.label };
   }
   return { module: "Azalea", group: "", page: "Dashboard" };
 }

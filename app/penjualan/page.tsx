@@ -1,7 +1,7 @@
 "use client";
 
 // /app/penjualan/page.tsx
-// Penjualan Offline — input transaksi + riwayat + print nota thermal 58mm
+// Penjualan Offline — input transaksi + riwayat + print nota thermal 80mm
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -50,8 +50,6 @@ export default function PenjualanPage() {
   const [offlineNamaPelanggan, setOfflineNamaPelanggan] = useState("");
   const [offlinePelangganId, setOfflinePelangganId] = useState("");
   const [loadingHarga, setLoadingHarga] = useState(false);
-
-  const [printData, setPrintData] = useState<PenjualanOffline | null>(null);
 
   const totalKeranjang = keranjang.reduce((a, k) => a + k.subtotal, 0);
 
@@ -166,7 +164,7 @@ export default function PenjualanPage() {
         ...penjualanData,
         detail: keranjang.map((k, i) => ({ id: i, penjualan_id: penjualanData.id, stok_barang_id: k.produk_id, nama_produk: k.nama_produk, qty: k.qty, harga_satuan: k.harga_jual, subtotal: k.subtotal }))
       };
-      setPrintData(newPenjualan);
+      setTimeout(() => printNota(newPenjualan), 300);
 
       setKeranjang([]); setOfflineNamaPelanggan(""); setOfflinePelangganId("");
       setOfflineProdukId(""); setOfflineQty(""); setPelangganHarga({});
@@ -189,46 +187,84 @@ export default function PenjualanPage() {
   const printNota = (pj: PenjualanOffline) => {
     const w = window.open("", "_blank", "width=800,height=700,left=200,top=50");
     if (!w) return;
-    const lines = (pj.detail || []).map(d =>
-      `<div class="row"><span>${d.nama_produk} x${d.qty}</span><span>${rupiah(d.subtotal)}</span></div>`
-    ).join("");
+    const logoUrl = `${window.location.origin}/logo_azalea_food_fix.png`;
+    const namaPelanggan = pj.nama_pelanggan?.trim() || "Pelanggan Umum";
+    const tglNota = tanggalNotaFmt(pj.tanggal || pj.created_at);
+    const noNota = `OFF-${String(pj.id).padStart(3, "0")}`;
+    const rows = (pj.detail || []).map(d => `
+      <tr>
+        <td class="center">${d.qty}</td>
+        <td>${d.nama_produk}</td>
+        <td class="right">${rupiah(d.harga_satuan)}</td>
+        <td class="right">${rupiah(d.subtotal)}</td>
+      </tr>
+    `).join("");
     w.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
         <style>
-          @page { size: 58mm 200mm; margin: 2mm; }
-          body { font-family: monospace; font-size: 11px; color: black; width: 52mm; margin: 0; padding: 0; }
+          @page { size: 80mm auto; margin: 0; }
+          * { box-sizing: border-box; }
+          body { font-family: monospace; font-size: 10px; color: #000; margin: 0; padding: 4mm; width: 80mm; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+          .header-left img { display: block; margin-bottom: 4px; }
+          .header-left div, .header-right div { line-height: 1.4; }
+          .header-right { text-align: right; }
+          table { width: 100%; border-collapse: collapse; margin: 6px 0; }
+          th, td { border: 1px solid #000; padding: 3px 4px; vertical-align: top; }
+          th { font-weight: bold; text-align: center; }
           .center { text-align: center; }
-          .bold { font-weight: bold; }
-          .divider { border-top: 1px dashed #000; margin: 4px 0; }
-          .row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed #ccc; }
-          .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-weight: bold; font-size: 12px; }
+          .right { text-align: right; }
+          .jumlah { text-align: right; font-weight: bold; font-size: 11px; margin: 8px 0 16px; }
+          .ttd { display: flex; justify-content: space-between; margin-top: 20px; }
+          .ttd-col { flex: 1; text-align: center; }
+          .ttd-line { border-bottom: 1px solid #000; margin: 28px 8px 4px; }
         </style>
       </head>
       <body>
-        <div class="center bold" style="font-size:13px">AZALEA FOOD</div>
-        <div class="center">Penjualan Offline</div>
-        <div class="divider"></div>
-        <div style="display:flex;justify-content:space-between">
-          <span>Tgl: ${tanggalNotaFmt(pj.tanggal || pj.created_at)}</span>
-          <span>No: OFF-${String(pj.id).padStart(3, "0")}</span>
+        <div class="header">
+          <div class="header-left">
+            <img src="${logoUrl}" width="80">
+            <div>Kab. Bandung</div>
+            <div>Tlp/WA: 081221767500</div>
+          </div>
+          <div class="header-right">
+            <div>Bandung, ${tglNota}</div>
+            <div>Kepada Yth: ${namaPelanggan}</div>
+            <div>NO NOTA: ${noNota}</div>
+          </div>
         </div>
-        ${pj.nama_pelanggan ? `<div>Pembeli: ${pj.nama_pelanggan}</div>` : ""}
-        <div class="divider"></div>
-        ${lines}
-        <div class="divider"></div>
-        <div class="total-row"><span>TOTAL</span><span>${rupiah(pj.total_nominal)}</span></div>
-        <div style="font-size:10px">Metode: ${pj.metode_bayar}</div>
-        <div style="font-size:10px">Status: ${pj.status_bayar}</div>
-        <div class="divider"></div>
-        <div class="center" style="font-size:10px">Terima kasih!</div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:12%">Qty</th>
+              <th style="width:38%">Jenis Makanan</th>
+              <th style="width:25%">Harga</th>
+              <th style="width:25%">Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="jumlah">JUMLAH ${rupiah(pj.total_nominal)}</div>
+        <div class="ttd">
+          <div class="ttd-col">
+            <div>Tanda Terima</div>
+            <div class="ttd-line"></div>
+            <div>(${namaPelanggan})</div>
+          </div>
+          <div class="ttd-col">
+            <div>Hormat Kami</div>
+            <div class="ttd-line"></div>
+            <div>(.............)</div>
+          </div>
+          <div class="ttd-col"></div>
+        </div>
       </body>
       </html>
     `);
     w.document.close();
     setTimeout(() => { w.print(); w.onafterprint = () => w.close(); }, 500);
-    setPrintData(null);
   };
 
   const filteredOffline = filterStatus === "semua" ? penjualanList : penjualanList.filter(p => p.status_bayar === filterStatus);
@@ -245,17 +281,6 @@ export default function PenjualanPage() {
       {toast && (
         <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: toast.type === "success" ? C.accent : toast.type === "error" ? C.red : C.blue, color: "#fff", padding: "12px 20px", borderRadius: 12, boxShadow: C.shadowMd, fontFamily: C.fontSans, fontWeight: 700, fontSize: 14 }}>
           {toast.msg}
-        </div>
-      )}
-
-      {printData && (
-        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 20px", boxShadow: C.shadowMd, display: "flex", gap: 12, alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Transaksi tersimpan!</div>
-            <div style={{ fontSize: 12, color: C.muted }}>Print nota sekarang?</div>
-          </div>
-          <button onClick={() => printNota(printData)} style={{ padding: "8px 16px", background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>🖨️ Print</button>
-          <button onClick={() => setPrintData(null)} style={{ padding: "8px 12px", background: "transparent", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 12 }}>Skip</button>
         </div>
       )}
 

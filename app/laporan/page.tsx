@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
-import { rupiah, rupiahShort, pctFmt } from "@/lib/format";
+import { rupiah, rupiahShort, pctFmt, tanggalFmt } from "@/lib/format";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
 type LaporanData = {
@@ -43,9 +44,88 @@ type ProdukProfit = {
 type ChartDataPoint = { tanggal: string; omzet: number; laba: number; beban: number };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
+type NotaOffline = {
+  id: number;
+  tanggal: string;
+  created_at: string;
+  nama_pelanggan: string | null;
+  metode_bayar: string;
+  total_nominal: number;
+  status_bayar: string;
+  detail: { nama_produk: string; qty: number; harga_satuan: number; subtotal: number }[];
+};
+
+type PelangganPerforma = {
+  key: string;
+  pelanggan_id: number | null;
+  nama: string;
+  kontak: string;
+  terakhir_order: string | null;
+  total_transaksi: number;
+  total_omset: number;
+  produk_favorit: string;
+  piutang_nominal: number;
+  piutang_status: string;
+  nota_terakhir: NotaOffline | null;
+};
+
+function customerKey(pj: { pelanggan_id?: number | null; nama_pelanggan?: string | null }) {
+  if (pj.pelanggan_id) return `id:${pj.pelanggan_id}`;
+  return `nama:${(pj.nama_pelanggan || "Tanpa Nama").trim().toLowerCase()}`;
+}
+
+const tanggalNotaFmt = (s: string) =>
+  new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Asia/Jakarta" });
+
+function printNotaOffline(pj: NotaOffline) {
+  const w = window.open("", "_blank", "width=800,height=700,left=200,top=50");
+  if (!w) return;
+  const lines = (pj.detail || []).map(d =>
+    `<div class="row"><span>${d.nama_produk} x${d.qty}</span><span>${rupiah(d.subtotal)}</span></div>`
+  ).join("");
+  w.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        @page { size: 58mm 200mm; margin: 2mm; }
+        body { font-family: monospace; font-size: 11px; color: black; width: 52mm; margin: 0; padding: 0; }
+        .center { text-align: center; }
+        .bold { font-weight: bold; }
+        .divider { border-top: 1px dashed #000; margin: 4px 0; }
+        .row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed #ccc; }
+        .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-weight: bold; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="center bold" style="font-size:13px">AZALEA FOOD</div>
+      <div class="center">Penjualan Offline</div>
+      <div class="divider"></div>
+      <div style="display:flex;justify-content:space-between">
+        <span>Tgl: ${tanggalNotaFmt(pj.tanggal || pj.created_at)}</span>
+        <span>No: OFF-${String(pj.id).padStart(3, "0")}</span>
+      </div>
+      ${pj.nama_pelanggan ? `<div>Pembeli: ${pj.nama_pelanggan}</div>` : ""}
+      <div class="divider"></div>
+      ${lines}
+      <div class="divider"></div>
+      <div class="total-row"><span>TOTAL</span><span>${rupiah(pj.total_nominal)}</span></div>
+      <div style="font-size:10px">Metode: ${pj.metode_bayar}</div>
+      <div style="font-size:10px">Status: ${pj.status_bayar}</div>
+      <div class="divider"></div>
+      <div class="center" style="font-size:10px">Terima kasih!</div>
+    </body>
+    </html>
+  `);
+  w.document.close();
+  setTimeout(() => { w.print(); w.onafterprint = () => w.close(); }, 500);
+}
+
 export default function LaporanPage() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const CC = {
     blue:    { bg: isDark ? "rgba(96,165,250,0.12)"  : "#dbeafe", color: "#3b82f6",  border: isDark ? "rgba(96,165,250,0.25)"  : "#bfdbfe" },
@@ -62,7 +142,8 @@ export default function LaporanPage() {
   const [laporan, setLaporan] = useState<LaporanData | null>(null);
   const [produkProfit, setProdukProfit] = useState<ProdukProfit[]>([]);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
-  const [activeTab, setActiveTab] = useState<"summary" | "produk">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "produk" | "pelanggan">("summary");
+  const [pelangganPerforma, setPelangganPerforma] = useState<PelangganPerforma[]>([]);
   const [filterMode, setFilterMode] = useState<"bulan" | "custom">("bulan");
   const [bulanTerpilih, setBulanTerpilih] = useState(() => {
     const now = new Date();
@@ -125,6 +206,7 @@ export default function LaporanPage() {
         shopeeRes, offlineRes, returRes, produksiRes, feeRes,
         gajiRes, transportRes, opsRes, zakatRes, gajiHarianRes,
         detailPenjualanRes, detailProduksiRes,
+        pelangganRes, penjualanOfflineRes, piutangOfflineRes,
       ] = await Promise.all([
         supabase.from("penjualan_online").select("total_nominal").gte("created_at", startDate).lte("created_at", endDate),
         supabase.from("kas").select("nominal").eq("tipe", "Masuk").eq("kategori", "Offline").gte("created_at", startDate).lte("created_at", endDate),
@@ -144,6 +226,16 @@ export default function LaporanPage() {
         supabase.from("detail_produksi_output")
           .select("stok_barang_id, qty, hpp_per_unit, stok_barang(nama_produk)")
           .not("stok_barang_id", "is", null),
+        supabase.from("pelanggan_offline").select("id, nama, telepon, alamat"),
+        supabase.from("penjualan_offline")
+          .select("*, detail_penjualan_offline(*)")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate)
+          .order("created_at", { ascending: false }),
+        supabase.from("penjualan_offline")
+          .select("id, pelanggan_id, nama_pelanggan, total_nominal, status_bayar, metode_bayar")
+          .eq("metode_bayar", "Piutang")
+          .eq("status_bayar", "Belum Lunas"),
       ]);
 
       const sum = (data: any[], field = "nominal") => (data || []).reduce((s: number, r: any) => s + (r[field] || 0), 0);
@@ -208,6 +300,92 @@ export default function LaporanPage() {
 
       setProdukProfit(produkProfitList);
 
+      const pelangganMap = new Map(
+        (pelangganRes.data || []).map((p: any) => [p.id, p])
+      );
+      const piutangByCustomer = new Map<string, number>();
+      for (const p of piutangOfflineRes.data || []) {
+        const key = customerKey(p);
+        piutangByCustomer.set(key, (piutangByCustomer.get(key) || 0) + (p.total_nominal || 0));
+      }
+
+      type Agg = {
+        pelanggan_id: number | null;
+        nama: string;
+        kontak: string;
+        total_transaksi: number;
+        total_omset: number;
+        terakhir_order: string | null;
+        produkQty: Record<string, number>;
+        nota_terakhir: NotaOffline | null;
+      };
+      const aggMap = new Map<string, Agg>();
+
+      for (const pj of penjualanOfflineRes.data || []) {
+        const key = customerKey(pj);
+        let agg = aggMap.get(key);
+        if (!agg) {
+          const master = pj.pelanggan_id ? pelangganMap.get(pj.pelanggan_id) : null;
+          const kontak = master?.telepon || master?.alamat || "—";
+          agg = {
+            pelanggan_id: pj.pelanggan_id ?? null,
+            nama: master?.nama || pj.nama_pelanggan || "Tanpa Nama",
+            kontak,
+            total_transaksi: 0,
+            total_omset: 0,
+            terakhir_order: null,
+            produkQty: {},
+            nota_terakhir: null,
+          };
+          aggMap.set(key, agg);
+        }
+        agg.total_transaksi += 1;
+        agg.total_omset += Number(pj.total_nominal) || 0;
+        const orderDate = pj.tanggal || pj.created_at;
+        if (!agg.terakhir_order || orderDate > agg.terakhir_order) {
+          agg.terakhir_order = orderDate;
+          agg.nota_terakhir = {
+            id: pj.id,
+            tanggal: pj.tanggal,
+            created_at: pj.created_at,
+            nama_pelanggan: pj.nama_pelanggan,
+            metode_bayar: pj.metode_bayar,
+            total_nominal: pj.total_nominal,
+            status_bayar: pj.status_bayar,
+            detail: (pj.detail_penjualan_offline || []).map((d: any) => ({
+              nama_produk: d.nama_produk,
+              qty: d.qty,
+              harga_satuan: d.harga_satuan,
+              subtotal: d.subtotal,
+            })),
+          };
+        }
+        for (const d of pj.detail_penjualan_offline || []) {
+          const pname = d.nama_produk || "Produk";
+          agg.produkQty[pname] = (agg.produkQty[pname] || 0) + (Number(d.qty) || 0);
+        }
+      }
+
+      const performaList: PelangganPerforma[] = Array.from(aggMap.entries()).map(([key, agg]) => {
+        const fav = Object.entries(agg.produkQty).sort((a, b) => b[1] - a[1])[0];
+        const piutang = piutangByCustomer.get(key) || 0;
+        return {
+          key,
+          pelanggan_id: agg.pelanggan_id,
+          nama: agg.nama,
+          kontak: agg.kontak,
+          terakhir_order: agg.terakhir_order,
+          total_transaksi: agg.total_transaksi,
+          total_omset: agg.total_omset,
+          produk_favorit: fav ? `${fav[0]} (×${fav[1]})` : "—",
+          piutang_nominal: piutang,
+          piutang_status: piutang > 0 ? "Belum Lunas" : "Lunas",
+          nota_terakhir: agg.nota_terakhir,
+        };
+      }).sort((a, b) => b.total_omset - a.total_omset);
+
+      setPelangganPerforma(performaList);
+
       const biaya_gaji = sum(gajiRes.data || []) + sum(gajiHarianRes.data || []);
       const biaya_transport = sum(transportRes.data || []);
       const biaya_operasional_lain = sum(opsRes.data || []);
@@ -254,6 +432,21 @@ export default function LaporanPage() {
 
   useEffect(() => { fetchLaporan(); }, [fetchLaporan]);
 
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "pelanggan" || tab === "produk" || tab === "summary") {
+      setActiveTab(tab);
+    } else if (!tab) {
+      setActiveTab("summary");
+    }
+  }, [searchParams]);
+
+  const goTab = (tab: "summary" | "produk" | "pelanggan") => {
+    setActiveTab(tab);
+    if (tab === "summary") router.replace("/laporan");
+    else router.replace(`/laporan?tab=${tab}`);
+  };
+
   const inputS: React.CSSProperties = {
     padding: "8px 12px",
     background: isDark ? "rgba(255,255,255,0.05)" : "#f8fffe",
@@ -296,6 +489,7 @@ export default function LaporanPage() {
   const totalOmzetProduk  = produkProfit.reduce((a, p) => a + p.omzet, 0);
   const totalHppProduk    = produkProfit.reduce((a, p) => a + p.hpp, 0);
   const totalProfitProduk = produkProfit.reduce((a, p) => a + p.profit, 0);
+  const totalOmzetPelanggan = pelangganPerforma.reduce((a, p) => a + p.total_omset, 0);
 
   if (loading) return (
     <AppShell>
@@ -415,8 +609,9 @@ export default function LaporanPage() {
 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }} className="no-print">
-              <button onClick={() => setActiveTab("summary")} style={tabStyle(activeTab === "summary", CC.blue)}>📋 Summary L/R</button>
-              <button onClick={() => setActiveTab("produk")}  style={tabStyle(activeTab === "produk",  CC.green)}>📦 HPP per Produk</button>
+              <button onClick={() => goTab("summary")} style={tabStyle(activeTab === "summary", CC.blue)}>📋 Summary L/R</button>
+              <button onClick={() => goTab("produk")}  style={tabStyle(activeTab === "produk",  CC.green)}>📦 HPP per Produk</button>
+              <button onClick={() => goTab("pelanggan")} style={tabStyle(activeTab === "pelanggan", CC.teal)}>👥 Performa Pelanggan</button>
             </div>
 
             {/* ── TAB SUMMARY ── */}
@@ -508,6 +703,97 @@ export default function LaporanPage() {
                 <button onClick={() => window.print()} className="no-print" style={{ width: "100%", marginTop: 20, padding: 12, borderRadius: 12, background: CC.teal.bg, border: `1px solid ${CC.teal.border}`, color: CC.teal.color, fontWeight: 700, cursor: "pointer", fontSize: 14, transition: "all 0.15s" }}>
                   🖨️ Print Laporan
                 </button>
+              </div>
+            )}
+
+            {/* ── TAB PERFORMA PELANGGAN ── */}
+            {activeTab === "pelanggan" && (
+              <div style={{ background: C.card, padding: 24, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 4 }}>Performa Pelanggan Offline</div>
+                    <div style={{ fontSize: 12, color: C.muted }}>Periode: {periodeLabel} · {pelangganPerforma.length} pelanggan aktif</div>
+                  </div>
+                  <div style={{ textAlign: "right", padding: "8px 14px", background: CC.teal.bg, borderRadius: 10, border: `1px solid ${CC.teal.border}` }}>
+                    <div style={{ fontSize: 10, color: CC.teal.color, fontWeight: 700, textTransform: "uppercase" }}>Total Omset Offline</div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: CC.teal.color }}>{rupiah(totalOmzetPelanggan)}</div>
+                  </div>
+                </div>
+
+                {pelangganPerforma.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 40, color: C.muted, fontSize: 13, fontFamily: C.fontMono }}>
+                    Belum ada transaksi offline untuk periode ini
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 0.9fr 0.7fr 1fr 1.2fr 1fr 0.9fr", gap: 8, padding: "8px 14px", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 8, marginBottom: 4 }}>
+                      {["PELANGGAN", "KONTAK", "TERAKHIR ORDER", "TRX", "OMZET", "PRODUK FAVORIT", "PIUTANG", "NOTA"].map(h => (
+                        <div key={h} style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.06em", textTransform: "uppercase" }}>{h}</div>
+                      ))}
+                    </div>
+
+                    {pelangganPerforma.map((p) => {
+                      const piutangCol = p.piutang_nominal > 0 ? CC.red : CC.green;
+                      return (
+                        <div key={p.key} className="row-hover" style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 0.9fr 0.7fr 1fr 1.2fr 1fr 0.9fr", gap: 8, padding: "12px 14px", borderBottom: `1px solid ${C.border}`, borderRadius: 8, alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{p.nama}</div>
+                            {p.pelanggan_id && (
+                              <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>ID #{p.pelanggan_id}</div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontMono }}>{p.kontak}</div>
+                          <div style={{ fontSize: 12, color: C.textMid, fontFamily: C.fontMono }}>
+                            {p.terakhir_order ? tanggalFmt(p.terakhir_order) : "—"}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{p.total_transaksi}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: CC.teal.color, fontFamily: C.fontMono }}>{rupiah(p.total_omset)}</div>
+                          <div style={{ fontSize: 12, color: C.textMid }}>{p.produk_favorit}</div>
+                          <div>
+                            <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 800, background: piutangCol.bg, color: piutangCol.color, border: `1px solid ${piutangCol.border}`, fontFamily: C.fontMono }}>
+                              {p.piutang_status}
+                            </span>
+                            {p.piutang_nominal > 0 && (
+                              <div style={{ fontSize: 10, color: CC.red.color, fontFamily: C.fontMono, marginTop: 4 }}>{rupiah(p.piutang_nominal)}</div>
+                            )}
+                          </div>
+                          <div>
+                            {p.nota_terakhir ? (
+                              <button
+                                onClick={() => printNotaOffline(p.nota_terakhir!)}
+                                style={{
+                                  padding: "6px 10px", borderRadius: 8, cursor: "pointer",
+                                  background: CC.teal.bg, border: `1px solid ${CC.teal.border}`,
+                                  color: CC.teal.color, fontSize: 11, fontWeight: 700,
+                                  fontFamily: C.fontSans, whiteSpace: "nowrap",
+                                }}
+                              >
+                                🧾 Nota
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: 11, color: C.muted }}>—</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 0.9fr 0.7fr 1fr 1.2fr 1fr 0.9fr", gap: 8, padding: "12px 14px", background: CC.teal.bg, borderRadius: 10, marginTop: 4, border: `1px solid ${CC.teal.border}` }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.teal.color }}>TOTAL</div>
+                      <div />
+                      <div />
+                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.teal.color, fontFamily: C.fontMono }}>
+                        {pelangganPerforma.reduce((a, x) => a + x.total_transaksi, 0)}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: CC.teal.color, fontFamily: C.fontMono }}>{rupiah(totalOmzetPelanggan)}</div>
+                      <div />
+                      <div style={{ fontSize: 12, fontWeight: 700, color: CC.teal.color, fontFamily: C.fontMono }}>
+                        {rupiah(pelangganPerforma.reduce((a, x) => a + x.piutang_nominal, 0))}
+                      </div>
+                      <div />
+                    </div>
+                  </>
+                )}
               </div>
             )}
 

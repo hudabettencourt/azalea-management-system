@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, tanggalJamFmt } from "@/lib/format";
 
 type Kas = {
   id: number;
@@ -19,12 +20,6 @@ type Kas = {
 
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", {
-  day: "2-digit", month: "short", year: "numeric",
-  hour: "2-digit", minute: "2-digit",
-  timeZone: "Asia/Jakarta",
-});
 const isHariIni = (s: string) => {
   const tgl = new Date(s).toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
   const today = new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
@@ -155,7 +150,6 @@ export default function KasPage() {
     const nominalAngka = toAngka(nominal);
     setSubmitting(true);
     try {
-      // Upload foto dulu kalau ada
       let fotoUrl: string | null = null;
       if (fotoFile) {
         fotoUrl = await uploadFoto();
@@ -171,7 +165,7 @@ export default function KasPage() {
         foto_url: fotoUrl,
       }]);
       if (error) throw new Error(error.message);
-      showToast(`${tipe === "Masuk" ? "✓ Pemasukan" : "✓ Pengeluaran"} ${rupiahFmt(nominalAngka)} berhasil dicatat!`);
+      showToast(`${tipe === "Masuk" ? "✓ Pemasukan" : "✓ Pengeluaran"} ${rupiah(nominalAngka)} berhasil dicatat!`);
       setNominal(""); setKeterangan("");
       setFotoFile(null); setFotoPreview(null);
       setTanggalManual(new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" }));
@@ -284,22 +278,22 @@ export default function KasPage() {
   // ── Stat cards config — clickable ──
   const statCards = [
     {
-      label: "Saldo Kas Total", value: rupiahFmt(saldoTotal),
+      label: "Saldo Kas Total", value: rupiah(saldoTotal),
       color: saldoTotal >= 0 ? C.green : C.red, icon: "💰",
       sub: "Semua waktu", onClick: () => { setFilterTipe("Semua"); setFilterBulan(""); setActiveTab("riwayat"); }
     },
     {
-      label: "Pemasukan", value: rupiahFmt(totalMasuk),
+      label: "Pemasukan", value: rupiah(totalMasuk),
       color: C.green, icon: "📈",
       sub: filterBulan || "Periode dipilih", onClick: () => { setFilterTipe("Masuk"); setActiveTab("riwayat"); setCurrentPage(1); }
     },
     {
-      label: "Pengeluaran", value: rupiahFmt(totalKeluar),
+      label: "Pengeluaran", value: rupiah(totalKeluar),
       color: C.red, icon: "📉",
       sub: filterBulan || "Periode dipilih", onClick: () => { setFilterTipe("Keluar"); setActiveTab("riwayat"); setCurrentPage(1); }
     },
     {
-      label: "Selisih Periode", value: rupiahFmt(Math.abs(saldoBulanIni)),
+      label: "Selisih Periode", value: rupiah(Math.abs(saldoBulanIni)),
       color: saldoBulanIni >= 0 ? C.green : C.red,
       icon: saldoBulanIni >= 0 ? "✅" : "⚠️",
       sub: saldoBulanIni >= 0 ? "Surplus" : "Defisit",
@@ -356,7 +350,7 @@ export default function KasPage() {
               {fotoFile && <div style={{ fontSize: 12, color: C.accent, marginBottom: 10 }}>📎 Foto struk terlampir</div>}
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Nominal</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{rupiahFmt(toAngka(nominal))}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{rupiah(toAngka(nominal))}</span>
               </div>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -382,7 +376,6 @@ export default function KasPage() {
               <button onClick={() => setDetailItem(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 18, padding: "2px 6px" }}>×</button>
             </div>
 
-            {/* Status badge */}
             <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
               <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: (detailItem.tipe === "Masuk" ? C.green : C.red) + "20", color: detailItem.tipe === "Masuk" ? C.green : C.red, fontWeight: 700, fontFamily: C.fontMono }}>
                 {detailItem.tipe === "Masuk" ? "📈 Pemasukan" : "📉 Pengeluaran"}
@@ -391,18 +384,16 @@ export default function KasPage() {
               {detailItem.is_void && <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: `${C.red}20`, color: C.red, fontWeight: 700, fontFamily: C.fontMono }}>🚫 VOID</span>}
             </div>
 
-            {/* Nominal besar */}
             <div style={{ textAlign: "center", padding: "20px 0", marginBottom: 20, background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)", borderRadius: 12 }}>
               <div style={{ fontSize: 28, fontWeight: 800, color: detailItem.is_void ? C.muted : detailItem.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono, textDecoration: detailItem.is_void ? "line-through" : "none" }}>
-                {detailItem.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(detailItem.nominal)}
+                {detailItem.tipe === "Masuk" ? "+" : "−"}{rupiah(detailItem.nominal)}
               </div>
             </div>
 
-            {/* Info rows */}
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
               {[
                 { label: "Keterangan", value: detailItem.keterangan },
-                { label: "Tanggal", value: tanggalFmt(detailItem.created_at) },
+                { label: "Tanggal", value: tanggalJamFmt(detailItem.created_at) },
               ].map(row => (
                 <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderRadius: 8 }}>
                   <span style={{ fontSize: 12, color: C.muted }}>{row.label}</span>
@@ -417,7 +408,6 @@ export default function KasPage() {
               )}
             </div>
 
-            {/* Foto struk */}
             {detailItem.foto_url ? (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>Bukti Struk</div>
@@ -431,7 +421,6 @@ export default function KasPage() {
               </div>
             )}
 
-            {/* Aksi */}
             {!detailItem.is_void && (
               <div style={{ display: "flex", gap: 8 }}>
                 {isHariIni(detailItem.created_at) && (
@@ -450,7 +439,7 @@ export default function KasPage() {
           <div onClick={() => setEditItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000 }} />
           <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1001, width: 400, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, fontFamily: C.fontSans, animation: "fadeUp 0.15s ease" }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text, marginBottom: 4 }}>✏️ Edit Transaksi</div>
-            <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>{tanggalFmt(editItem.created_at)}</div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>{tanggalJamFmt(editItem.created_at)}</div>
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Kategori</div>
               <select value={editKategori} onChange={e => setEditKategori(e.target.value)} style={inputS}>
@@ -484,8 +473,8 @@ export default function KasPage() {
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>Transaksi tetap muncul di riwayat tapi tidak dihitung di saldo</div>
             <div style={{ background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{voidItem.keterangan}</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: voidItem.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{voidItem.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(voidItem.nominal)}</div>
-              <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>{tanggalFmt(voidItem.created_at)}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: voidItem.tipe === "Masuk" ? C.green : C.red, fontFamily: C.fontMono }}>{voidItem.tipe === "Masuk" ? "+" : "−"}{rupiah(voidItem.nominal)}</div>
+              <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>{tanggalJamFmt(voidItem.created_at)}</div>
             </div>
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>Alasan Void *</div>
@@ -509,7 +498,7 @@ export default function KasPage() {
           <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Kelola arus kas masuk & keluar Azalea</p>
         </div>
 
-        {/* Stat Cards — clickable */}
+        {/* Stat Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 24 }}>
           {statCards.map((s, i) => (
             <div key={i} className="stat-card" onClick={s.onClick} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden", boxShadow: C.shadow, cursor: "pointer", transition: "all 0.2s" }}>
@@ -554,7 +543,6 @@ export default function KasPage() {
               </div>
             </div>
 
-            {/* Kategori */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>KATEGORI</div>
               <select value={kategori} onChange={e => setKategori(e.target.value)} style={inputS}>
@@ -562,27 +550,23 @@ export default function KasPage() {
               </select>
             </div>
 
-            {/* Nominal */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>NOMINAL (Rp)</div>
               <input type="text" value={nominal} onChange={e => setNominal(formatIDR(e.target.value))} placeholder="0" style={{ ...inputS, fontFamily: C.fontMono, fontSize: 15, fontWeight: 700 }} />
-              {nominal && <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontFamily: C.fontMono }}>{rupiahFmt(toAngka(nominal))}</div>}
+              {nominal && <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontFamily: C.fontMono }}>{rupiah(toAngka(nominal))}</div>}
             </div>
 
-            {/* Keterangan */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>KETERANGAN</div>
               <input type="text" value={keterangan} onChange={e => setKeterangan(e.target.value)} placeholder="Contoh: Bayar listrik Februari..." style={inputS} />
             </div>
 
-            {/* Tanggal */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>TANGGAL</div>
               <input type="date" value={tanggalManual} onChange={e => setTanggalManual(e.target.value)} style={{ ...inputS, colorScheme: isDark ? "dark" : "light" }} />
               <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Default hari ini — ubah kalau input mundur</div>
             </div>
 
-            {/* Upload Foto Struk */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
                 FOTO STRUK <span style={{ color: C.dim, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(opsional)</span>
@@ -603,7 +587,7 @@ export default function KasPage() {
             </div>
 
             <button onClick={handleClickSimpan} style={{ width: "100%", padding: 13, border: "none", borderRadius: 10, background: tipe === "Masuk" ? `linear-gradient(135deg, #065f46, ${C.green})` : `linear-gradient(135deg, #7f1d1d, ${C.red})`, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: C.fontMono, fontSize: 14, boxShadow: `0 4px 16px ${tipe === "Masuk" ? C.green : C.red}33` }}>
-              {`✓ Simpan ${tipe === "Masuk" ? "Pemasukan" : "Pengeluaran"} ${nominal ? rupiahFmt(toAngka(nominal)) : ""}`}
+              {`✓ Simpan ${tipe === "Masuk" ? "Pemasukan" : "Pengeluaran"} ${nominal ? rupiah(toAngka(nominal)) : ""}`}
             </button>
           </div>
         )}
@@ -643,11 +627,11 @@ export default function KasPage() {
             {/* Summary */}
             {kasFiltered.length > 0 && (
               <div style={{ display: "flex", gap: 16, marginBottom: 14, padding: "10px 14px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)", borderRadius: 10, border: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 12, color: C.green, fontFamily: C.fontMono, fontWeight: 700 }}>↑ {rupiahFmt(totalMasuk)}</span>
+                <span style={{ fontSize: 12, color: C.green, fontFamily: C.fontMono, fontWeight: 700 }}>↑ {rupiah(totalMasuk)}</span>
                 <span style={{ fontSize: 12, color: C.muted }}>·</span>
-                <span style={{ fontSize: 12, color: C.red, fontFamily: C.fontMono, fontWeight: 700 }}>↓ {rupiahFmt(totalKeluar)}</span>
+                <span style={{ fontSize: 12, color: C.red, fontFamily: C.fontMono, fontWeight: 700 }}>↓ {rupiah(totalKeluar)}</span>
                 <span style={{ fontSize: 12, color: C.muted }}>·</span>
-                <span style={{ fontSize: 12, color: saldoBulanIni >= 0 ? C.green : C.red, fontFamily: C.fontMono, fontWeight: 700 }}>= {rupiahFmt(Math.abs(saldoBulanIni))} {saldoBulanIni >= 0 ? "surplus" : "defisit"}</span>
+                <span style={{ fontSize: 12, color: saldoBulanIni >= 0 ? C.green : C.red, fontFamily: C.fontMono, fontWeight: 700 }}>= {rupiah(Math.abs(saldoBulanIni))} {saldoBulanIni >= 0 ? "surplus" : "defisit"}</span>
               </div>
             )}
 
@@ -655,7 +639,6 @@ export default function KasPage() {
               <div style={{ textAlign: "center", color: C.muted, padding: "40px 0", fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada transaksi ditemukan</div>
             )}
 
-            {/* List — klik untuk detail */}
             {kasPage.map(k => (
               <div key={k.id} className="kas-row" onClick={() => setDetailItem(k)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 8px", borderBottom: `1px solid ${C.border}`, opacity: k.is_void ? 0.45 : 1, transition: "background 0.15s", borderRadius: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
@@ -667,12 +650,12 @@ export default function KasPage() {
                       {k.is_void && <span style={{ fontSize: 10, background: C.red + "20", color: C.red, padding: "2px 7px", borderRadius: 4, fontFamily: C.fontMono, fontWeight: 700 }}>VOID</span>}
                       {k.foto_url && <span style={{ fontSize: 10, color: C.accent, fontFamily: C.fontMono }}>📷</span>}
                     </div>
-                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(k.created_at)}</div>
+                    <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalJamFmt(k.created_at)}</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontWeight: 700, fontSize: 14, fontFamily: C.fontMono, color: k.is_void ? C.muted : k.tipe === "Masuk" ? C.green : C.red, whiteSpace: "nowrap", textDecoration: k.is_void ? "line-through" : "none" }}>
-                    {k.tipe === "Masuk" ? "+" : "−"}{rupiahFmt(k.nominal)}
+                    {k.tipe === "Masuk" ? "+" : "−"}{rupiah(k.nominal)}
                   </span>
                   <span style={{ fontSize: 11, color: C.dim }}>›</span>
                 </div>

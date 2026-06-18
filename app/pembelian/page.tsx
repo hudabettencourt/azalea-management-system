@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { rupiah, tanggalFmt } from "@/lib/format";
 
 type Produk = { id: number; nama_produk: string; jumlah_stok: number; harga_beli_avg: number; satuan: string };
 type Supplier = { id: number; nama: string };
@@ -9,9 +10,6 @@ type Pembelian = { id: number; tanggal: string; supplier_nama: string; total_bay
 type HutangSupplier = { id: number; supplier_nama: string; nominal: number; status: string; created_at: string };
 type ItemBeli = { produk_id: string; nama_produk: string; qty: string; harga_beli: string };
 type Toast = { msg: string; type: "success" | "error" | "info" };
-
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
 const T = {
   bg: "#100c16",
@@ -144,7 +142,7 @@ export default function PembelianPage() {
       if (metodeBayar === "Hutang") {
         await supabase.from("hutang_supplier").insert([{ pembelian_id: pembelianData.id, supplier_nama: supplierNama.trim(), nominal: totalBayar, status: "Belum Lunas" }]);
       }
-      showToast(`Pembelian ${rupiahFmt(totalBayar)} berhasil dicatat!`);
+      showToast(`Pembelian ${rupiah(totalBayar)} berhasil dicatat!`);
       setSupplierNama(""); setSupplierId(""); setMetodeBayar("Tunai"); setCatatan("");
       setItems([{ produk_id: "", nama_produk: "", qty: "", harga_beli: "" }]);
       fetchData(); setActiveTab("riwayat");
@@ -235,7 +233,7 @@ export default function PembelianPage() {
           <div style={{ padding: "16px 20px", borderTop: `1px solid ${T.border}` }}>
             <div style={{ fontSize: 10, color: T.textDim, fontFamily: T.fontMono, letterSpacing: 1, marginBottom: 8 }}>RINGKASAN</div>
             <div style={{ fontSize: 12, color: T.textMid, marginBottom: 4 }}>{riwayat.length} transaksi</div>
-            <div style={{ fontSize: 12, color: hutang.length > 0 ? T.yellow : T.green, fontFamily: T.fontMono }}>{rupiahFmt(totalHutang)} hutang</div>
+            <div style={{ fontSize: 12, color: hutang.length > 0 ? T.yellow : T.green, fontFamily: T.fontMono }}>{rupiah(totalHutang)} hutang</div>
           </div>
         </aside>
 
@@ -253,7 +251,7 @@ export default function PembelianPage() {
             {/* Stats */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 }}>
               {[
-                { label: "Hutang Supplier", nilai: rupiahFmt(totalHutang), icon: "💳", accent: T.yellow },
+                { label: "Hutang Supplier", nilai: rupiah(totalHutang), icon: "💳", accent: T.yellow },
                 { label: "Total Transaksi", nilai: `${riwayat.length} pembelian`, icon: "📋", accent: T.accent },
               ].map(s => (
                 <div key={s.label} style={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 14, padding: "18px 22px", position: "relative", overflow: "hidden" }}>
@@ -316,7 +314,7 @@ export default function PembelianPage() {
                           <input type="number" value={item.harga_beli} onChange={e => updateItem(idx, "harga_beli", e.target.value)} placeholder="Harga beli" style={inputStyle} min="0" />
                           {item.harga_beli && item.qty && (
                             <div style={{ fontSize: 11, color: T.accent, marginTop: 2, fontFamily: T.fontMono }}>
-                              = {rupiahFmt(parseInt(item.qty || "0") * parseInt(item.harga_beli || "0"))}
+                              = {rupiah(parseInt(item.qty || "0") * parseInt(item.harga_beli || "0"))}
                             </div>
                           )}
                         </div>
@@ -328,12 +326,12 @@ export default function PembelianPage() {
                   {/* Total */}
                   <div style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 18px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 700, color: T.textDim, fontFamily: T.fontMono, fontSize: 12, letterSpacing: 1 }}>TOTAL BAYAR</span>
-                    <span style={{ fontWeight: 800, fontSize: 22, color: T.text, fontFamily: T.fontDisplay }}>{rupiahFmt(totalBayar)}</span>
+                    <span style={{ fontWeight: 800, fontSize: 22, color: T.text, fontFamily: T.fontDisplay }}>{rupiah(totalBayar)}</span>
                   </div>
 
                   {metodeBayar === "Hutang" && (
                     <div style={{ background: "rgba(242,201,76,0.08)", border: "1px solid rgba(242,201,76,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: T.yellow }}>
-                      ⚠️ Akan dicatat sebagai <strong>hutang ke supplier</strong> sebesar {rupiahFmt(totalBayar)}
+                      ⚠️ Akan dicatat sebagai <strong>hutang ke supplier</strong> sebesar {rupiah(totalBayar)}
                     </div>
                   )}
 
@@ -364,7 +362,7 @@ export default function PembelianPage() {
                       <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{tanggalFmt(r.created_at)} · {r.total_item} produk · {r.metode_bayar}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 800, fontSize: 15, color: T.text, fontFamily: T.fontMono }}>{rupiahFmt(r.total_bayar)}</div>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: T.text, fontFamily: T.fontMono }}>{rupiah(r.total_bayar)}</div>
                       <div style={{ fontSize: 11, fontWeight: 700, color: r.status_bayar === "Lunas" ? T.green : T.yellow, fontFamily: T.fontMono }}>{r.status_bayar}</div>
                     </div>
                   </div>
@@ -386,7 +384,7 @@ export default function PembelianPage() {
                       <div style={{ fontSize: 11, color: T.textDim, fontFamily: T.fontMono, marginTop: 2 }}>{tanggalFmt(h.created_at)}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                      <div style={{ fontWeight: 800, fontSize: 15, color: T.yellow, fontFamily: T.fontMono }}>{rupiahFmt(h.nominal)}</div>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: T.yellow, fontFamily: T.fontMono }}>{rupiah(h.nominal)}</div>
                       <button onClick={() => lunaskanHutang(h.id, h.nominal, h.supplier_nama)} style={{ background: "rgba(111,207,151,0.1)", color: T.green, border: "1px solid rgba(111,207,151,0.25)", padding: "6px 14px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: T.fontMono }}>
                         ✓ Lunas
                       </button>

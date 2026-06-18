@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, tanggalFmt } from "@/lib/format";
 
 type Order = {
   id: number;
@@ -50,12 +51,6 @@ const SEARCH_FIELDS = [
   { key: "no_resi",      label: "No. Resi" },
   { key: "nama_pembeli", label: "Nama Pembeli" },
 ];
-
-const rupiahFmt = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const tanggalFmt = (s: string) => {
-  if (!s) return "-";
-  return new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 const PAGE_SIZE = 50;
 
@@ -114,7 +109,6 @@ export default function OrdersPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch toko dan orders sekaligus
       const [tokoRes, ordersRes, penjualanRes] = await Promise.all([
         supabase.from("toko_online").select("id, nama").eq("platform", "Shopee").eq("aktif", true).not("shopee_access_token", "is", null).order("id"),
         supabase.from("detail_penjualan_online").select("id, no_pesanan, tanggal_pesanan, no_resi, sku, qty, harga_satuan, total_pembayaran, status_shopee, nama_pembeli, jasa_kirim, penjualan_online_id, stok_barang(nama_produk)").order("tanggal_pesanan", { ascending: false }).limit(2000),
@@ -124,7 +118,6 @@ export default function OrdersPage() {
       const tokoData: Toko[] = tokoRes.data || [];
       setTokoList(tokoData);
 
-      // Build lookup maps
       const tokoMap = new Map<number, string>(tokoData.map(t => [t.id, t.nama]));
       const penjualanMap = new Map<number, number>((penjualanRes.data || []).map((p: any) => [p.id, p.toko_id]));
 
@@ -200,7 +193,7 @@ export default function OrdersPage() {
       <td>${o.no_pesanan}</td><td>${tanggalFmt(o.tanggal_pesanan)}</td>
       <td>${o.nama_pembeli||"-"}</td><td>${o.nama_produk}</td>
       <td style="text-align:center">${o.qty}</td>
-      <td style="text-align:right">${rupiahFmt(o.total_pembayaran)}</td>
+      <td style="text-align:right">${rupiah(o.total_pembayaran)}</td>
       <td>${o.jasa_kirim||"-"}</td><td>${o.no_resi||"-"}</td>
       <td>${o.nama_toko}</td><td>${o.status_shopee||"-"}</td>
     </tr>`).join("");
@@ -242,7 +235,6 @@ export default function OrdersPage() {
       )}
 
       <div style={{ padding: "24px 28px", animation: "fadeUp 0.3s ease" }}>
-        {/* Header */}
         <div className="no-print" style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <h1 style={{fontSize:22,fontWeight:800,color:C.text,margin:0}}>Pesanan Shopee</h1>
@@ -260,7 +252,6 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Search */}
         <div className="no-print" style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
           <select value={searchField} onChange={e=>setSearchField(e.target.value)}
             style={{...inputStyle,cursor:"pointer",minWidth:140}}>
@@ -272,7 +263,6 @@ export default function OrdersPage() {
           {searchVal && <button onClick={()=>setSearchVal("")} style={{...inputStyle,cursor:"pointer",color:C.muted}}>✕</button>}
         </div>
 
-        {/* Filter berlapis */}
         <div className="no-print" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:20}}>
           <PillFilterRow label="Toko"
             options={[{key:"semua",label:"Semua"},...tokoList.map(t=>({key:String(t.id),label:t.nama}))]}
@@ -284,7 +274,6 @@ export default function OrdersPage() {
             selected={filterStatus} onSelect={setFilterStatus} C={C} />
         </div>
 
-        {/* Table */}
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",boxShadow:C.shadow}}>
           <div style={{
             display:"grid",gridTemplateColumns:"1fr 100px 140px 130px 60px 110px 130px 120px",
@@ -321,7 +310,7 @@ export default function OrdersPage() {
                 </div>
                 <div style={{fontSize:12,color:C.textMid}}>{order.nama_toko}</div>
                 <div style={{textAlign:"center",fontSize:13,fontWeight:700,color:C.text,fontFamily:C.fontMono}}>{order.qty}</div>
-                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:C.green,fontFamily:C.fontMono}}>{rupiahFmt(order.total_pembayaran)}</div>
+                <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:C.green,fontFamily:C.fontMono}}>{rupiah(order.total_pembayaran)}</div>
                 <div style={{fontSize:11,color:C.textMid}}>{order.jasa_kirim||"—"}</div>
                 <div>
                   <span style={{fontSize:10,padding:"3px 8px",borderRadius:12,
@@ -334,7 +323,6 @@ export default function OrdersPage() {
           })}
         </div>
 
-        {/* Pagination */}
         {totalPages>1&&(
           <div className="no-print" style={{display:"flex",justifyContent:"center",gap:6,marginTop:20,alignItems:"center"}}>
             <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}

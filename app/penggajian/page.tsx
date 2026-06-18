@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import GajiBoronganTab from "./GajiBoronganTab";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, tanggalFmt } from "@/lib/format";
 
 type Karyawan = {
   id: number; nama: string; tipe: string;
@@ -41,10 +42,8 @@ const getTipeBeban = (tipe: string): "HPP" | "Operasional" => {
   return hppKeywords.some(k => tipe.toLowerCase().includes(k)) ? "HPP" : "Operasional";
 };
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 const formatIDR = (val: string) => val.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 const toAngka = (str: string) => parseInt(str.replace(/\./g, "")) || 0;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 const hariIniWIB = () => new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
 
 export default function PenggajianPage() {
@@ -59,7 +58,6 @@ export default function PenggajianPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [activeTab, setActiveTab] = useState<"input" | "borongan" | "rekap" | "karyawan">("input");
 
-  // Form input gaji
   const [karyawanId, setKaryawanId] = useState("");
   const [nominal, setNominal] = useState("");
   const [tanggal, setTanggal] = useState(hariIniWIB());
@@ -67,7 +65,6 @@ export default function PenggajianPage() {
   const [qtyKecil, setQtyKecil] = useState("");
   const [qtyBesar, setQtyBesar] = useState("");
 
-  // Tab Borongan
   const [boronganKaryawanId, setBoronganKaryawanId] = useState("");
   const [boronganTanggal, setBoronganTanggal] = useState(hariIniWIB());
   const [boronganKet, setBoronganKet] = useState("");
@@ -75,7 +72,6 @@ export default function PenggajianPage() {
   const [lastSlip, setLastSlip] = useState<SlipData | null>(null);
   const [showPrintBtn, setShowPrintBtn] = useState(false);
 
-  // Tambah karyawan
   const [newNama, setNewNama] = useState("");
   const [newTipe, setNewTipe] = useState("Operator Produksi");
   const [newGajiBulanan, setNewGajiBulanan] = useState("");
@@ -229,7 +225,7 @@ export default function PenggajianPage() {
       };
       setLastSlip(slip);
       setShowPrintBtn(true);
-      showToast(`✓ Gaji ${boronganKaryawan.nama} ${rupiahFmt(boronganTotal)} tersimpan!`);
+      showToast(`✓ Gaji ${boronganKaryawan.nama} ${rupiah(boronganTotal)} tersimpan!`);
       setBoronganRows(prev => prev.map(r => ({ ...r, qty: "" })));
       setBoronganKet("");
       fetchData();
@@ -279,7 +275,7 @@ export default function PenggajianPage() {
         }]);
         if (errKas) throw new Error("Gaji tersimpan tapi gagal catat ke kas: " + errKas.message);
       }
-      showToast(`✓ Gaji ${karyawan.nama} ${rupiahFmt(nominalAngka)}${tipeBeban === "Operasional" ? " → Kas Keluar" : " → HPP"}`);
+      showToast(`✓ Gaji ${karyawan.nama} ${rupiah(nominalAngka)}${tipeBeban === "Operasional" ? " → Kas Keluar" : " → HPP"}`);
       setKaryawanId(""); setNominal(""); setKeterangan(""); setTanggal(hariIniWIB());
       setQtyKecil(""); setQtyBesar("");
       fetchData();
@@ -340,7 +336,6 @@ export default function PenggajianPage() {
         @keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
       `}</style>
 
-      {/* Toast */}
       {toast && (
         <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: C.card, border: `1px solid ${toast.type === "success" ? C.green : toast.type === "error" ? C.red : C.blue}44`, color: toast.type === "success" ? C.green : toast.type === "error" ? C.red : C.blue, padding: "14px 20px", borderRadius: 12, boxShadow: C.shadowMd, fontFamily: C.fontMono, fontWeight: 600, fontSize: 13, maxWidth: 380, animation: "fadeUp 0.2s ease", display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ flex: 1 }}>{toast.msg}</span>
@@ -350,7 +345,6 @@ export default function PenggajianPage() {
 
       <div style={{ background: C.bg, minHeight: "100vh", padding: "32px 28px", fontFamily: C.fontSans, color: C.text }}>
 
-        {/* Header */}
         <div style={{ marginBottom: 28 }}>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: C.text }}>👥 Penggajian</h1>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Input gaji harian, borongan & per sesi · Auto-catat ke Kas & HPP</p>
@@ -359,9 +353,9 @@ export default function PenggajianPage() {
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 28 }}>
           {[
-            { label: "Total Gaji Bulan Ini", value: rupiahFmt(totalBulan), color: C.accent, icon: "💰" },
-            { label: "Masuk HPP", value: rupiahFmt(totalHPP), color: C.green, icon: "⚙️", sub: "Biaya produksi" },
-            { label: "Beban Operasional", value: rupiahFmt(totalOperasional), color: C.orange, icon: "📋", sub: "Sudah masuk kas" },
+            { label: "Total Gaji Bulan Ini", value: rupiah(totalBulan), color: C.accent, icon: "💰" },
+            { label: "Masuk HPP", value: rupiah(totalHPP), color: C.green, icon: "⚙️", sub: "Biaya produksi" },
+            { label: "Beban Operasional", value: rupiah(totalOperasional), color: C.orange, icon: "📋", sub: "Sudah masuk kas" },
             { label: "Karyawan Aktif", value: `${karyawanList.length} orang`, color: C.blue, icon: "👥" },
           ].map((s, i) => (
             <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden", boxShadow: C.shadow }}>
@@ -411,9 +405,9 @@ export default function PenggajianPage() {
                 <div style={{ background: `${C.orange}15`, border: `1px solid ${C.orange}30`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12 }}>
                   <div style={{ color: C.orange, fontWeight: 700, marginBottom: 4 }}>📋 Operasional — masuk kas keluar</div>
                   <div style={{ color: C.muted, fontSize: 11, fontFamily: C.fontMono }}>
-                    {selectedKaryawan.tipe === "Packing Online" && tarifKecil > 0 && `Paket Kecil: ${rupiahFmt(tarifKecil)} · Paket Besar: ${rupiahFmt(tarifBesar)}`}
-                    {selectedKaryawan.gaji_bulanan > 0 && `Gaji bulanan: ${rupiahFmt(selectedKaryawan.gaji_bulanan)}`}
-                    {selectedKaryawan.fee_live_sesi > 0 && `Fee live: ${rupiahFmt(selectedKaryawan.fee_live_sesi)}`}
+                    {selectedKaryawan.tipe === "Packing Online" && tarifKecil > 0 && `Paket Kecil: ${rupiah(tarifKecil)} · Paket Besar: ${rupiah(tarifBesar)}`}
+                    {selectedKaryawan.gaji_bulanan > 0 && `Gaji bulanan: ${rupiah(selectedKaryawan.gaji_bulanan)}`}
+                    {selectedKaryawan.fee_live_sesi > 0 && `Fee live: ${rupiah(selectedKaryawan.fee_live_sesi)}`}
                   </div>
                 </div>
               )}
@@ -431,7 +425,7 @@ export default function PenggajianPage() {
                     ].map((p, i) => (
                       <div key={i}>
                         <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-                          {p.label} {p.tarif > 0 && <span style={{ color: C.blue }}>{rupiahFmt(p.tarif)}/pkt</span>}
+                          {p.label} {p.tarif > 0 && <span style={{ color: C.blue }}>{rupiah(p.tarif)}/pkt</span>}
                         </label>
                         <input type="number" min="0" value={p.val} onChange={e => p.set(e.target.value)} placeholder="0" style={{ ...inp, fontFamily: C.fontMono, marginBottom: 0 }} />
                       </div>
@@ -439,9 +433,9 @@ export default function PenggajianPage() {
                   </div>
                   {(parseInt(qtyKecil) > 0 || parseInt(qtyBesar) > 0) && (
                     <div style={{ background: `${C.blue}08`, border: `1px solid ${C.blue}20`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, fontSize: 12, fontFamily: C.fontMono }}>
-                      {parseInt(qtyKecil) > 0 && <div style={{ color: C.muted, marginBottom: 2 }}>{qtyKecil} × {rupiahFmt(tarifKecil)} = <span style={{ color: C.blue }}>{rupiahFmt((parseInt(qtyKecil) || 0) * tarifKecil)}</span></div>}
-                      {parseInt(qtyBesar) > 0 && <div style={{ color: C.muted, marginBottom: 2 }}>{qtyBesar} × {rupiahFmt(tarifBesar)} = <span style={{ color: C.blue }}>{rupiahFmt((parseInt(qtyBesar) || 0) * tarifBesar)}</span></div>}
-                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, marginTop: 4, color: C.text, fontWeight: 700 }}>Total: <span style={{ color: C.accent }}>{rupiahFmt(toAngka(nominal))}</span></div>
+                      {parseInt(qtyKecil) > 0 && <div style={{ color: C.muted, marginBottom: 2 }}>{qtyKecil} × {rupiah(tarifKecil)} = <span style={{ color: C.blue }}>{rupiah((parseInt(qtyKecil) || 0) * tarifKecil)}</span></div>}
+                      {parseInt(qtyBesar) > 0 && <div style={{ color: C.muted, marginBottom: 2 }}>{qtyBesar} × {rupiah(tarifBesar)} = <span style={{ color: C.blue }}>{rupiah((parseInt(qtyBesar) || 0) * tarifBesar)}</span></div>}
+                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, marginTop: 4, color: C.text, fontWeight: 700 }}>Total: <span style={{ color: C.accent }}>{rupiah(toAngka(nominal))}</span></div>
                     </div>
                   )}
                 </div>
@@ -449,7 +443,7 @@ export default function PenggajianPage() {
                 <>
                   <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Nominal Gaji</label>
                   <input type="text" value={nominal} onChange={e => setNominal(formatIDR(e.target.value))} placeholder="Rp 0" style={{ ...inp, fontFamily: C.fontMono, fontWeight: 700 }} />
-                  {nominal && toAngka(nominal) > 0 && <div style={{ fontSize: 12, color: C.accent, fontFamily: C.fontMono, marginBottom: 8, fontWeight: 700 }}>= {rupiahFmt(toAngka(nominal))}</div>}
+                  {nominal && toAngka(nominal) > 0 && <div style={{ fontSize: 12, color: C.accent, fontFamily: C.fontMono, marginBottom: 8, fontWeight: 700 }}>= {rupiah(toAngka(nominal))}</div>}
                 </>
               )}
               <label style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Keterangan (opsional)</label>
@@ -476,14 +470,14 @@ export default function PenggajianPage() {
                         <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{g.tipe_karyawan} · {g.keterangan?.slice(0, 40)}</div>
                         <span style={{ fontSize: 10, display: "inline-block", marginTop: 2, background: (g.tipe_beban === "HPP" ? C.green : C.orange) + "20", color: g.tipe_beban === "HPP" ? C.green : C.orange, padding: "1px 6px", borderRadius: 4, fontFamily: C.fontMono, fontWeight: 700 }}>{g.tipe_beban}</span>
                       </div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: C.accent, fontFamily: C.fontMono }}>{rupiahFmt(g.nominal)}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.accent, fontFamily: C.fontMono }}>{rupiah(g.nominal)}</div>
                     </div>
                   ))}
               </div>
               {gajiHariIniList.length > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Total Hari Ini</span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: C.accent, fontFamily: C.fontMono }}>{rupiahFmt(totalHariIni)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: C.accent, fontFamily: C.fontMono }}>{rupiah(totalHariIni)}</span>
                 </div>
               )}
             </div>
@@ -517,7 +511,7 @@ export default function PenggajianPage() {
                     <div key={r.varianId} style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 8, marginBottom: 8, alignItems: "center" }}>
                       <div style={{ background: `${C.accent}08`, border: `1px solid ${C.accent}20`, borderRadius: 8, padding: "10px 12px" }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{r.varianNama}</div>
-                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(r.tarifPerKg)}/{boronganKaryawan?.tipe === "Pencetak" ? "kg" : "pkt"}</div>
+                        <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiah(r.tarifPerKg)}/{boronganKaryawan?.tipe === "Pencetak" ? "kg" : "pkt"}</div>
                       </div>
                       <input type="number" min="0" step={boronganKaryawan?.tipe === "Pencetak" ? "0.1" : "1"} value={r.qty} onChange={e => updateBoronganQty(idx, e.target.value)} placeholder="0"
                         style={{ ...inp, fontFamily: C.fontMono, fontWeight: 700, marginBottom: 0, textAlign: "right" }} />
@@ -528,7 +522,7 @@ export default function PenggajianPage() {
               {boronganTotal > 0 && (
                 <div style={{ background: `${C.green}10`, border: `1px solid ${C.green}25`, borderRadius: 10, padding: "12px 16px", marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginBottom: 4 }}>TOTAL GAJI</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahFmt(boronganTotal)}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiah(boronganTotal)}</div>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>
                     {boronganKaryawan?.tipe === "Pencetak" ? "⚙ HPP → biaya produksi" : "📋 Operasional → kas keluar"}
                   </div>
@@ -595,7 +589,6 @@ export default function PenggajianPage() {
           </div>
         )}
 
-        {/* ── REKAP (GajiBoronganTab) ── */}
         {activeTab === "rekap" && <GajiBoronganTab />}
 
         {/* ── KARYAWAN ── */}
@@ -645,8 +638,8 @@ export default function PenggajianPage() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{k.nama}</div>
                         <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
                           {k.tipe}
-                          {k.gaji_bulanan > 0 && ` · ${rupiahFmt(k.gaji_bulanan)}/bln`}
-                          {k.fee_live_sesi > 0 && ` · ${rupiahFmt(k.fee_live_sesi)}/sesi`}
+                          {k.gaji_bulanan > 0 && ` · ${rupiah(k.gaji_bulanan)}/bln`}
+                          {k.fee_live_sesi > 0 && ` · ${rupiah(k.fee_live_sesi)}/sesi`}
                         </div>
                       </div>
                     </div>

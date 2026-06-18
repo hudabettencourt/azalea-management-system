@@ -7,6 +7,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah, tanggalFmt } from "@/lib/format";
 
 type Produk = { id: number; nama_produk: string; jumlah_stok: number; harga_jual: number; satuan: string };
 type KeranjangItem = { produk_id: number; nama_produk: string; harga_jual: number; qty: number; subtotal: number; harga_khusus: boolean };
@@ -23,10 +24,9 @@ type DetailPenjualanOffline = {
 };
 type Toast = { msg: string; type: "success" | "error" | "info" };
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 const formatIDR = (val: string) => val.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 const toAngka = (str: string) => parseInt(str.replace(/\./g, "")) || 0;
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+// tanggalNotaFmt — format DD/MM/YYYY khusus untuk nota thermal (beda dari tanggalFmt)
 const tanggalNotaFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
 
 export default function PenjualanPage() {
@@ -43,7 +43,6 @@ export default function PenjualanPage() {
   const [filterStatus, setFilterStatus] = useState<"semua" | "Belum Lunas" | "Lunas">("semua");
   const [showKonfirmasi, setShowKonfirmasi] = useState(false);
 
-  // Form state
   const [keranjang, setKeranjang] = useState<KeranjangItem[]>([]);
   const [offlineProdukId, setOfflineProdukId] = useState("");
   const [offlineQty, setOfflineQty] = useState("");
@@ -52,7 +51,6 @@ export default function PenjualanPage() {
   const [offlinePelangganId, setOfflinePelangganId] = useState("");
   const [loadingHarga, setLoadingHarga] = useState(false);
 
-  // Print state
   const [printData, setPrintData] = useState<PenjualanOffline | null>(null);
 
   const totalKeranjang = keranjang.reduce((a, k) => a + k.subtotal, 0);
@@ -123,7 +121,7 @@ export default function PenjualanPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-   const prosesOffline = async () => {
+  const prosesOffline = async () => {
     setSubmitting(true);
     try {
       const { data: penjualanData, error: penjualanError } = await supabase.from("penjualan_offline").insert([{
@@ -147,7 +145,6 @@ export default function PenjualanPage() {
         }))
       );
       if (detailError) {
-        // Rollback header jika detail gagal
         await supabase.from("penjualan_offline").delete().eq("id", penjualanData.id);
         throw new Error("Gagal simpan detail: " + detailError.message);
       }
@@ -163,8 +160,8 @@ export default function PenjualanPage() {
         await supabase.from("kas").insert([{ tipe: "Masuk", kategori: "Offline", nominal: totalKeranjang, keterangan: keranjang.map(k => `${k.nama_produk} ×${k.qty}`).join(", ") }]);
       }
 
-      showToast(`✓ ${keranjang.length} item terjual = ${rupiahFmt(totalKeranjang)}`);
-      
+      showToast(`✓ ${keranjang.length} item terjual = ${rupiah(totalKeranjang)}`);
+
       const newPenjualan: PenjualanOffline = {
         ...penjualanData,
         detail: keranjang.map((k, i) => ({ id: i, penjualan_id: penjualanData.id, stok_barang_id: k.produk_id, nama_produk: k.nama_produk, qty: k.qty, harga_satuan: k.harga_jual, subtotal: k.subtotal }))
@@ -180,7 +177,6 @@ export default function PenjualanPage() {
     } finally { setSubmitting(false); }
   };
 
-
   const lunaskanOffline = async (pj: PenjualanOffline) => {
     try {
       await supabase.from("penjualan_offline").update({ status_bayar: "Lunas" }).eq("id", pj.id);
@@ -194,7 +190,7 @@ export default function PenjualanPage() {
     const w = window.open("", "_blank", "width=800,height=700,left=200,top=50");
     if (!w) return;
     const lines = (pj.detail || []).map(d =>
-      `<div class="row"><span>${d.nama_produk} x${d.qty}</span><span>${rupiahFmt(d.subtotal)}</span></div>`
+      `<div class="row"><span>${d.nama_produk} x${d.qty}</span><span>${rupiah(d.subtotal)}</span></div>`
     ).join("");
     w.document.write(`
       <!DOCTYPE html>
@@ -222,7 +218,7 @@ export default function PenjualanPage() {
         <div class="divider"></div>
         ${lines}
         <div class="divider"></div>
-        <div class="total-row"><span>TOTAL</span><span>${rupiahFmt(pj.total_nominal)}</span></div>
+        <div class="total-row"><span>TOTAL</span><span>${rupiah(pj.total_nominal)}</span></div>
         <div style="font-size:10px">Metode: ${pj.metode_bayar}</div>
         <div style="font-size:10px">Status: ${pj.status_bayar}</div>
         <div class="divider"></div>
@@ -246,14 +242,12 @@ export default function PenjualanPage() {
         .pj-row:hover { background: ${isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)"} !important; }
       `}</style>
 
-      {/* Toast */}
       {toast && (
         <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: toast.type === "success" ? C.accent : toast.type === "error" ? C.red : C.blue, color: "#fff", padding: "12px 20px", borderRadius: 12, boxShadow: C.shadowMd, fontFamily: C.fontSans, fontWeight: 700, fontSize: 14 }}>
           {toast.msg}
         </div>
       )}
 
-      {/* Auto print setelah simpan */}
       {printData && (
         <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 20px", boxShadow: C.shadowMd, display: "flex", gap: 12, alignItems: "center" }}>
           <div>
@@ -265,7 +259,6 @@ export default function PenjualanPage() {
         </div>
       )}
 
-      {/* Konfirmasi modal */}
       {showKonfirmasi && (
         <>
           <div onClick={() => setShowKonfirmasi(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000 }} />
@@ -275,12 +268,12 @@ export default function PenjualanPage() {
               {keranjang.map(k => (
                 <div key={k.produk_id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13, color: C.textMid }}>{k.nama_produk} ×{k.qty}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiah(k.subtotal)}</span>
                 </div>
               ))}
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Total</span>
-                <span style={{ fontSize: 15, fontWeight: 900, color: C.accent, fontFamily: C.fontMono }}>{rupiahFmt(totalKeranjang)}</span>
+                <span style={{ fontSize: 15, fontWeight: 900, color: C.accent, fontFamily: C.fontMono }}>{rupiah(totalKeranjang)}</span>
               </div>
             </div>
             <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
@@ -306,20 +299,15 @@ export default function PenjualanPage() {
       )}
 
       <div style={{ padding: "24px 28px", animation: "fadeUp 0.3s ease" }}>
-
-        {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Penjualan Offline</h1>
-          <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
-            Input transaksi reseller & print nota thermal
-          </p>
+          <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>Input transaksi reseller & print nota thermal</p>
         </div>
 
-        {/* Summary */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
           {[
             { label: "Total Produk", value: `${produk.length} item`, color: C.accent, icon: "📦" },
-            { label: "Piutang Belum Lunas", value: rupiahFmt(totalPiutang), color: C.red, icon: "📝", sub: `${piutangList.length} pelanggan` },
+            { label: "Piutang Belum Lunas", value: rupiah(totalPiutang), color: C.red, icon: "📝", sub: `${piutangList.length} pelanggan` },
             { label: "Transaksi Hari Ini", value: penjualanList.filter(p => p.tanggal === new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" })).length.toString(), color: C.green, icon: "🧾", sub: "transaksi" },
           ].map((s, i) => (
             <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 18px", boxShadow: C.shadow }}>
@@ -332,12 +320,10 @@ export default function PenjualanPage() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 20 }}>
-
-          {/* ── FORM INPUT ── */}
+          {/* FORM INPUT */}
           <div style={{ background: C.card, borderRadius: 16, padding: 22, border: `1px solid ${C.border}`, boxShadow: C.shadow, height: "fit-content" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 16 }}>🏪 Input Penjualan</div>
 
-            {/* Metode */}
             <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" as const }}>Metode Bayar</div>
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {["Tunai", "Piutang"].map(m => (
@@ -348,7 +334,6 @@ export default function PenjualanPage() {
               ))}
             </div>
 
-            {/* Pelanggan */}
             <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" as const }}>
               Pelanggan {offlineMetode === "Piutang" ? <span style={{ color: C.red }}>*</span> : <span style={{ color: C.muted, fontSize: 10, textTransform: "none" as const }}>(opsional)</span>}
             </div>
@@ -373,13 +358,12 @@ export default function PenjualanPage() {
               </div>
             )}
 
-            {/* Tambah item */}
             <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" as const }}>Tambah Item</div>
             <select value={offlineProdukId} onChange={e => setOfflineProdukId(e.target.value)} style={{ ...inputStyle, marginBottom: 8 }}>
               <option value="">— Pilih Produk —</option>
               {produk.map(p => {
                 const hargaKhusus = pelangganHarga[p.id];
-                return <option key={p.id} value={p.id}>{p.nama_produk} — {rupiahFmt(hargaKhusus ?? p.harga_jual)} (stok: {p.jumlah_stok})</option>;
+                return <option key={p.id} value={p.id}>{p.nama_produk} — {rupiah(hargaKhusus ?? p.harga_jual)} (stok: {p.jumlah_stok})</option>;
               })}
             </select>
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -387,7 +371,6 @@ export default function PenjualanPage() {
               <button onClick={tambahKeranjang} style={{ padding: "9px 16px", borderRadius: 10, background: `${C.accent}15`, color: C.accent, fontWeight: 800, cursor: "pointer", fontFamily: C.fontSans, fontSize: 13, border: `1px solid ${C.accent}30`, whiteSpace: "nowrap" as const }}>+ Tambah</button>
             </div>
 
-            {/* Keranjang */}
             {keranjang.length > 0 && (
               <div style={{ background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)", border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
                 <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase" as const, letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>Keranjang ({keranjang.length} item)</div>
@@ -398,17 +381,17 @@ export default function PenjualanPage() {
                         {k.nama_produk}
                         {k.harga_khusus && <span style={{ fontSize: 9, background: `${C.accent}15`, color: C.accent, padding: "1px 5px", borderRadius: 3, fontFamily: C.fontMono }}>KHUSUS</span>}
                       </div>
-                      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiahFmt(k.harga_jual)} × {k.qty}</div>
+                      <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{rupiah(k.harga_jual)} × {k.qty}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiahFmt(k.subtotal)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontMono }}>{rupiah(k.subtotal)}</span>
                       <button onClick={() => setKeranjang(prev => prev.filter(x => x.produk_id !== k.produk_id))} style={{ background: `${C.red}15`, border: "none", color: C.red, cursor: "pointer", fontSize: 13, padding: "2px 6px", borderRadius: 4 }}>×</button>
                     </div>
                   </div>
                 ))}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Total</span>
-                  <span style={{ fontSize: 14, fontWeight: 900, color: C.accent, fontFamily: C.fontMono }}>{rupiahFmt(totalKeranjang)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: C.accent, fontFamily: C.fontMono }}>{rupiah(totalKeranjang)}</span>
                 </div>
               </div>
             )}
@@ -418,11 +401,11 @@ export default function PenjualanPage() {
               if (offlineMetode === "Piutang" && !offlineNamaPelanggan.trim()) return showToast("Pilih atau isi nama pelanggan!", "error");
               setShowKonfirmasi(true);
             }} style={{ width: "100%", padding: "12px", border: "none", borderRadius: 10, background: keranjang.length === 0 ? C.dim : `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, color: keranjang.length === 0 ? C.muted : "#fff", fontWeight: 800, cursor: keranjang.length === 0 ? "not-allowed" : "pointer", fontFamily: C.fontSans, fontSize: 13, transition: "all 0.15s" }}>
-              {`💳 Proses ${keranjang.length > 0 ? `(${rupiahFmt(totalKeranjang)}) via ${offlineMetode}` : "Keranjang"}`}
+              {`💳 Proses ${keranjang.length > 0 ? `(${rupiah(totalKeranjang)}) via ${offlineMetode}` : "Keranjang"}`}
             </button>
           </div>
 
-          {/* ── RIWAYAT TRANSAKSI ── */}
+          {/* RIWAYAT */}
           <div style={{ background: C.card, borderRadius: 16, padding: 22, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>📋 Riwayat Transaksi</div>
@@ -445,12 +428,8 @@ export default function PenjualanPage() {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" as const }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{pj.nama_pelanggan || "Tanpa Pelanggan"}</span>
-                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, fontFamily: C.fontMono, fontWeight: 700, background: pj.status_bayar === "Lunas" ? `${C.green}20` : `${C.yellow}20`, color: pj.status_bayar === "Lunas" ? C.green : C.yellow }}>
-                        {pj.status_bayar}
-                      </span>
-                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, fontFamily: C.fontMono, background: pj.metode_bayar === "Tunai" ? `${C.green}15` : `${C.blue}15`, color: pj.metode_bayar === "Tunai" ? C.green : C.blue }}>
-                        {pj.metode_bayar}
-                      </span>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, fontFamily: C.fontMono, fontWeight: 700, background: pj.status_bayar === "Lunas" ? `${C.green}20` : `${C.yellow}20`, color: pj.status_bayar === "Lunas" ? C.green : C.yellow }}>{pj.status_bayar}</span>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, fontFamily: C.fontMono, background: pj.metode_bayar === "Tunai" ? `${C.green}15` : `${C.blue}15`, color: pj.metode_bayar === "Tunai" ? C.green : C.blue }}>{pj.metode_bayar}</span>
                     </div>
                     <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginBottom: 3 }}>{tanggalFmt(pj.created_at)} · {(pj.detail || []).length} item</div>
                     <div style={{ fontSize: 11, color: C.textMid }}>
@@ -459,7 +438,7 @@ export default function PenjualanPage() {
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                    <span style={{ fontSize: 15, fontWeight: 900, color: pj.status_bayar === "Lunas" ? C.green : C.red, fontFamily: C.fontMono }}>{rupiahFmt(pj.total_nominal)}</span>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: pj.status_bayar === "Lunas" ? C.green : C.red, fontFamily: C.fontMono }}>{rupiah(pj.total_nominal)}</span>
                     <div style={{ display: "flex", gap: 6 }}>
                       <button onClick={() => printNota(pj)} style={{ padding: "5px 10px", background: `${C.accent}15`, border: `1px solid ${C.accent}30`, color: C.accent, borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🖨️ Nota</button>
                       {pj.metode_bayar === "Piutang" && pj.status_bayar === "Belum Lunas" && (
@@ -474,7 +453,7 @@ export default function PenjualanPage() {
             {piutangList.length > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, paddingTop: 12, borderTop: `2px solid ${C.border}` }}>
                 <span style={{ fontSize: 13, color: C.text, fontWeight: 700 }}>Total Piutang Belum Lunas</span>
-                <span style={{ fontSize: 16, fontWeight: 900, color: C.red, fontFamily: C.fontMono }}>{rupiahFmt(totalPiutang)}</span>
+                <span style={{ fontSize: 16, fontWeight: 900, color: C.red, fontFamily: C.fontMono }}>{rupiah(totalPiutang)}</span>
               </div>
             )}
           </div>

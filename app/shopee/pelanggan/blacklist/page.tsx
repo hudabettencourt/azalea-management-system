@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { tanggalFmt } from "@/lib/format";
 
 type BlacklistItem = {
   id: number; username: string; alasan: string | null;
@@ -14,8 +15,6 @@ type BlacklistItem = {
 };
 type Toko = { id: number; nama: string };
 type Toast = { msg: string; type: "success" | "error" };
-
-const tanggalFmt = (s: string) => new Date(s).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
 
 export default function BlacklistPage() {
   const { isDark } = useTheme();
@@ -27,14 +26,12 @@ export default function BlacklistPage() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [search, setSearch] = useState("");
 
-  // Form tambah
   const [showForm, setShowForm] = useState(false);
   const [username, setUsername] = useState("");
   const [alasan, setAlasan] = useState("");
   const [tokoId, setTokoId] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Confirm delete
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const showToast = (msg: string, type: Toast["type"] = "success") => {
@@ -105,7 +102,6 @@ export default function BlacklistPage() {
 
       <div style={{ padding: "24px 28px", animation: "fadeUp 0.3s ease" }}>
 
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Blacklist Pembeli</h1>
@@ -121,7 +117,6 @@ export default function BlacklistPage() {
           </div>
         </div>
 
-        {/* Form tambah */}
         {showForm && (
           <div style={{ background: `${C.red}06`, border: `1px solid ${C.red}30`, borderRadius: 14, padding: 20, marginBottom: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.red, fontFamily: C.fontMono, marginBottom: 14, letterSpacing: 1 }}>+ TAMBAH KE BLACKLIST</div>
@@ -151,14 +146,11 @@ export default function BlacklistPage() {
           </div>
         )}
 
-        {/* Info */}
         <div style={{ background: `${C.yellow}10`, border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12, color: C.yellow, fontFamily: C.fontMono }}>
           ⚠️ Blacklist ini hanya untuk referensi internal — Shopee tidak blokir otomatis. Cek manual saat ada pesanan masuk dari username ini.
         </div>
 
-        {/* List */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
-          {/* Header tabel */}
           <div style={{ display: "grid", gridTemplateColumns: "1.5fr 2fr 1fr 1fr 100px", gap: 8, padding: "10px 20px", background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const }}>
             <span>Username</span>
             <span>Alasan</span>

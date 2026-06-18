@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
+import { rupiah } from "@/lib/format";
 
 type BahanBaku = {
   id: number; nama: string; satuan: string; kategori: string;
@@ -14,7 +15,6 @@ type BahanBaku = {
 };
 type Toast = { msg: string; type: "success" | "error" };
 
-const rupiahFmt = (n: number) => `Rp ${(n || 0).toLocaleString("id-ID")}`;
 const stokFmt = (n: number) => Math.round(n * 100) / 100;
 
 const KATEGORI_COLORS: Record<string, { bg: string; color: string }> = {
@@ -109,7 +109,7 @@ export default function ReorderPage() {
             { label: "Perlu Beli", value: kritis.length, color: C.red, icon: "🔴", sub: "stok ≤ minimum" },
             { label: "Belum Diset", value: belumDiset.length, color: C.yellow, icon: "⚠️", sub: "minimum = 0" },
             { label: "Stok Aman", value: aman.length, color: C.green, icon: "✅", sub: "stok > minimum" },
-            { label: "Est. Nilai Beli", value: rupiahFmt(totalNilaiKritis), color: C.accent, icon: "💰", sub: "untuk restok kritis" },
+            { label: "Est. Nilai Beli", value: rupiah(totalNilaiKritis), color: C.accent, icon: "💰", sub: "untuk restok kritis" },
           ].map((s, i) => (
             <div key={i} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 18px", boxShadow: C.shadow }}>
               <div style={{ fontSize: 20, marginBottom: 8 }}>{s.icon}</div>
@@ -175,7 +175,6 @@ export default function ReorderPage() {
                     {belumDisetMin && <span>⚠️</span>}
                     {b.nama}
                   </div>
-                  {/* Progress bar */}
                   {pct !== null && (
                     <div style={{ height: 3, background: C.dim, borderRadius: 2, marginTop: 4, overflow: "hidden", width: "80%" }}>
                       <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? C.green : C.red, borderRadius: 2 }} />
@@ -225,7 +224,7 @@ export default function ReorderPage() {
 
                 {/* Est. harga beli */}
                 <div style={{ fontSize: 12, color: kurang > 0 ? C.text : C.muted, fontFamily: C.fontMono, fontWeight: kurang > 0 ? 700 : 400 }}>
-                  {kurang > 0 ? rupiahFmt(estHarga) : "—"}
+                  {kurang > 0 ? rupiah(estHarga) : "—"}
                 </div>
 
                 {/* Aksi */}

@@ -1,0 +1,32 @@
+Ini adalah project Azalea Management System — ERP untuk bisnis siomay (Indonesian fish cake).
+
+Tech stack:
+- Next.js 16 + TypeScript
+- Supabase (database + auth)
+- Vercel (deployment)
+- Recharts (charts)
+
+Aturan coding:
+- Selalu import rupiah, tanggalFmt, tanggalJamFmt dari @/lib/format
+- Jangan buat local helper rupiahFmt atau tanggalFmt lagi
+- Format uang: rupiah() dari lib/format — full Rp format, tidak disingkat
+- Semua monetary values pakai toLocaleString("id-ID")
+- Timezone selalu Asia/Jakarta (WIB)
+- Pakai AppShell dari @/components/AppShell untuk semua halaman baru
+- Pakai useTheme, LIGHT, DARK dari @/context/ThemeContext untuk theming
+- Jangan hardcode warna — pakai C.accent, C.text, C.muted, dll dari ThemeContext
+- RLS Supabase: public tables pakai "to public", karyawan/gaji_harian pakai "to authenticated"
+- Jangan pernah hardcode credentials — pakai .env.local
+- PowerShell environment (Windows) — pakai Select-String bukan grep
+- Selalu generate complete file replacement, bukan partial patch
+
+Business rules:
+- HPP workers (Operator Produksi, Packing, Pencetak) → masuk HPP bukan kas keluar
+- Operational workers (Host Live, Packing Online, Admin Shopee, Owner) → kas keluar
+- Fee platform Shopee = pengurang piutang, bukan kas keluar
+- Shopee funds = piutang sampai dicairkan ke BCA
+
+Database tables utama:
+kas, bahan_baku, stok_barang, mutasi_stok, produksi_batch, pembelian_bahan,
+penjualan_online, detail_penjualan_online, penjualan_offline, detail_penjualan_offline,
+karyawan, gaji_harian, toko_online, rekap_saldo_shopee, varian_borongan

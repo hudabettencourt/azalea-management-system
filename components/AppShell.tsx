@@ -7,7 +7,7 @@
 // Responsive: desktop = IDE-style, mobile = bottom nav + drawer
 
 import { NAVIGATION, getActiveModule, getBreadcrumb, getModuleDefaultHref, isNavItemActive } from "@/config/navigation";
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   IconShoppingBag,
@@ -57,6 +57,24 @@ interface AppShellProps {
 }
 
 export default function AppShell({ children, actions }: AppShellProps) {
+  return (
+    <Suspense fallback={<AppShellFallback actions={actions}>{children}</AppShellFallback>}>
+      <AppShellInner actions={actions}>{children}</AppShellInner>
+    </Suspense>
+  );
+}
+
+function AppShellFallback({ children, actions }: AppShellProps) {
+  const { isDark } = useTheme();
+  const C = isDark ? DARK : LIGHT;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", background: C.bgPage, fontFamily: C.fontSans }}>
+      <div style={{ flex: 1, overflowY: "auto", background: C.bgPage }}>{children}</div>
+    </div>
+  );
+}
+
+function AppShellInner({ children, actions }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
@@ -122,6 +122,14 @@ function printNotaOffline(pj: NotaOffline) {
 }
 
 export default function LaporanPage() {
+  return (
+    <Suspense fallback={null}>
+      <LaporanPageInner />
+    </Suspense>
+  );
+}
+
+function LaporanPageInner() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
   const searchParams = useSearchParams();

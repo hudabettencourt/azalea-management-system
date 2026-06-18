@@ -86,7 +86,7 @@ function parseRating(raw: any): number | null {
 
 function countReturns(raw: any): number {
   const resp = raw?.response ?? raw ?? {};
-  const list = resp?.return_list ?? resp?.returns ?? [];
+  const list = resp?.return ?? resp?.return_list ?? resp?.returns ?? [];
   return Array.isArray(list) ? list.length : 0;
 }
 

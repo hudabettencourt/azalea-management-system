@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
+import { rupiah, tanggalJamFmt } from "@/lib/format";
 
 type Retur = {
   key: string;
@@ -23,14 +24,8 @@ type Retur = {
   text_reason: string;
   product_name: string;
   refund_amount: number;
-  created_at: string;       // ISO
+  created_at: string;
   raw: any;
-};
-
-const rupiah = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-const isoToWIB = (iso: string) => {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" });
 };
 
 export default function ShopeeReturPage() {
@@ -53,10 +48,12 @@ export default function ShopeeReturPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      // Ambil daftar toko untuk nama + filter
       const { data: tokoData } = await supabase
         .from("toko_online")
-        .select("id, nama");
+        .select("id, nama")
+        .eq("platform", "Shopee")
+        .eq("aktif", true)
+        .order("id");
       const tokoMap = new Map<number, string>();
       const opts: { id: number; nama: string }[] = [];
       for (const t of tokoData || []) {
@@ -65,28 +62,26 @@ export default function ShopeeReturPage() {
       }
       setTokoOpts(opts);
 
-      // Ambil retur dari DB
       const { data, error } = await supabase
         .from("retur_online")
-        .select("id, toko_id, order_sn, return_sn, return_status, refund_amount, reason, text_reason, product_name, username_pembeli, created_at")
-        .not("return_sn", "is", null)
+        .select("*, stok_barang(nama_produk), toko_online(nama)")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
 
       const all: Retur[] = (data || []).map((r: any) => ({
-        key: `${r.toko_id}-${r.return_sn}`,
+        key: r.return_sn ? `${r.toko_id}-${r.return_sn}` : `manual-${r.id}`,
         id: r.id,
         toko_id: r.toko_id,
-        toko_nama: tokoMap.get(r.toko_id) || `Toko ${r.toko_id}`,
+        toko_nama: r.toko_online?.nama || tokoMap.get(r.toko_id) || `Toko ${r.toko_id}`,
         return_sn: String(r.return_sn || ""),
         order_sn: String(r.order_sn || ""),
         buyer: String(r.username_pembeli || ""),
-        status: String(r.return_status || ""),
+        status: String(r.return_status || r.tipe || ""),
         reason: String(r.reason || ""),
         text_reason: String(r.text_reason || ""),
-        product_name: String(r.product_name || ""),
-        refund_amount: Number(r.refund_amount) || 0,
+        product_name: String(r.product_name || r.stok_barang?.nama_produk || ""),
+        refund_amount: Number(r.refund_amount ?? r.nominal) || 0,
         created_at: r.created_at,
         raw: r,
       }));
@@ -167,7 +162,6 @@ export default function ShopeeReturPage() {
       )}
 
       <div style={{ padding: "24px 28px" }}>
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Retur</h1>
@@ -193,7 +187,6 @@ export default function ShopeeReturPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, minWidth: 80 }}>Toko</span>
@@ -214,7 +207,6 @@ export default function ShopeeReturPage() {
           </div>
         </div>
 
-        {/* List */}
         {loading && returns.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
             Memuat retur...
@@ -231,7 +223,7 @@ export default function ShopeeReturPage() {
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {filtered.map(r => (
-              <ReturCard key={r.key} r={r} C={C} />
+              <ReturCard key={r.key} r={r} C={C} isDark={isDark} />
             ))}
           </div>
         )}
@@ -240,7 +232,7 @@ export default function ShopeeReturPage() {
   );
 }
 
-function ReturCard({ r, C }: { r: Retur; C: any }) {
+function ReturCard({ r, C, isDark }: { r: Retur; C: any; isDark: boolean }) {
   const closedSet = new Set(["COMPLETED", "ACCEPTED", "REFUNDED", "CLOSED", "CANCELLED"]);
   const isClosed = closedSet.has(r.status.toUpperCase());
   const isCancelled = r.status.toUpperCase() === "CANCELLED";
@@ -275,13 +267,13 @@ function ReturCard({ r, C }: { r: Retur; C: any }) {
             Return: {r.return_sn || "—"} · Pesanan: {r.order_sn || "—"}
           </div>
           <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono, marginTop: 1 }}>
-            {isoToWIB(r.created_at)}
+            {r.created_at ? tanggalJamFmt(r.created_at) : "—"}
           </div>
 
           {(r.reason || r.text_reason) && (
             <div style={{
               marginTop: 10, padding: "8px 12px",
-              background: isDarkColor(C) ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+              background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
               borderRadius: 8, fontSize: 12, color: C.textMid, fontFamily: C.fontSans,
             }}>
               <span style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 10 }}>ALASAN</span>
@@ -301,8 +293,4 @@ function ReturCard({ r, C }: { r: Retur; C: any }) {
       </div>
     </div>
   );
-}
-
-function isDarkColor(C: any): boolean {
-  return C.bg === "#0f1a16" || C.bg?.startsWith?.("#0") || C.text === "#e8f5f0";
 }

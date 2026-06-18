@@ -81,8 +81,11 @@ function openBase64Pdf(b64: string, filename: string) {
   } catch (err) { console.error("openBase64Pdf failed:", err); alert("Gagal membuka PDF. Cek console untuk detail."); }
 }
 
-function extractPdfBase64(raw: any): string | null {
-  if (!raw) return null;
+function extractPdfBase64(data: any): string | null {
+  if (!data) return null;
+  if (typeof data.pdf_base64 === "string" && data.pdf_base64.length > 100) return data.pdf_base64;
+  const raw = data.raw ?? data;
+  if (typeof raw?.pdf_base64 === "string" && raw.pdf_base64.length > 100) return raw.pdf_base64;
   const candidates = [raw?.response?.result, raw?.response?.shipping_document_info?.[0]?.shipping_document, raw?.response?.shipping_document, raw?.response?.data];
   for (const c of candidates) { if (typeof c === "string" && c.length > 100) return c; }
   return null;
@@ -354,8 +357,8 @@ export default function OrdersPage() {
     const res = await fetch("/api/shopee/get-airway-bill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toko_id: tokoId, order_sn_list: orders.map(o => o.no_pesanan) }) });
     const data = await res.json();
     if (!data.success) throw new Error(data.error || data.raw?.message || data.raw?.error || "get-airway-bill gagal");
-    const b64 = extractPdfBase64(data.raw);
-    if (!b64) { console.error("[print-label] response did not contain base64 PDF:", data.raw); throw new Error("PDF tidak ditemukan di response"); }
+    const b64 = extractPdfBase64(data);
+    if (!b64) { console.error("[print-label] response did not contain PDF:", data); throw new Error("PDF tidak ditemukan di response"); }
     openBase64Pdf(b64, `label-${orders[0].nama_toko}-${Date.now()}.pdf`);
   };
 

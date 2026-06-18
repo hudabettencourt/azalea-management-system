@@ -141,4 +141,32 @@ export async function shopeeApiPost(
   return res.json();
 }
 
+// POST yang bisa mengembalikan file biner (mis. download_shipping_document PDF).
+export async function shopeeApiPostBinary(
+  path: string,
+  shopId: number,
+  accessToken: string,
+  body: Record<string, any> = {},
+): Promise<{ ok: true; data: Buffer; contentType: string } | { ok: false; json: any }> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = generateSignature(path, timestamp, accessToken, shopId);
+  const query = new URLSearchParams({
+    partner_id: PARTNER_ID.toString(),
+    timestamp: timestamp.toString(),
+    sign,
+    shop_id: shopId.toString(),
+    access_token: accessToken,
+  });
+  const res = await fetch(`${API_BASE_URL}${path}?${query.toString()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return { ok: false, json: await res.json() };
+  }
+  return { ok: true, data: Buffer.from(await res.arrayBuffer()), contentType };
+}
+
 export { PARTNER_ID, API_BASE_URL };

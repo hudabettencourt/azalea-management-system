@@ -1,11 +1,12 @@
 // app/api/shopee/get-airway-bill/route.ts
 // POST /api/shopee/get-airway-bill
-// Body: { toko_id, order_sn_list: string[] }
-// Wraps /api/v2/logistics/download_shipping_document. Shopee usually returns a
-// base64 PDF or a URL — the UI handler decides between blob and window.open().
+// Body: { toko_id, order_sn_list: string[], shipping_document_type? }
+// Flow Shopee resmi:
+// get_shipping_document_parameter → create_shipping_document →
+// get_shipping_document_result (poll) → download_shipping_document
 import { NextRequest, NextResponse } from "next/server";
-import { shopeeApiPost } from "@/lib/shopee/helper";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
+import { fetchShippingDocumentPdf } from "@/lib/shopee/shipping-document";
 
 type Body = {
   toko_id: number;
@@ -19,20 +20,31 @@ export async function POST(req: NextRequest) {
     if (!body.toko_id || !body.order_sn_list?.length) {
       return NextResponse.json({ error: "toko_id dan order_sn_list wajib" }, { status: 400 });
     }
+
     const [toko] = await fetchToko(body.toko_id);
     const accessToken = await getValidToken(toko);
-    const res = await shopeeApiPost(
-      "/api/v2/logistics/download_shipping_document",
+
+    const result = await fetchShippingDocumentPdf(
       toko.shopee_shop_id,
       accessToken,
-      {
-        order_list: body.order_sn_list.map(sn => ({ order_sn: sn })),
-        shipping_document_type: body.shipping_document_type ?? "THERMAL_AIR_WAYBILL",
-      },
+      body.order_sn_list,
+      body.shipping_document_type,
     );
-    logShopeeResponse("download_shipping_document", toko.nama, res);
-    return NextResponse.json({ success: !res.error, toko: toko.nama, raw: res });
+
+    logShopeeResponse("download_shipping_document", toko.nama, {
+      orders: body.order_sn_list,
+      shipping_document_type: result.shipping_document_type,
+      pdf_bytes: result.pdf_base64.length,
+    });
+
+    return NextResponse.json({
+      success: true,
+      toko: toko.nama,
+      pdf_base64: result.pdf_base64,
+      shipping_document_type: result.shipping_document_type,
+      raw: result,
+    });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

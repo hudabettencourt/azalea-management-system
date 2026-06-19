@@ -1,7 +1,6 @@
 // app/api/shopee/get-wallet-balance/route.ts
 // GET /api/shopee/get-wallet-balance?toko_id=1 (omit for all toko)
-// Saldo tersedia + pending via get_income_overview; fallback saldo wallet dari
-// get_wallet_transaction_list (current_balance transaksi terbaru).
+// Saldo penjual saat ini: current_balance (wallet) + pending dari income overview.
 import { NextRequest, NextResponse } from "next/server";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
 import {

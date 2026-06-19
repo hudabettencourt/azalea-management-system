@@ -132,8 +132,8 @@ function SaldoTab({ C }: { C: any }) {
   return (
     <div>
       <div style={{ padding: "12px 16px", background: C.yellowDim, border: `1px solid ${C.yellow}40`, borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textMid, fontFamily: C.fontSans, lineHeight: 1.5 }}>
-        Saldo <b>Tersedia</b> dan <b>Pending</b> diambil dari Shopee API <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code> (sama seperti tab Saldo di Seller Center).
-        Jika masih kosong, whitelist endpoint Payment tersebut di Shopee Open Platform.
+        <b>Tersedia</b> = saldo wallet penjual <b>saat ini</b> (dari <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_wallet_transaction_list</code> → <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>current_balance</code>), bukan total penghasilan sejak buka toko.
+        <b> Pending</b> = pesanan belum cair (dari <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code>).
       </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <SumCard label="Total Tersedia" value={rupiahN(totalTersedia)} color={C.green} C={C} />
@@ -162,7 +162,12 @@ function SaldoTab({ C }: { C: any }) {
                 </div>
                 {r.tersedia === null && r.pending === null && (
                   <div style={{ gridColumn: "1 / -1", fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                    API merespons OK tapi field saldo tidak ditemukan — cek whitelist <code>get_income_overview</code>.
+                    Saldo wallet kosong — pastikan <code>get_wallet_transaction_list</code> di-whitelist.
+                  </div>
+                )}
+                {r.tersedia === null && r.pending !== null && (
+                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
+                    Tersedia kosong — tidak ada transaksi wallet dalam ~84 hari terakhir atau API belum di-whitelist.
                   </div>
                 )}
               </div>

@@ -1,9 +1,11 @@
 // lib/shopee/wallet-balance.ts
-// Saldo Shopee: get_income_overview (tersedia + pending) + fallback current_balance
-// dari get_wallet_transaction_list (sama pola sync-finance).
+// Saldo penjual SAAT INI:
+// - Tersedia  → current_balance dari get_wallet_transaction_list (saldo wallet / bisa dicairkan)
+// - Pending   → pending/to_release dari get_income_overview (bukan total released seumur hidup)
 import { shopeeApi } from "./helper";
 
 const WINDOW_DAYS = 14;
+const MAX_WINDOWS = 6; // geser mundur max ~84 hari untuk cari transaksi terbaru
 
 export type WalletBalanceRaw = {
   income_overview?: any;
@@ -20,23 +22,6 @@ function pickNumber(obj: any, keys: string[]): number | null {
   return null;
 }
 
-function deepPickAmount(obj: any, keyPatterns: RegExp[], depth = 0): number | null {
-  if (!obj || typeof obj !== "object" || depth > 6) return null;
-  for (const [k, v] of Object.entries(obj)) {
-    if (keyPatterns.some((p) => p.test(k))) {
-      const n = pickNumber({ x: v }, ["x"]);
-      if (n !== null) return n;
-    }
-  }
-  for (const v of Object.values(obj)) {
-    if (v && typeof v === "object") {
-      const found = deepPickAmount(v, keyPatterns, depth + 1);
-      if (found !== null) return found;
-    }
-  }
-  return null;
-}
-
 function latestWalletBalance(walletRes: any): number | null {
   const list = walletRes?.response?.transaction_list ?? walletRes?.transaction_list ?? [];
   if (!Array.isArray(list) || list.length === 0) return null;
@@ -46,71 +31,104 @@ function latestWalletBalance(walletRes: any): number | null {
   return pickNumber(sorted[0], ["current_balance"]);
 }
 
-/** Parse gabungan respons income overview + wallet transaction list. */
+function parsePendingFromOverview(overviewRes: any): number | null {
+  const resp = overviewRes?.response ?? overviewRes ?? {};
+  if (!resp || overviewRes?.error) return null;
+
+  // Hanya field pending / belum cair — JANGAN pakai released_amount (total kumulatif).
+  const direct = pickNumber(resp, [
+    "pending_amount",
+    "total_pending_amount",
+    "to_release_amount",
+    "total_to_release_amount",
+    "escrow_amount",
+    "unreleased_amount",
+    "on_hold_amount",
+    "frozen_amount",
+  ]);
+  if (direct !== null) return direct;
+
+  // Struktur dinamis Shopee ID: cari objek bertipe pending/to_release.
+  const sections = [
+    resp?.pending_info,
+    resp?.to_release_info,
+    resp?.pending,
+    resp?.to_release,
+    ...(Array.isArray(resp?.income_list) ? resp.income_list : []),
+    ...(Array.isArray(resp?.overview_list) ? resp.overview_list : []),
+  ].filter(Boolean);
+
+  let total = 0;
+  let found = false;
+  for (const section of sections) {
+    const status = String(section?.income_status ?? section?.status ?? "").toLowerCase();
+    if (status && !/pending|to.?release|unreleased|escrow/i.test(status)) continue;
+    const amt = pickNumber(section, [
+      "amount", "total_amount", "income_amount", "pending_amount", "to_release_amount",
+    ]);
+    if (amt !== null) {
+      total += amt;
+      found = true;
+    }
+  }
+  return found ? total : null;
+}
+
+/** Parse saldo penjual saat ini (bukan total kumulatif). */
 export function parseWalletBalance(raw: WalletBalanceRaw | any): {
   tersedia: number | null;
   pending: number | null;
 } {
-  // Back-compat: respons lama hanya wallet list / total_income.
   if (raw && !raw.income_overview && !raw.wallet_transactions) {
-    const resp = raw?.response ?? raw;
-    const income = resp?.total_income ?? resp;
-    const fromLegacy = {
-      tersedia: pickNumber(income, [
-        "released_amount", "seller_balance", "withdrawable_amount",
-        "wallet_balance", "available_balance", "released",
-      ]),
-      pending: pickNumber(income, [
-        "escrow_amount", "pending_amount", "frozen_amount",
-        "settlement_amount", "pending", "to_release_amount",
-      ]),
-    };
-    const walletBal = latestWalletBalance(resp);
     return {
-      tersedia: fromLegacy.tersedia ?? walletBal,
-      pending: fromLegacy.pending,
+      tersedia: latestWalletBalance(raw),
+      pending: parsePendingFromOverview(raw),
     };
   }
 
-  const overview = raw?.income_overview;
   const wallet = raw?.wallet_transactions;
+  const overview = raw?.income_overview;
 
-  const overviewResp = overview?.response ?? overview ?? {};
-  const tersedia =
-    pickNumber(overviewResp, [
-      "released_amount", "released", "released_income", "total_released_amount",
-      "available_balance", "seller_balance", "wallet_balance", "withdrawable_amount",
-      "completed_payout_amount", "total_released", "released_balance",
-    ]) ??
-    deepPickAmount(overviewResp, [/released/i, /available/i, /withdrawable/i, /seller_balance/i]) ??
-    latestWalletBalance(wallet);
+  return {
+    tersedia: latestWalletBalance(wallet),
+    pending: parsePendingFromOverview(overview),
+  };
+}
 
-  const pending =
-    pickNumber(overviewResp, [
-      "pending_amount", "pending", "pending_income", "total_pending_amount",
-      "escrow_amount", "frozen_amount", "to_release_amount", "to_release",
-      "unreleased_amount", "total_pending", "on_hold_amount",
-    ]) ??
-    deepPickAmount(overviewResp, [/pending/i, /escrow/i, /to_release/i, /unreleased/i, /frozen/i]);
+async function fetchWalletTransactions(
+  shopId: number,
+  accessToken: string,
+  timeFrom?: number,
+  timeTo?: number,
+) {
+  const params: Record<string, number> = { page_no: 0, page_size: 5 };
+  if (timeFrom !== undefined && timeTo !== undefined) {
+    params.create_time_from = timeFrom;
+    params.create_time_to = timeTo;
+  }
+  return shopeeApi("/api/v2/payment/get_wallet_transaction_list", shopId, accessToken, params);
+}
 
-  return { tersedia, pending };
+/** Ambil transaksi wallet terbaru; geser window mundur bila 14 hari terakhir kosong. */
+async function fetchLatestWalletSnapshot(shopId: number, accessToken: string) {
+  const now = Math.floor(Date.now() / 1000);
+  for (let w = 0; w < MAX_WINDOWS; w++) {
+    const timeTo = now - w * WINDOW_DAYS * 24 * 3600;
+    const timeFrom = timeTo - WINDOW_DAYS * 24 * 3600;
+    const res = await fetchWalletTransactions(shopId, accessToken, timeFrom, timeTo);
+    if (res.error) return res;
+    if (res.response?.transaction_list?.length) return res;
+  }
+  return fetchWalletTransactions(shopId, accessToken);
 }
 
 export async function fetchWalletBalanceRaw(
   shopId: number,
   accessToken: string,
 ): Promise<WalletBalanceRaw> {
-  const timeTo = Math.floor(Date.now() / 1000);
-  const timeFrom = timeTo - WINDOW_DAYS * 24 * 3600;
-
   const [incomeOverview, walletTransactions] = await Promise.all([
     shopeeApi("/api/v2/payment/get_income_overview", shopId, accessToken, {}),
-    shopeeApi("/api/v2/payment/get_wallet_transaction_list", shopId, accessToken, {
-      page_no: 0,
-      page_size: 10,
-      create_time_from: timeFrom,
-      create_time_to: timeTo,
-    }),
+    fetchLatestWalletSnapshot(shopId, accessToken),
   ]);
 
   return { income_overview: incomeOverview, wallet_transactions: walletTransactions };
@@ -127,7 +145,7 @@ export function walletBalanceOk(raw: WalletBalanceRaw): boolean {
 export function walletBalanceError(raw: WalletBalanceRaw): string | undefined {
   const errs: string[] = [];
   if (raw.income_overview?.error) {
-    errs.push(`income: ${raw.income_overview.message || raw.income_overview.error}`);
+    errs.push(`pending: ${raw.income_overview.message || raw.income_overview.error}`);
   }
   if (raw.wallet_transactions?.error) {
     errs.push(`wallet: ${raw.wallet_transactions.message || raw.wallet_transactions.error}`);

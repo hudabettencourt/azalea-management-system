@@ -8,7 +8,7 @@ import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { rupiah, tanggalFmt } from "@/lib/format";
-import { parseWalletBalance } from "@/lib/shopee/wallet-balance";
+import { parseWalletBalance } from "@/lib/shopee/wallet-balance-parse";
 
 // Wrapper null-safe untuk nilai yang bisa null/undefined dari API Shopee
 const rupiahN = (n: number | null | undefined) => {
@@ -21,6 +21,7 @@ type Toko = { id: number; nama: string; connected: boolean };
 type SaldoRow = {
   toko_id: number; toko: string; ok: boolean;
   tersedia: number | null; pending: number | null;
+  tersedia_source?: string; pending_source?: string;
   raw?: any; error?: string;
 };
 
@@ -113,10 +114,14 @@ function SaldoTab({ C }: { C: any }) {
       const res = await fetch("/api/shopee/get-wallet-balance");
       const data = await res.json();
       const mapped: SaldoRow[] = (data.results || []).map((r: any) => {
-        const parsed = r.ok ? parseWalletBalance(r.raw) : { tersedia: null, pending: null };
+        const parsed = r.tersedia !== undefined
+          ? { tersedia: r.tersedia, pending: r.pending, tersedia_source: r.tersedia_source, pending_source: r.pending_source }
+          : (r.ok ? parseWalletBalance(r.raw) : { tersedia: null, pending: null, tersedia_source: "none", pending_source: "none" });
         return {
           toko_id: r.toko_id, toko: r.toko, ok: r.ok,
-          tersedia: parsed.tersedia, pending: parsed.pending, raw: r.raw,
+          tersedia: parsed.tersedia, pending: parsed.pending,
+          tersedia_source: parsed.tersedia_source, pending_source: parsed.pending_source,
+          raw: r.raw,
           error: r.error || (r.ok ? undefined : "Gagal memuat saldo dari Shopee API"),
         };
       });
@@ -132,11 +137,12 @@ function SaldoTab({ C }: { C: any }) {
   return (
     <div>
       <div style={{ padding: "12px 16px", background: C.yellowDim, border: `1px solid ${C.yellow}40`, borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textMid, fontFamily: C.fontSans, lineHeight: 1.5 }}>
-        <b>Tersedia</b> = saldo wallet penjual <b>saat ini</b> (dari <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_wallet_transaction_list</code> → <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>current_balance</code>), bukan total penghasilan sejak buka toko.
-        <b> Pending</b> = pesanan belum cair (dari <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code>).
+        <b>Saldo Wallet</b> = uang di dompet penjual <b>saat ini</b> yang bisa dicairkan (<code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_wallet_transaction_list</code> → <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>current_balance</code>).
+        Bukan total penghasilan released sejak buka toko.
+        <b> Pending</b> = pesanan belum cair (<code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code>).
       </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <SumCard label="Total Tersedia" value={rupiahN(totalTersedia)} color={C.green} C={C} />
+        <SumCard label="Total Saldo Wallet" value={rupiahN(totalTersedia)} color={C.green} C={C} />
         <SumCard label="Total Pending" value={rupiahN(totalPending)} color={C.yellow} C={C} />
         <button onClick={fetchSaldo} disabled={loading} style={{ marginLeft: "auto", padding: "8px 16px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.5 : 1 }}>{loading ? "⏳" : "↻"} Refresh</button>
       </div>
@@ -153,7 +159,7 @@ function SaldoTab({ C }: { C: any }) {
             {r.ok ? (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
                 <div>
-                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>Tersedia</div>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>Saldo Wallet</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahN(r.tersedia)}</div>
                 </div>
                 <div>
@@ -165,9 +171,9 @@ function SaldoTab({ C }: { C: any }) {
                     Saldo wallet kosong — pastikan <code>get_wallet_transaction_list</code> di-whitelist.
                   </div>
                 )}
-                {r.tersedia === null && r.pending !== null && (
-                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-                    Tersedia kosong — tidak ada transaksi wallet dalam ~84 hari terakhir atau API belum di-whitelist.
+                {r.tersedia_source !== "wallet_current_balance" && r.pending !== null && (
+                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: C.yellow, fontFamily: C.fontMono }}>
+                    Saldo wallet tidak tersedia — whitelist <code>get_wallet_transaction_list</code>. Angka besar sebelumnya berasal dari total released (salah).
                   </div>
                 )}
               </div>

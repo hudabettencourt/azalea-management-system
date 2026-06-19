@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
 import {
   fetchWalletBalanceRaw,
+  parseWalletBalance,
   walletBalanceOk,
   walletBalanceError,
 } from "@/lib/shopee/wallet-balance";
@@ -21,12 +22,17 @@ export async function GET(req: NextRequest) {
       try {
         const accessToken = await getValidToken(toko);
         const raw = await fetchWalletBalanceRaw(toko.shopee_shop_id, accessToken);
+        const parsed = parseWalletBalance(raw);
         logShopeeResponse("get_income_overview", toko.nama, raw.income_overview);
         logShopeeResponse("get_wallet_transaction_list", toko.nama, raw.wallet_transactions);
         results.push({
           toko_id: toko.id,
           toko: toko.nama,
           ok: walletBalanceOk(raw),
+          tersedia: parsed.tersedia,
+          pending: parsed.pending,
+          tersedia_source: parsed.tersedia_source,
+          pending_source: parsed.pending_source,
           raw,
           error: walletBalanceError(raw),
         });

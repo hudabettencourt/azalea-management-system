@@ -11,7 +11,7 @@ import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from "recharts";
-import { parseWalletBalance } from "@/lib/shopee/wallet-balance";
+import { parseWalletBalance } from "@/lib/shopee/wallet-balance-parse";
 
 type Toko = { id: number; nama: string; connected: boolean };
 
@@ -197,11 +197,13 @@ export default function ShopeeDashboardPage() {
       let total = 0;
       const byToko = new Map<number, { tersedia: number | null; pending: number | null }>();
       for (const r of data.results || []) {
-        const parsed = r.ok ? parseWalletBalance(r.raw) : { tersedia: null, pending: null };
+        const parsed = r.tersedia !== undefined
+          ? { tersedia: r.tersedia, pending: r.pending }
+          : (r.ok ? parseWalletBalance(r.raw) : { tersedia: null, pending: null });
         byToko.set(r.toko_id, parsed);
         if (parsed.tersedia !== null) total += parsed.tersedia;
       }
-      setTotalSaldoTersedia(total);
+      setTotalSaldoTersedia(total > 0 ? total : null);
       setTokoStats(prev => prev.map(t => {
         const p = byToko.get(t.id);
         return p ? { ...t, saldoTersedia: p.tersedia, saldoPending: p.pending } : t;

@@ -36,6 +36,7 @@ export const NAVIGATION: NavModule[] = [
         label: "Pesanan",
         defaultOpen: true,
         items: [
+          { label: "Print Resi Massal", href: "/shopee/pesanan/print-resi", badge: "count", badgeKey: "shopee_to_print" },
           { label: "Menunggu Diproses", href: "/shopee/pesanan?status=to_process", badge: "count", badgeKey: "shopee_to_process" },
           { label: "Menunggu Dicetak",  href: "/shopee/pesanan?status=to_print",   badge: "count", badgeKey: "shopee_to_print" },
           { label: "Menunggu Pickup",   href: "/shopee/pesanan?status=to_pickup" },

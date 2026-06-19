@@ -2,12 +2,22 @@
 
 // /shopee/pesanan — Order management + Logistics.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { rupiah, tanggalFmt } from "@/lib/format";
+import { NAV_STATUS_MAP } from "@/lib/shopee/print-batch";
+import {
+  fetchAirwayBillBlob,
+  openPrintPreviewWindow,
+  orderPrintLabel,
+  renderPrintPreviewError,
+  renderPrintPreviewWindow,
+  printViaHiddenIframe,
+} from "@/lib/shopee/print-resi-client";
 
 type Order = {
   id: number; no_pesanan: string; tanggal_pesanan: string;
@@ -66,120 +76,6 @@ function formatBatasWaktu(tanggalPesanan: string): { text: string; danger: boole
   const days = Math.floor(hours / 24);
   const remH = hours % 24;
   return { text: `${days}h ${remH}j`, danger: false, expired: false };
-}
-
-function orderPrintLabel(orders: { nama_toko: string; no_pesanan: string }[]): string {
-  return orders.length > 1
-    ? `${orders[0].nama_toko} · ${orders.length} pesanan`
-    : `${orders[0].nama_toko} · ${orders[0].no_pesanan}`;
-}
-
-/** Buka jendela preview secara sinkron (harus dipanggil langsung dari onClick agar tidak diblokir popup). */
-function openPrintPreviewWindow(title: string): Window | null {
-  const w = window.open("", "_blank", "width=920,height=760");
-  if (!w) return null;
-  w.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${title}</title>
-<style>
-  body { margin: 0; background: #3d3d3d; color: #fff; font-family: system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-  .spinner { width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.2);
-    border-top-color: #ee4d2d; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  p { font-size: 14px; opacity: 0.85; }
-</style></head><body>
-  <div class="spinner"></div>
-  <p>Memuat label — ${title}</p>
-</body></html>`);
-  w.document.close();
-  return w;
-}
-
-function previewHtml(title: string, pdfUrl: string) {
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${title}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #3d3d3d; font-family: system-ui, sans-serif; }
-  .toolbar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-    background: #ee4d2d; color: #fff; padding: 12px 20px;
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  }
-  .toolbar button {
-    background: #fff; color: #ee4d2d; border: none; border-radius: 6px;
-    padding: 9px 20px; font-weight: 700; cursor: pointer; font-size: 14px;
-  }
-  iframe { display: block; width: 100vw; height: calc(100vh - 48px); margin-top: 48px; border: none; }
-  @media print { .toolbar { display: none !important; } iframe { margin-top: 0; height: 100vh; } body { background: #fff; } }
-</style></head><body>
-  <div class="toolbar">
-    <span>Preview Cetak — ${title}</span>
-    <button type="button" onclick="doPrint()">Cetak Dokumen</button>
-  </div>
-  <iframe id="pdf" src="${pdfUrl}"></iframe>
-  <script>
-    function doPrint() {
-      var f = document.getElementById("pdf");
-      try { f.contentWindow.focus(); f.contentWindow.print(); }
-      catch (e) { window.print(); }
-    }
-    document.getElementById("pdf").onload = function() { setTimeout(doPrint, 700); };
-  <\/script>
-</body></html>`;
-}
-
-function renderPrintPreviewWindow(w: Window, blob: Blob, title: string) {
-  const url = URL.createObjectURL(blob);
-  w.document.open();
-  w.document.write(previewHtml(title, url));
-  w.document.close();
-  const poll = setInterval(() => {
-    if (w.closed) { URL.revokeObjectURL(url); clearInterval(poll); }
-  }, 1500);
-  setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
-}
-
-function renderPrintPreviewError(w: Window, message: string) {
-  w.document.open();
-  w.document.write(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:40px;color:#c00">
-    <h3>Gagal cetak label</h3><p>${message}</p></body></html>`);
-  w.document.close();
-}
-
-/** Fallback tanpa popup — cetak langsung via iframe tersembunyi. */
-function printViaHiddenIframe(blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:none;opacity:0";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  iframe.onload = () => {
-    setTimeout(() => {
-      try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); }
-      catch { /* browser may block silent print */ }
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-        URL.revokeObjectURL(url);
-      }, 2000);
-    }, 600);
-  };
-}
-
-async function fetchAirwayBillBlob(tokoId: number, orderSns: string[]): Promise<Blob> {
-  const res = await fetch("/api/shopee/get-airway-bill", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Response-Format": "pdf" },
-    body: JSON.stringify({ toko_id: tokoId, order_sn_list: orderSns }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Gagal generate label" }));
-    throw new Error(err.error || "get-airway-bill gagal");
-  }
-  const blob = await res.blob();
-  if (!blob.size) throw new Error("PDF kosong dari Shopee");
-  return blob;
 }
 
 function PillFilterRow({ label, options, selected, onSelect, C }: {
@@ -332,9 +228,10 @@ function ShipModal({ open, onClose, targets, onShipped, C }: {
   );
 }
 
-export default function OrdersPage() {
+function OrdersPageContent() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
+  const searchParams = useSearchParams();
 
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -381,7 +278,23 @@ export default function OrdersPage() {
   }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    const navStatus = searchParams.get("status");
+    if (navStatus && NAV_STATUS_MAP[navStatus]) {
+      setFilterStatus(NAV_STATUS_MAP[navStatus]);
+    }
+  }, [searchParams]);
+
   useEffect(() => { setPage(1); setSelected(new Set()); }, [filterStatus, filterToko, filterJasaKirim, searchVal]);
+
+  const belumDicetakCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const o of allOrders) {
+      if (o.status_shopee === "PROCESSED") seen.add(o.no_pesanan);
+    }
+    return seen.size;
+  }, [allOrders]);
 
   const passSearch = (o: Order): boolean => {
     if (!searchVal.trim()) return true;
@@ -508,10 +421,30 @@ export default function OrdersPage() {
             <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Pesanan Shopee</h1>
             <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
               {tokoList.length} toko · {filtered.length.toLocaleString("id-ID")} pesanan
+              {belumDicetakCount > 0 && (
+                <> · <b style={{ color: C.red }}>{belumDicetakCount} belum cetak</b></>
+              )}
               {selected.size > 0 && <> · <b style={{ color: C.accent }}>{selected.size} terpilih</b></>}
             </p>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link
+              href="/shopee/pesanan/print-resi"
+              style={{
+                ...inputStyle,
+                textDecoration: "none",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontWeight: 800,
+                background: `${C.accent}15`,
+                borderColor: C.accent,
+                color: C.accent,
+              }}
+            >
+              🖨 Print Resi Massal{belumDicetakCount > 0 ? ` (${belumDicetakCount})` : ""}
+            </Link>
             <Link href="/shopee/pesanan/scan-resi" style={{ ...inputStyle, textDecoration: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 700 }}>📷 Scan Resi</Link>
             <button onClick={handleSyncAll} disabled={syncing} style={{ padding: "8px 16px", background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: C.fontSans, opacity: syncing ? 0.7 : 1 }}>{syncing ? "⏳ Syncing..." : "↻ Sync Semua"}</button>
           </div>
@@ -595,5 +528,13 @@ export default function OrdersPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={null}>
+      <OrdersPageContent />
+    </Suspense>
   );
 }

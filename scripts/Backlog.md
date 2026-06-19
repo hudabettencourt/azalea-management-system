@@ -1,30 +1,101 @@
 # Azalea Management System — Backlog
 
-> File ini adalah sumber kebenaran backlog project. Setiap selesai mengerjakan task,
-> pindahkan item ke bagian "Selesai" dengan tanggal. Jangan hapus history yang sudah selesai.
+> File ini adalah sumber kebenaran backlog project. Audit terakhir: 2026-06-18 (via Cursor).
+> Setiap selesai mengerjakan task, pindahkan item ke bagian "Selesai" dengan tanggal.
 
 ---
 
-## 🐛 Bug Aktif (Shopee)
+## 🔴 Blocking / Butuh Aksi di Luar Cursor
 
-| # | Bug | Detail | Priority |
-|---|-----|--------|----------|
-| 1 | Print AWB COD Drop Off error | Error "The package should print first" untuk pesanan COD Drop Off yang PROCESSED. Di Seller Center bisa cetak normal. Contoh: 260617BVJ8W2G9 | 🔴 |
-| 2 | Dashboard saldo Rp0 | Saldo Shopee tidak muncul di dashboard utama | 🔴 |
-| 3 | Saldo `error_not_found` | Endpoint get-wallet-balance error untuk beberapa toko | 🟡 |
-| 4 | Ulasan 0 reviews | API ulasan tidak return data, kemungkinan butuh whitelist Shopee | 🟡 |
-| 5 | Performa fails | Endpoint performa toko gagal, kemungkinan butuh whitelist | 🟡 |
-| 6 | MarsellaFood & AsdaFood OTP blocked | Tidak bisa connect toko karena OTP provider XL bermasalah | 🔴 |
-| 7 | Scan Resi belum teruji di mobile | Perlu testing di HP Android | 🟡 |
-| 8 | Atur Pengiriman modal belum teruji penuh | Perlu lebih banyak testing real order | 🟡 |
-
----
-
-## 🔄 Sedang Dikerjakan
-
-| # | Task | Catatan |
+| # | Item | Catatan |
 |---|------|---------|
-| 1 | Sync Pencairan Otomatis | Endpoint `sync-finance/route.ts` sudah ada logic-nya, perlu cek apakah sudah terhubung ke trigger/cron atau masih perlu dipanggil manual |
+| 1 | Whitelist Shopee API | Ulasan, Performa, pending saldo — perlu approval dari Shopee, bukan bug kode |
+| 2 | Connect MarsellaFood & AsdaFood | OTP provider XL bermasalah saat connect toko |
+
+---
+
+## 🟡 Nav Ada, Page Belum Dibuat (404) — 8 link
+
+| # | Halaman | Modul |
+|---|---------|-------|
+| 1 | Hasil Retur | Retur |
+| 2 | Pengembalian Dana | Retur |
+| 3 | Live | Produk |
+| 4 | Draft | Produk |
+| 5 | Naikkan Produk | Produk |
+| 6 | Flash Sale | Promosi |
+| 7 | Scan & Bungkus | Packing |
+| 8 | Scan & Kirim | Packing |
+
+---
+
+## 🟡 Fase 1 Spec — Belum Dibangun (Prioritas Operasional)
+
+| # | Fitur | Catatan |
+|---|-------|---------|
+| 1 | **Bulk print resi (batch pagi/siang)** | EPOS 100×150mm — 🎯 next |
+| 2 | **Alert stok minimum → Telegram** | Cepat, impact besar — 🎯 next |
+| 3 | Push stok Shopee otomatis | API sudah ada, trigger belum dihubungkan |
+
+---
+
+## 🟡 Fase 2 — Belum Dibangun
+
+| # | Fitur | Catatan |
+|---|-------|---------|
+| 1 | Rebuild Retur lengkap | Modul purna jual penuh |
+| 2 | Estimated profit per pesanan | Dari HPP — keunggulan vs BigSeller |
+| 3 | Print invoice Shopee | |
+| 4 | Counter "belum dicetak" di Pesanan | |
+| 5 | Blacklist pembeli — integrasi penuh | Page sudah ada, integrasi ke alur pesanan belum |
+| 6 | Biaya Packing Online | Tunggu Huda ukur gramasi bubble wrap/tape/kardus |
+
+---
+
+## 🟡 Infrastruktur / Polish
+
+| # | Item | Catatan |
+|---|------|---------|
+| 1 | Shopee webhook | Ganti polling 30 menit |
+| 2 | Fix floating point `stok_barang` | Pakai `ROUND()` di query |
+| 3 | Breadcrumb clickable di AppShell | `AppShell_final.tsx` sudah ada, belum di-apply |
+| 4 | Rename "Pembelian Reseller" → "Pembelian Produk Jadi" | Codebase + UI |
+| 5 | Purchase Order ke supplier | PO formal, print, terima barang |
+
+---
+
+## 🟢 Sudah Di-code, Butuh Test Real-World
+
+| # | Fitur | Catatan |
+|---|-------|---------|
+| 1 | Print AWB COD production | Single print COD Drop Off masih error "should print first" |
+| 2 | Sync Pencairan E2E | Withdraw Seller Center → kas, endpoint sudah ada di sync-finance |
+| 3 | Scan Resi di HP Android | Belum dicoba langsung di HP |
+| 4 | Atur Pengiriman modal | Perlu test dengan order beneran lebih banyak |
+
+---
+
+## 📱 Android & Hardware — Belum
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | AzaleaPacking | Belum dibangun |
+| 2 | AzaleaBorongan | In progress |
+| 3 | Timbangan Digi RM60 | TCP/IP belum dibangun |
+| 4 | Dot matrix printer | Beli hardware dulu |
+| 5 | Thermal 58mm layout | Deferred — 80mm sudah jadi |
+
+---
+
+## 🌐 Fase 3–4 — Belum Mulai
+
+- Profit report terintegrasi HPP
+- WMS basic
+- Batch & expiry tracking siomay
+- TikTok Shop integration
+- Lazada integration
+- Shopee Chat API
+- Stock opname
 
 ---
 
@@ -34,69 +105,20 @@
 |---|-----------|---------|---------|
 | 1 | Migrasi `lib/format.ts` ke 11 file | 2026-06-18 | rupiah, tanggalFmt, tanggalJamFmt terpusat |
 | 2 | Retur Shopee shows 0 | 2026-06-18 | Filter terlalu ketat + sync-returns diperbaiki |
-| 3 | Performa Pelanggan Offline | 2026-06-18 | Tab baru di /laporan — terakhir order, TRX, omset, produk favorit, piutang, nota |
-| 4 | Nota Penjualan Offline 80mm | 2026-06-18 | Format resmi AzaleaFood dengan logo, header 2 kolom, tanda tangan |
+| 3 | Performa Pelanggan Offline | 2026-06-18 | Tab baru di /laporan |
+| 4 | Nota Penjualan Offline 80mm | 2026-06-18 | Format resmi AzaleaFood |
+| 5 | Bulk Print Label / AWB (non-COD) | 2026-06-18 | Checkbox multi-select + group per toko |
+| 6 | Dashboard Saldo Shopee Rp0 | 2026-06-19 | Fix pakai get_wallet_transaction_list untuk current_balance realtime, tidak perlu whitelist khusus |
 
 ---
 
-## 🚀 Antrian Fitur — Prioritas Tinggi
+## 🎯 Urutan Prioritas Sekarang
 
-| # | Fitur | Catatan |
-|---|-------|---------|
-| 1 | Rekap Packing Harian | Ganti kertas manual — auto-generate dari pesanan READY_TO_SHIP per SKU |
-| 2 | Sync Pencairan Otomatis | Hubungkan sync-finance ke cron/tombol, hilangkan input manual satu-satu |
-| 3 | Uang di Jalan per toko | Piutang Shopee yang belum cair, breakdown per toko |
-| 4 | Biaya Packing Online | Gramasi bubble wrap/tape/kardus per SKU — tunggu Huda ukur dulu |
-
----
-
-## ⚙️ Antrian Fitur — Prioritas Menengah
-
-| # | Fitur | Catatan |
-|---|-------|---------|
-| 1 | Rebuild modul Retur | Purna jual, pengembalian dana |
-| 2 | Rename "Pembelian Reseller" → "Pembelian Produk Jadi" | Codebase + UI |
-| 3 | Purchase Order ke supplier | PO formal, print, terima barang |
-| 4 | Shopee webhook real-time | Ganti polling 30 menit jadi real-time |
-| 5 | Fix floating point `stok_barang` | Pakai `ROUND()` di query |
-| 6 | AppShell redesign — fix breadcrumb | `AppShell_final.tsx` sudah dibuat, breadcrumb belum clickable |
-
----
-
-## 📱 Android Apps
-
-| # | App | Status |
-|---|-----|--------|
-| 1 | AzaleaBorongan | In progress — Kotlin, package com.azalea.borongan, Supabase BOM 3.0.2 |
-| 2 | AzaleaPacking | Belum dibangun — scan resi, checklist packing, scan kirim |
-
----
-
-## 🔌 Hardware Integration
-
-| # | Hardware | Status |
-|---|----------|--------|
-| 1 | Digi RM60 (timbangan) | TCP/IP, SPEC 017/018/019 — belum dibangun |
-| 2 | Thermal 58mm layout | Nota offline sudah 80mm, 58mm di-deferred |
-| 3 | Dot matrix Epson LX-310/LX-350 | Nota rangkap resmi — beli printer dulu |
-
----
-
-## 📈 Fase 3 — Growth (belum mulai)
-
-- Profit report terintegrasi HPP
-- WMS basic (scan bungkus, scan kirim)
-- Batch & expiry tracking siomay
-- Tier reseller (dibatalkan — diganti Performa Pelanggan) ✅ sudah ada solusinya
-- Master produk multi-toko
-- Shopee Chat API (tunggu whitelist)
-
----
-
-## 🌐 Fase 4 — Ekspansi (belum mulai)
-
-- TikTok Shop integration
-- Lazada integration
+1. **Bulk print resi batch pagi/siang** — operasional harian
+2. **Telegram alert stok minimum** — cepat, impact besar
+3. Bangun 1 halaman 404 prioritas — misal Scan & Bungkus
+4. Fix print AWB COD production (single print)
+5. Test Sync Pencairan E2E
 
 ---
 
@@ -105,7 +127,7 @@
 - **Spec before code** — selalu cek `AZALEA_OMNICHANNEL_SPEC.md` sebelum bangun modul baru
 - **Full file replacement** — generate file lengkap, bukan partial patch
 - **RLS default** — public tables pakai `to public`, karyawan/gaji_harian pakai `to authenticated`
-- **Format uang** — selalu pakai `rupiah()` dari `@/lib/format`, full Rp format tidak disingkat
+- **Format uang** — selalu pakai `rupiah()` dari `@/lib/format`
 - **Fee platform Shopee** = pengurang piutang, bukan kas keluar
 - **HPP vs Operasional** — Operator Produksi/Packing/Pencetak masuk HPP; Host Live/Packing Online/Admin/Owner masuk kas keluar
 - **Timezone** — selalu Asia/Jakarta (WIB)

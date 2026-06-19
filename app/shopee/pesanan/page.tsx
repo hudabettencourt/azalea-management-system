@@ -68,14 +68,35 @@ function formatBatasWaktu(tanggalPesanan: string): { text: string; danger: boole
   return { text: `${days}h ${remH}j`, danger: false, expired: false };
 }
 
-function printPdfBlob(blob: Blob, title: string) {
-  const url = URL.createObjectURL(blob);
+function orderPrintLabel(orders: { nama_toko: string; no_pesanan: string }[]): string {
+  return orders.length > 1
+    ? `${orders[0].nama_toko} · ${orders.length} pesanan`
+    : `${orders[0].nama_toko} · ${orders[0].no_pesanan}`;
+}
+
+/** Buka jendela preview secara sinkron (harus dipanggil langsung dari onClick agar tidak diblokir popup). */
+function openPrintPreviewWindow(title: string): Window | null {
   const w = window.open("", "_blank", "width=920,height=760");
-  if (!w) {
-    URL.revokeObjectURL(url);
-    throw new Error("Izinkan popup browser untuk membuka preview cetak");
-  }
+  if (!w) return null;
   w.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body { margin: 0; background: #3d3d3d; color: #fff; font-family: system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+  .spinner { width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.2);
+    border-top-color: #ee4d2d; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  p { font-size: 14px; opacity: 0.85; }
+</style></head><body>
+  <div class="spinner"></div>
+  <p>Memuat label — ${title}</p>
+</body></html>`);
+  w.document.close();
+  return w;
+}
+
+function previewHtml(title: string, pdfUrl: string) {
+  return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${title}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -90,35 +111,75 @@ function printPdfBlob(blob: Blob, title: string) {
     background: #fff; color: #ee4d2d; border: none; border-radius: 6px;
     padding: 9px 20px; font-weight: 700; cursor: pointer; font-size: 14px;
   }
-  .toolbar button:hover { filter: brightness(0.95); }
   iframe { display: block; width: 100vw; height: calc(100vh - 48px); margin-top: 48px; border: none; }
-  @media print {
-    .toolbar { display: none !important; }
-    iframe { margin-top: 0; height: 100vh; }
-    body { background: #fff; }
-  }
+  @media print { .toolbar { display: none !important; } iframe { margin-top: 0; height: 100vh; } body { background: #fff; } }
 </style></head><body>
   <div class="toolbar">
     <span>Preview Cetak — ${title}</span>
     <button type="button" onclick="doPrint()">Cetak Dokumen</button>
   </div>
-  <iframe id="pdf" src="${url}"></iframe>
+  <iframe id="pdf" src="${pdfUrl}"></iframe>
   <script>
     function doPrint() {
       var f = document.getElementById("pdf");
       try { f.contentWindow.focus(); f.contentWindow.print(); }
       catch (e) { window.print(); }
     }
-    document.getElementById("pdf").onload = function() {
-      setTimeout(doPrint, 700);
-    };
+    document.getElementById("pdf").onload = function() { setTimeout(doPrint, 700); };
   <\/script>
-</body></html>`);
+</body></html>`;
+}
+
+function renderPrintPreviewWindow(w: Window, blob: Blob, title: string) {
+  const url = URL.createObjectURL(blob);
+  w.document.open();
+  w.document.write(previewHtml(title, url));
   w.document.close();
   const poll = setInterval(() => {
     if (w.closed) { URL.revokeObjectURL(url); clearInterval(poll); }
   }, 1500);
   setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
+}
+
+function renderPrintPreviewError(w: Window, message: string) {
+  w.document.open();
+  w.document.write(`<!DOCTYPE html><html><body style="font-family:system-ui;padding:40px;color:#c00">
+    <h3>Gagal cetak label</h3><p>${message}</p></body></html>`);
+  w.document.close();
+}
+
+/** Fallback tanpa popup — cetak langsung via iframe tersembunyi. */
+function printViaHiddenIframe(blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:none;opacity:0";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    setTimeout(() => {
+      try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); }
+      catch { /* browser may block silent print */ }
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+        URL.revokeObjectURL(url);
+      }, 2000);
+    }, 600);
+  };
+}
+
+async function fetchAirwayBillBlob(tokoId: number, orderSns: string[]): Promise<Blob> {
+  const res = await fetch("/api/shopee/get-airway-bill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Response-Format": "pdf" },
+    body: JSON.stringify({ toko_id: tokoId, order_sn_list: orderSns }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Gagal generate label" }));
+    throw new Error(err.error || "get-airway-bill gagal");
+  }
+  const blob = await res.blob();
+  if (!blob.size) throw new Error("PDF kosong dari Shopee");
+  return blob;
 }
 
 function PillFilterRow({ label, options, selected, onSelect, C }: {
@@ -383,27 +444,23 @@ export default function OrdersPage() {
     setShipModalTargets(selectedShippable.map(o => ({ toko_id: o.toko_id, toko_nama: o.nama_toko, order_sn: o.no_pesanan })));
   };
 
-  const printOneToko = async (tokoId: number, orders: Order[]) => {
-    const res = await fetch("/api/shopee/get-airway-bill", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Response-Format": "pdf" },
-      body: JSON.stringify({ toko_id: tokoId, order_sn_list: orders.map(o => o.no_pesanan) }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Gagal generate label" }));
-      throw new Error(err.error || "get-airway-bill gagal");
+  const printOneToko = async (tokoId: number, orders: Order[], previewWin?: Window | null) => {
+    const label = orderPrintLabel(orders);
+    const w = previewWin ?? openPrintPreviewWindow(label);
+    try {
+      const blob = await fetchAirwayBillBlob(tokoId, orders.map(o => o.no_pesanan));
+      if (w && !w.closed) renderPrintPreviewWindow(w, blob, label);
+      else printViaHiddenIframe(blob);
+    } catch (err: any) {
+      if (w && !w.closed) renderPrintPreviewError(w, err.message || "Gagal generate label");
+      throw err;
     }
-    const blob = await res.blob();
-    if (!blob.size) throw new Error("PDF kosong dari Shopee");
-    const label = orders.length > 1
-      ? `${orders[0].nama_toko} · ${orders.length} pesanan`
-      : `${orders[0].nama_toko} · ${orders[0].no_pesanan}`;
-    printPdfBlob(blob, label);
   };
 
   const handlePrintSingle = async (o: Order) => {
+    const previewWin = openPrintPreviewWindow(orderPrintLabel([o]));
     setPrinting(true);
-    try { await printOneToko(o.toko_id, [o]); }
+    try { await printOneToko(o.toko_id, [o], previewWin); }
     catch (err: any) { showToast("Gagal print: " + err.message, "error"); }
     finally { setPrinting(false); }
   };
@@ -411,11 +468,15 @@ export default function OrdersPage() {
   const handlePrintBulk = async () => {
     const target = selectedShippable;
     if (target.length === 0) { showToast("Pilih pesanan dengan status Perlu Dikirim / Diproses", "error"); return; }
+    const byToko = new Map<number, Order[]>();
+    for (const o of target) { const arr = byToko.get(o.toko_id) || []; arr.push(o); byToko.set(o.toko_id, arr); }
+    const previewWins = new Map<number, Window | null>();
+    for (const [tokoId, orders] of byToko) {
+      previewWins.set(tokoId, openPrintPreviewWindow(orderPrintLabel(orders)));
+    }
     setPrinting(true);
     try {
-      const byToko = new Map<number, Order[]>();
-      for (const o of target) { const arr = byToko.get(o.toko_id) || []; arr.push(o); byToko.set(o.toko_id, arr); }
-      for (const [tokoId, orders] of byToko) await printOneToko(tokoId, orders);
+      for (const [tokoId, orders] of byToko) await printOneToko(tokoId, orders, previewWins.get(tokoId));
       showToast(`✓ ${target.length} label dicetak`);
     } catch (err: any) { showToast("Gagal print: " + err.message, "error"); }
     finally { setPrinting(false); }

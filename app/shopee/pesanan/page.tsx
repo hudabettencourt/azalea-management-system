@@ -68,27 +68,57 @@ function formatBatasWaktu(tanggalPesanan: string): { text: string; danger: boole
   return { text: `${days}h ${remH}j`, danger: false, expired: false };
 }
 
-function openBase64Pdf(b64: string, filename: string) {
-  try {
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const w = window.open(url, "_blank");
-    if (!w) { const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); }
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (err) { console.error("openBase64Pdf failed:", err); alert("Gagal membuka PDF. Cek console untuk detail."); }
-}
-
-function extractPdfBase64(data: any): string | null {
-  if (!data) return null;
-  if (typeof data.pdf_base64 === "string" && data.pdf_base64.length > 100) return data.pdf_base64;
-  const raw = data.raw ?? data;
-  if (typeof raw?.pdf_base64 === "string" && raw.pdf_base64.length > 100) return raw.pdf_base64;
-  const candidates = [raw?.response?.result, raw?.response?.shipping_document_info?.[0]?.shipping_document, raw?.response?.shipping_document, raw?.response?.data];
-  for (const c of candidates) { if (typeof c === "string" && c.length > 100) return c; }
-  return null;
+function printPdfBlob(blob: Blob, title: string) {
+  const url = URL.createObjectURL(blob);
+  const w = window.open("", "_blank", "width=920,height=760");
+  if (!w) {
+    URL.revokeObjectURL(url);
+    throw new Error("Izinkan popup browser untuk membuka preview cetak");
+  }
+  w.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #3d3d3d; font-family: system-ui, sans-serif; }
+  .toolbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    background: #ee4d2d; color: #fff; padding: 12px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .toolbar button {
+    background: #fff; color: #ee4d2d; border: none; border-radius: 6px;
+    padding: 9px 20px; font-weight: 700; cursor: pointer; font-size: 14px;
+  }
+  .toolbar button:hover { filter: brightness(0.95); }
+  iframe { display: block; width: 100vw; height: calc(100vh - 48px); margin-top: 48px; border: none; }
+  @media print {
+    .toolbar { display: none !important; }
+    iframe { margin-top: 0; height: 100vh; }
+    body { background: #fff; }
+  }
+</style></head><body>
+  <div class="toolbar">
+    <span>Preview Cetak — ${title}</span>
+    <button type="button" onclick="doPrint()">Cetak Dokumen</button>
+  </div>
+  <iframe id="pdf" src="${url}"></iframe>
+  <script>
+    function doPrint() {
+      var f = document.getElementById("pdf");
+      try { f.contentWindow.focus(); f.contentWindow.print(); }
+      catch (e) { window.print(); }
+    }
+    document.getElementById("pdf").onload = function() {
+      setTimeout(doPrint, 700);
+    };
+  <\/script>
+</body></html>`);
+  w.document.close();
+  const poll = setInterval(() => {
+    if (w.closed) { URL.revokeObjectURL(url); clearInterval(poll); }
+  }, 1500);
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
 }
 
 function PillFilterRow({ label, options, selected, onSelect, C }: {
@@ -354,12 +384,21 @@ export default function OrdersPage() {
   };
 
   const printOneToko = async (tokoId: number, orders: Order[]) => {
-    const res = await fetch("/api/shopee/get-airway-bill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toko_id: tokoId, order_sn_list: orders.map(o => o.no_pesanan) }) });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error || data.raw?.message || data.raw?.error || "get-airway-bill gagal");
-    const b64 = extractPdfBase64(data);
-    if (!b64) { console.error("[print-label] response did not contain PDF:", data); throw new Error("PDF tidak ditemukan di response"); }
-    openBase64Pdf(b64, `label-${orders[0].nama_toko}-${Date.now()}.pdf`);
+    const res = await fetch("/api/shopee/get-airway-bill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Response-Format": "pdf" },
+      body: JSON.stringify({ toko_id: tokoId, order_sn_list: orders.map(o => o.no_pesanan) }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Gagal generate label" }));
+      throw new Error(err.error || "get-airway-bill gagal");
+    }
+    const blob = await res.blob();
+    if (!blob.size) throw new Error("PDF kosong dari Shopee");
+    const label = orders.length > 1
+      ? `${orders[0].nama_toko} · ${orders.length} pesanan`
+      : `${orders[0].nama_toko} · ${orders[0].no_pesanan}`;
+    printPdfBlob(blob, label);
   };
 
   const handlePrintSingle = async (o: Order) => {

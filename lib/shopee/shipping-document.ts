@@ -193,7 +193,7 @@ async function downloadDocument(
 }
 
 export type ShippingDocumentResult = {
-  pdf_base64: string;
+  pdf: Buffer;
   shipping_document_type: string;
   steps: {
     packages: OrderDocInput[];
@@ -219,7 +219,7 @@ export async function fetchShippingDocumentPdf(
   const pdfBuffer = await downloadDocument(shopId, accessToken, withType, docType);
 
   return {
-    pdf_base64: pdfBuffer.toString("base64"),
+    pdf: pdfBuffer,
     shipping_document_type: docType,
     steps: { packages, parameter: prepared, create, result },
   };

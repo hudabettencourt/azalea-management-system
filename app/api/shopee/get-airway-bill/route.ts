@@ -1,9 +1,8 @@
 // app/api/shopee/get-airway-bill/route.ts
 // POST /api/shopee/get-airway-bill
 // Body: { toko_id, order_sn_list: string[], shipping_document_type? }
-// Flow Shopee resmi:
-// get_shipping_document_parameter → create_shipping_document →
-// get_shipping_document_result (poll) → download_shipping_document
+// Header X-Response-Format: pdf → kembalikan PDF inline (untuk preview cetak langsung)
+// Default JSON → { success, pdf_base64, ... } (legacy)
 import { NextRequest, NextResponse } from "next/server";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
 import { fetchShippingDocumentPdf } from "@/lib/shopee/shipping-document";
@@ -34,13 +33,25 @@ export async function POST(req: NextRequest) {
     logShopeeResponse("download_shipping_document", toko.nama, {
       orders: body.order_sn_list,
       shipping_document_type: result.shipping_document_type,
-      pdf_bytes: result.pdf_base64.length,
+      pdf_bytes: result.pdf.length,
     });
+
+    const wantPdf = req.headers.get("x-response-format") === "pdf";
+    if (wantPdf) {
+      return new NextResponse(new Uint8Array(result.pdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": "inline",
+          "X-Shipping-Document-Type": result.shipping_document_type,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
       toko: toko.nama,
-      pdf_base64: result.pdf_base64,
+      pdf_base64: result.pdf.toString("base64"),
       shipping_document_type: result.shipping_document_type,
       raw: result,
     });

@@ -1,0 +1,509 @@
+{
+  "url": "http://localhost:3000/",
+  "title": "Azalea Management System",
+  "counts": {
+    "total": 52,
+    "links": 26,
+    "buttons": 20,
+    "inputs": 0,
+    "headings": 1
+  },
+  "headings": [
+    {
+      "tag": "h1",
+      "text": "Selamat siang, Owner 🌸"
+    }
+  ],
+  "links": [
+    {
+      "tag": "a",
+      "text": "Menunggu Diproses",
+      "href": "http://localhost:3000/shopee/pesanan?status=to_process"
+    },
+    {
+      "tag": "a",
+      "text": "Menunggu Dicetak",
+      "href": "http://localhost:3000/shopee/pesanan?status=to_print"
+    },
+    {
+      "tag": "a",
+      "text": "Menunggu Pickup",
+      "href": "http://localhost:3000/shopee/pesanan?status=to_pickup"
+    },
+    {
+      "tag": "a",
+      "text": "Pesanan Dikirim",
+      "href": "http://localhost:3000/shopee/pesanan?status=shipped"
+    },
+    {
+      "tag": "a",
+      "text": "Pesanan Selesai",
+      "href": "http://localhost:3000/shopee/pesanan?status=completed"
+    },
+    {
+      "tag": "a",
+      "text": "Pesanan Dibatalkan",
+      "href": "http://localhost:3000/shopee/pesanan?status=cancelled"
+    },
+    {
+      "tag": "a",
+      "text": "Semua Pesanan",
+      "href": "http://localhost:3000/shopee/pesanan"
+    },
+    {
+      "tag": "a",
+      "text": "Azalea",
+      "href": "http://localhost:3000/dashboard"
+    },
+    {
+      "tag": "a",
+      "text": "📊 Laporan L/R",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "Rekap Saldo",
+      "href": "http://localhost:3000/rekap-saldo"
+    },
+    {
+      "tag": "a",
+      "text": "SALDO KAS ◈ Rp 0 Total kas bersih Lihat riwayat kas →",
+      "href": "http://localhost:3000/kas"
+    },
+    {
+      "tag": "a",
+      "text": "OMZET HARI INI ↑ Rp 0 Kas masuk hari ini Lihat penjualan →",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "OMZET BULAN INI 📈 Rp 0 Bulan berjalan Lihat penjualan →",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "LABA BERSIH ! -Rp 3.0jt Rugi bulan ini ⚠ Lihat laporan L/R →",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "PIUTANG AKTIF 📝 Rp 8.3jt Belum lunas Lihat piutang →",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "HUTANG SUPPLIER ⚠ Rp 21.8jt Belum dibayar Lihat hutang →",
+      "href": "http://localhost:3000/pembelian-bahan"
+    },
+    {
+      "tag": "a",
+      "text": "GAJI HARI INI 👥 Rp 0 Total dibayarkan Lihat penggajian →",
+      "href": "http://localhost:3000/penggajian"
+    },
+    {
+      "tag": "a",
+      "text": "STOK KRITIS 📦 10 produk Siomay 1 Kg, Siomay 4 Kg... Lihat stok →",
+      "href": "http://localhost:3000/produksi"
+    },
+    {
+      "tag": "a",
+      "text": "Laba Rugi 6 bulan · klik untuk detail ● Laba Kotor ● Bersih ● HPP Jan Feb Mar Apr Mei Jun -Rp30.0jt -Rp15.0jt Rp 0 Rp15.",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "Monitor Stok 15 produk · 10 kritis ⚠ Lihat produksi → Siomay 1 Kg -102 kg Siomay 4 Kg -1 kg Cuanki Lidah 500 Pcs 0 pcs S",
+      "href": "http://localhost:3000/produksi"
+    },
+    {
+      "tag": "a",
+      "text": "🛍️ Input Penjualan",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "⚙️ Input Produksi",
+      "href": "http://localhost:3000/produksi"
+    },
+    {
+      "tag": "a",
+      "text": "👥 Input Gaji",
+      "href": "http://localhost:3000/penggajian"
+    },
+    {
+      "tag": "a",
+      "text": "💰 Catat Kas",
+      "href": "http://localhost:3000/kas"
+    },
+    {
+      "tag": "a",
+      "text": "📊 Lihat Laporan",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "📤 Upload Shopee",
+      "href": "http://localhost:3000/penjualan"
+    }
+  ],
+  "buttons": [
+    {
+      "tag": "button",
+      "text": "Shopee",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Produksi",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Pembelian",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Penggajian",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Keuangan",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Laporan",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PESANAN",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PURNA JUAL",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PRODUK",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PROMOSI",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PACKING & WMS",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "KEUANGAN",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "LAPORAN SHOPEE",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PELANGGAN",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Logout",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "8",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "3B",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "6B",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "12B",
+      "type": "submit"
+    }
+  ],
+  "inputs": [],
+  "allElements": [
+    {
+      "tag": "button",
+      "text": "Shopee",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Produksi",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Pembelian",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Penggajian",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Keuangan",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Laporan",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "type": "submit"
+    },
+    {
+      "tag": "nav",
+      "text": "PESANAN Menunggu Diproses Menunggu Dicetak Menunggu Pickup Pesanan Dikirim Pesanan Selesai Pesanan Dibatalkan Semua Pesa"
+    },
+    {
+      "tag": "button",
+      "text": "PESANAN",
+      "type": "submit"
+    },
+    {
+      "tag": "a",
+      "text": "Menunggu Diproses",
+      "href": "http://localhost:3000/shopee/pesanan?status=to_process"
+    },
+    {
+      "tag": "a",
+      "text": "Menunggu Dicetak",
+      "href": "http://localhost:3000/shopee/pesanan?status=to_print"
+    },
+    {
+      "tag": "a",
+      "text": "Menunggu Pickup",
+      "href": "http://localhost:3000/shopee/pesanan?status=to_pickup"
+    },
+    {
+      "tag": "a",
+      "text": "Pesanan Dikirim",
+      "href": "http://localhost:3000/shopee/pesanan?status=shipped"
+    },
+    {
+      "tag": "a",
+      "text": "Pesanan Selesai",
+      "href": "http://localhost:3000/shopee/pesanan?status=completed"
+    },
+    {
+      "tag": "a",
+      "text": "Pesanan Dibatalkan",
+      "href": "http://localhost:3000/shopee/pesanan?status=cancelled"
+    },
+    {
+      "tag": "a",
+      "text": "Semua Pesanan",
+      "href": "http://localhost:3000/shopee/pesanan"
+    },
+    {
+      "tag": "button",
+      "text": "PURNA JUAL",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PRODUK",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PROMOSI",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PACKING & WMS",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "KEUANGAN",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "LAPORAN SHOPEE",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "PELANGGAN",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "Logout",
+      "type": "submit"
+    },
+    {
+      "tag": "a",
+      "text": "Azalea",
+      "href": "http://localhost:3000/dashboard"
+    },
+    {
+      "tag": "button",
+      "text": "8",
+      "type": "submit"
+    },
+    {
+      "tag": "h1",
+      "text": "Selamat siang, Owner 🌸"
+    },
+    {
+      "tag": "a",
+      "text": "📊 Laporan L/R",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "Rekap Saldo",
+      "href": "http://localhost:3000/rekap-saldo"
+    },
+    {
+      "tag": "a",
+      "text": "SALDO KAS ◈ Rp 0 Total kas bersih Lihat riwayat kas →",
+      "href": "http://localhost:3000/kas"
+    },
+    {
+      "tag": "a",
+      "text": "OMZET HARI INI ↑ Rp 0 Kas masuk hari ini Lihat penjualan →",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "OMZET BULAN INI 📈 Rp 0 Bulan berjalan Lihat penjualan →",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "LABA BERSIH ! -Rp 3.0jt Rugi bulan ini ⚠ Lihat laporan L/R →",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "PIUTANG AKTIF 📝 Rp 8.3jt Belum lunas Lihat piutang →",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "HUTANG SUPPLIER ⚠ Rp 21.8jt Belum dibayar Lihat hutang →",
+      "href": "http://localhost:3000/pembelian-bahan"
+    },
+    {
+      "tag": "a",
+      "text": "GAJI HARI INI 👥 Rp 0 Total dibayarkan Lihat penggajian →",
+      "href": "http://localhost:3000/penggajian"
+    },
+    {
+      "tag": "a",
+      "text": "STOK KRITIS 📦 10 produk Siomay 1 Kg, Siomay 4 Kg... Lihat stok →",
+      "href": "http://localhost:3000/produksi"
+    },
+    {
+      "tag": "button",
+      "text": "3B",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "6B",
+      "type": "submit"
+    },
+    {
+      "tag": "button",
+      "text": "12B",
+      "type": "submit"
+    },
+    {
+      "tag": "svg",
+      "role": "application",
+      "text": "JulAguSepOktNovDesJanFebMarAprMeiJun-Rp30.0jt-Rp15.0jtRp 0Rp15.0jtRp30.0jt"
+    },
+    {
+      "tag": "a",
+      "text": "Laba Rugi 6 bulan · klik untuk detail ● Laba Kotor ● Bersih ● HPP Jan Feb Mar Apr Mei Jun -Rp30.0jt -Rp15.0jt Rp 0 Rp15.",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "svg",
+      "role": "application",
+      "text": "JanFebMarAprMeiJun-Rp30.0jt-Rp15.0jtRp 0Rp15.0jtRp30.0jt"
+    },
+    {
+      "tag": "div",
+      "role": "status"
+    },
+    {
+      "tag": "svg",
+      "role": "application"
+    },
+    {
+      "tag": "a",
+      "text": "Monitor Stok 15 produk · 10 kritis ⚠ Lihat produksi → Siomay 1 Kg -102 kg Siomay 4 Kg -1 kg Cuanki Lidah 500 Pcs 0 pcs S",
+      "href": "http://localhost:3000/produksi"
+    },
+    {
+      "tag": "a",
+      "text": "🛍️ Input Penjualan",
+      "href": "http://localhost:3000/penjualan"
+    },
+    {
+      "tag": "a",
+      "text": "⚙️ Input Produksi",
+      "href": "http://localhost:3000/produksi"
+    },
+    {
+      "tag": "a",
+      "text": "👥 Input Gaji",
+      "href": "http://localhost:3000/penggajian"
+    },
+    {
+      "tag": "a",
+      "text": "💰 Catat Kas",
+      "href": "http://localhost:3000/kas"
+    },
+    {
+      "tag": "a",
+      "text": "📊 Lihat Laporan",
+      "href": "http://localhost:3000/laporan"
+    },
+    {
+      "tag": "a",
+      "text": "📤 Upload Shopee",
+      "href": "http://localhost:3000/penjualan"
+    }
+  ],
+  "ariaSnapshot": "- button \"Shopee\":\n  - img\n  - text: Shopee\n- button \"Produksi\":\n  - img\n  - text: Produksi\n- button \"Pembelian\":\n  - img\n  - text: Pembelian\n- button \"Penggajian\":\n  - img\n  - text: Penggajian\n- button \"Keuangan\":\n  - img\n  - text: Keuangan\n- button \"Laporan\":\n  - img\n  - text: Laporan\n- button \"Dark Mode\":\n  - img\n- text: A Shopee\n- navigation:\n  - button \"Pesanan\":\n    - text: Pesanan\n    - img\n  - link \"Menunggu Diproses\":\n    - /url: /shopee/pesanan?status=to_process\n  - link \"Menunggu Dicetak\":\n    - /url: /shopee/pesanan?status=to_print\n  - link \"Menunggu Pickup\":\n    - /url: /shopee/pesanan?status=to_pickup\n  - link \"Pesanan Dikirim\":\n    - /url: /shopee/pesanan?status=shipped\n  - link \"Pesanan Selesai\":\n    - /url: /shopee/pesanan?status=completed\n  - link \"Pesanan Dibatalkan\":\n    - /url: /shopee/pesanan?status=cancelled\n  - link \"Semua Pesanan\":\n    - /url: /shopee/pesanan\n  - button \"Purna Jual\":\n    - text: Purna Jual\n    - img\n  - button \"Produk\":\n    - text: Produk\n    - img\n  - button \"Promosi\":\n    - text: Promosi\n    - img\n  - button \"Packing & WMS\":\n    - text: Packing & WMS\n    - img\n  - button \"Keuangan\":\n    - text: Keuangan\n    - img\n  - button \"Laporan Shopee\":\n    - text: Laporan Shopee\n    - img\n  - button \"Pelanggan\":\n    - text: Pelanggan\n    - img\n- button \"Logout\":\n  - img\n  - text: Logout\n- button:\n  - img\n- link \"Azalea\":\n  - /url: /dashboard\n- img\n- link \"Azalea\":\n  - /url: /shopee/pesanan\n- img\n- text: Dashboard\n- button \"8\":\n  - img\n  - text: \"8\"\n- button:\n  - img\n- text: A Jumat, 19 Juni 202614.49 WIB\n- heading \"Selamat siang, Owner 🌸\" [level=1]\n- paragraph: Ringkasan bisnis Azalea hari ini\n- link \"📊 Laporan L/R\":\n  - /url: /laporan\n- link \"Rekap Saldo\":\n  - /url: /rekap-saldo\n- link \"Saldo Kas ◈ Rp 0 Total kas bersih Lihat riwayat kas →\":\n  - /url: /kas\n- link \"Omzet Hari Ini ↑ Rp 0 Kas masuk hari ini Lihat penjualan →\":\n  - /url: /penjualan\n- link \"Omzet Bulan Ini 📈 Rp 0 Bulan berjalan Lihat penjualan →\":\n  - /url: /penjualan\n- link \"Laba Bersih ! -Rp 3.0jt Rugi bulan ini ⚠ Lihat laporan L/R →\":\n  - /url: /laporan\n- link \"Piutang Aktif 📝 Rp 8.3jt Belum lunas Lihat piutang →\":\n  - /url: /penjualan\n- link \"Hutang Supplier ⚠ Rp 21.8jt Belum dibayar Lihat hutang →\":\n  - /url: /pembelian-bahan\n- link \"Gaji Hari Ini 👥 Rp 0 Total dibayarkan Lihat penggajian →\":\n  - /url: /penggajian\n- link \"Stok Kritis 📦 10 produk Siomay 1 Kg, Siomay 4 Kg... Lihat stok →\":\n  - /url: /produksi\n- text: Omzet & Laba Tren bulanan\n- button \"3B\"\n- button \"6B\"\n- button \"12B\"\n- text: ● Omzet ● Laba ● Beban\n- application: Jul Agu Sep Okt Nov Des Jan Feb Mar Apr Mei Jun -Rp30.0jt -Rp15.0jt Rp 0 Rp15.0jt Rp30.0jt\n- link \"Laba Rugi 6 bulan · klik untuk detail ● Laba Kotor ● Bersih ● HPP\":\n  - /url: /laporan\n  - text: Laba Rugi 6 bulan · klik untuk detail ● Laba Kotor ● Bersih ● HPP\n  - application: Jan Feb Mar Apr Mei Jun -Rp30.0jt -Rp15.0jt Rp 0 Rp15.0jt Rp30.0jt\n- text: Distribusi Beban Bulan ini\n- application\n- text: HPP Produksi Rp 3.0jt\n- link \"Monitor Stok 15 produk · 10 kritis ⚠ Lihat produksi → Siomay 1 Kg -102 kg Siomay 4 Kg -1 kg Cuanki Lidah 500 Pcs 0 pcs Sale Roll 250 Gram 0 kg Sale Roll 1 Kg 0 kg Siomay Mini 2,5 kG 0 kg +9 produk lainnya\":\n  - /url: /produksi\n- text: Aksi Cepat Shortcut input data\n- link \"🛍️ Input Penjualan\":\n  - /url: /penjualan\n- link \"⚙️ Input Produksi\":\n  - /url: /produksi\n- link \"👥 Input Gaji\":\n  - /url: /penggajian\n- link \"💰 Catat Kas\":\n  - /url: /kas\n- link \"📊 Lihat Laporan\":\n  - /url: /laporan\n- link \"📤 Upload Shopee\":\n  - /url: /penjualan\n- text: Shopee terhubung 4 toko aktif · AzaleaFood · AsdaFood · ErlinFood · RaizelFood Azalea ERP v2.0\n- alert"
+}

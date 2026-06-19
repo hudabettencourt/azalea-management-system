@@ -1,9 +1,14 @@
 // app/api/shopee/get-wallet-balance/route.ts
 // GET /api/shopee/get-wallet-balance?toko_id=1 (omit for all toko)
-// Wraps /api/v2/payment/get_wallet_transaction_list.
+// Saldo tersedia + pending via get_income_overview; fallback saldo wallet dari
+// get_wallet_transaction_list (current_balance transaksi terbaru).
 import { NextRequest, NextResponse } from "next/server";
-import { shopeeApi } from "@/lib/shopee/helper";
 import { fetchToko, getValidToken, logShopeeResponse } from "@/lib/shopee/_token";
+import {
+  fetchWalletBalanceRaw,
+  walletBalanceOk,
+  walletBalanceError,
+} from "@/lib/shopee/wallet-balance";
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,17 +21,20 @@ export async function GET(req: NextRequest) {
       const toko = tokoList[i];
       try {
         const accessToken = await getValidToken(toko);
-        const res = await shopeeApi("/api/v2/payment/get_wallet_transaction_list", toko.shopee_shop_id, accessToken, {
-          wallet_type: 1,
-          page_no: 1,
-          page_size: 1,
+        const raw = await fetchWalletBalanceRaw(toko.shopee_shop_id, accessToken);
+        logShopeeResponse("get_income_overview", toko.nama, raw.income_overview);
+        logShopeeResponse("get_wallet_transaction_list", toko.nama, raw.wallet_transactions);
+        results.push({
+          toko_id: toko.id,
+          toko: toko.nama,
+          ok: walletBalanceOk(raw),
+          raw,
+          error: walletBalanceError(raw),
         });
-        logShopeeResponse("get_wallet_transaction_list", toko.nama, res);
-        results.push({ toko_id: toko.id, toko: toko.nama, ok: !res.error, raw: res });
       } catch (err: any) {
         results.push({ toko_id: toko.id, toko: toko.nama, ok: false, error: err.message });
       }
-      if (i < tokoList.length - 1) await new Promise(r => setTimeout(r, 500));
+      if (i < tokoList.length - 1) await new Promise((r) => setTimeout(r, 500));
     }
     return NextResponse.json({ success: true, results });
   } catch (err: any) {

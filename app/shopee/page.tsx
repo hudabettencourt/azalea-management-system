@@ -11,6 +11,7 @@ import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from "recharts";
+import { parseWalletBalance } from "@/lib/shopee/wallet-balance";
 
 type Toko = { id: number; nama: string; connected: boolean };
 
@@ -57,14 +58,6 @@ function pickNumber(obj: any, keys: string[]): number | null {
     if (typeof v === "string" && v && !Number.isNaN(Number(v))) return Number(v);
   }
   return null;
-}
-
-function parseBalance(raw: any): { tersedia: number | null; pending: number | null } {
-  const resp = raw?.response ?? raw;
-  return {
-    tersedia: pickNumber(resp, ["seller_balance", "withdrawable_amount", "wallet_balance", "available_balance"]),
-    pending: pickNumber(resp, ["escrow_amount", "pending_amount", "frozen_amount", "settlement_amount"]),
-  };
 }
 
 function parseRating(raw: any): number | null {
@@ -204,7 +197,7 @@ export default function ShopeeDashboardPage() {
       let total = 0;
       const byToko = new Map<number, { tersedia: number | null; pending: number | null }>();
       for (const r of data.results || []) {
-        const parsed = r.ok ? parseBalance(r.raw) : { tersedia: null, pending: null };
+        const parsed = r.ok ? parseWalletBalance(r.raw) : { tersedia: null, pending: null };
         byToko.set(r.toko_id, parsed);
         if (parsed.tersedia !== null) total += parsed.tersedia;
       }

@@ -8,6 +8,7 @@ import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { rupiah, tanggalFmt } from "@/lib/format";
+import { parseWalletBalance } from "@/lib/shopee/wallet-balance";
 
 // Wrapper null-safe untuk nilai yang bisa null/undefined dari API Shopee
 const rupiahN = (n: number | null | undefined) => {
@@ -66,13 +67,9 @@ function pickString(obj: any, keys: string[]): string | null {
   return null;
 }
 
-function parseBalance(raw: any): { tersedia: number | null; pending: number | null } {
-  const resp = raw?.response ?? raw;
-  const income = resp?.total_income ?? resp;
-  return {
-    tersedia: pickNumber(income, ["released_amount", "seller_balance", "withdrawable_amount", "wallet_balance", "available_balance"]),
-    pending: pickNumber(income, ["escrow_amount", "pending_amount", "frozen_amount", "settlement_amount"]),
-  };
+function sumNullable(rows: SaldoRow[], key: "tersedia" | "pending"): number | null {
+  const vals = rows.map((r) => r[key]).filter((v): v is number => v !== null && v !== undefined);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
 }
 
 function parseEscrow(raw: any, fallbackSn: string): EscrowBreakdown {
@@ -116,8 +113,12 @@ function SaldoTab({ C }: { C: any }) {
       const res = await fetch("/api/shopee/get-wallet-balance");
       const data = await res.json();
       const mapped: SaldoRow[] = (data.results || []).map((r: any) => {
-        const parsed = r.ok ? parseBalance(r.raw) : { tersedia: null, pending: null };
-        return { toko_id: r.toko_id, toko: r.toko, ok: r.ok, tersedia: parsed.tersedia, pending: parsed.pending, raw: r.raw, error: r.error || (r.raw?.error ? r.raw.message || r.raw.error : undefined) };
+        const parsed = r.ok ? parseWalletBalance(r.raw) : { tersedia: null, pending: null };
+        return {
+          toko_id: r.toko_id, toko: r.toko, ok: r.ok,
+          tersedia: parsed.tersedia, pending: parsed.pending, raw: r.raw,
+          error: r.error || (r.ok ? undefined : "Gagal memuat saldo dari Shopee API"),
+        };
       });
       setRows(mapped);
     } finally { setLoading(false); }
@@ -125,11 +126,15 @@ function SaldoTab({ C }: { C: any }) {
 
   useEffect(() => { fetchSaldo(); }, [fetchSaldo]);
 
-  const totalTersedia = rows.reduce((a, r) => a + (r.tersedia || 0), 0);
-  const totalPending = rows.reduce((a, r) => a + (r.pending || 0), 0);
+  const totalTersedia = sumNullable(rows, "tersedia");
+  const totalPending = sumNullable(rows, "pending");
 
   return (
     <div>
+      <div style={{ padding: "12px 16px", background: C.yellowDim, border: `1px solid ${C.yellow}40`, borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textMid, fontFamily: C.fontSans, lineHeight: 1.5 }}>
+        Saldo <b>Tersedia</b> dan <b>Pending</b> diambil dari Shopee API <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code> (sama seperti tab Saldo di Seller Center).
+        Jika masih kosong, whitelist endpoint Payment tersebut di Shopee Open Platform.
+      </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <SumCard label="Total Tersedia" value={rupiahN(totalTersedia)} color={C.green} C={C} />
         <SumCard label="Total Pending" value={rupiahN(totalPending)} color={C.yellow} C={C} />
@@ -155,6 +160,11 @@ function SaldoTab({ C }: { C: any }) {
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>Pending</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: C.yellow, fontFamily: C.fontMono }}>{rupiahN(r.pending)}</div>
                 </div>
+                {r.tersedia === null && r.pending === null && (
+                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
+                    API merespons OK tapi field saldo tidak ditemukan — cek whitelist <code>get_income_overview</code>.
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ marginTop: 10, fontSize: 12, color: C.red, fontFamily: C.fontMono }}>{r.error || "Gagal ambil saldo"}</div>

@@ -2,7 +2,8 @@
 
 // /shopee/keuangan — Saldo + Escrow + Pencairan.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
@@ -492,10 +493,31 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 ];
 
 export default function ShopeeKeuanganPage() {
+  return (
+    <Suspense fallback={null}>
+      <ShopeeKeuanganPageInner />
+    </Suspense>
+  );
+}
+
+function ShopeeKeuanganPageInner() {
   const { isDark } = useTheme();
   const C = isDark ? DARK : LIGHT;
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("saldo");
   const [tokoConnectedCount, setTokoConnectedCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "saldo" || t === "escrow" || t === "pencairan") setTab(t);
+  }, [searchParams]);
+
+  const goTab = (next: Tab) => {
+    setTab(next);
+    if (next === "saldo") router.replace("/shopee/keuangan");
+    else router.replace(`/shopee/keuangan?tab=${next}`);
+  };
 
   useEffect(() => {
     supabase.from("toko_online").select("id", { count: "exact", head: true }).eq("platform", "Shopee").eq("aktif", true).not("shopee_access_token", "is", null).then(({ count }) => setTokoConnectedCount(count ?? 0));
@@ -514,7 +536,7 @@ export default function ShopeeKeuanganPage() {
           {TABS.map(t => {
             const active = tab === t.key;
             return (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{ padding: "10px 18px", border: "none", background: "transparent", color: active ? C.accent : C.muted, fontWeight: active ? 800 : 600, fontSize: 13, fontFamily: C.fontSans, cursor: "pointer", borderBottom: active ? `2px solid ${C.accent}` : "2px solid transparent", marginBottom: -1 }}>
+              <button key={t.key} onClick={() => goTab(t.key)} style={{ padding: "10px 18px", border: "none", background: "transparent", color: active ? C.accent : C.muted, fontWeight: active ? 800 : 600, fontSize: 13, fontFamily: C.fontSans, cursor: "pointer", borderBottom: active ? `2px solid ${C.accent}` : "2px solid transparent", marginBottom: -1 }}>
                 <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
               </button>
             );

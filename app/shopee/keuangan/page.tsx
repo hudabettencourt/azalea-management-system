@@ -21,7 +21,8 @@ type Toko = { id: number; nama: string; connected: boolean };
 type SaldoRow = {
   toko_id: number; toko: string; ok: boolean;
   tersedia: number | null; pending: number | null;
-  tersedia_source?: string; pending_source?: string;
+  tersedia_source?: string;
+  pending_source?: "income_overview" | "db_uang_dijalan" | "none";
   raw?: any; error?: string;
 };
 
@@ -71,6 +72,38 @@ function pickString(obj: any, keys: string[]): string | null {
 function sumNullable(rows: SaldoRow[], key: "tersedia" | "pending"): number | null {
   const vals = rows.map((r) => r[key]).filter((v): v is number => v !== null && v !== undefined);
   return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
+}
+
+type SortDir = "asc" | "desc";
+
+function toggleSort(field: string, current: string, dir: SortDir): { field: string; dir: SortDir } {
+  if (current === field) return { field, dir: dir === "asc" ? "desc" : "asc" };
+  return { field, dir: "desc" };
+}
+
+function cmpVal(a: string | number | null | undefined, b: string | number | null | undefined, dir: SortDir): number {
+  const va = a ?? (typeof a === "number" ? 0 : "");
+  const vb = b ?? (typeof b === "number" ? 0 : "");
+  if (typeof va === "number" && typeof vb === "number") return dir === "asc" ? va - vb : vb - va;
+  return dir === "asc" ? String(va).localeCompare(String(vb), "id") : String(vb).localeCompare(String(va), "id");
+}
+
+function SortTh({
+  label, field, sortField, sortDir, onSort, C, align = "left",
+}: {
+  label: string; field: string; sortField: string; sortDir: SortDir;
+  onSort: (f: string) => void; C: any; align?: "left" | "right" | "center";
+}) {
+  const active = sortField === field;
+  return (
+    <button type="button" onClick={() => onSort(field)} style={{
+      background: "none", border: "none", color: active ? C.accent : C.muted,
+      fontSize: 10, fontWeight: 700, textAlign: align, cursor: "pointer", padding: 0,
+      letterSpacing: 1, fontFamily: C.fontMono, textTransform: "uppercase", width: "100%",
+    }}>
+      {label}{active ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕"}
+    </button>
+  );
 }
 
 function parseEscrow(raw: any, fallbackSn: string): EscrowBreakdown {
@@ -139,7 +172,7 @@ function SaldoTab({ C }: { C: any }) {
       <div style={{ padding: "12px 16px", background: C.yellowDim, border: `1px solid ${C.yellow}40`, borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textMid, fontFamily: C.fontSans, lineHeight: 1.5 }}>
         <b>Saldo Wallet</b> = uang di dompet penjual <b>saat ini</b> yang bisa dicairkan (<code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_wallet_transaction_list</code> → <code style={{ fontFamily: C.fontMono, fontSize: 11 }}>current_balance</code>).
         Bukan total penghasilan released sejak buka toko.
-        <b> Pending</b> = pesanan belum cair (<code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code>).
+        <b> Pending</b> = pesanan belum cair (<code style={{ fontFamily: C.fontMono, fontSize: 11 }}>get_income_overview</code>, fallback estimasi <b>Uang di Jalan</b> dari DB jika API kosong).
       </div>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <SumCard label="Total Saldo Wallet" value={rupiahN(totalTersedia)} color={C.green} C={C} />
@@ -165,6 +198,9 @@ function SaldoTab({ C }: { C: any }) {
                 <div>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>Pending</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: C.yellow, fontFamily: C.fontMono }}>{rupiahN(r.pending)}</div>
+                  {r.pending_source === "db_uang_dijalan" && (
+                    <div style={{ fontSize: 9, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>estimasi uang di jalan</div>
+                  )}
                 </div>
                 {r.tersedia === null && r.pending === null && (
                   <div style={{ gridColumn: "1 / -1", fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
@@ -195,12 +231,15 @@ function EscrowTab({ C }: { C: any }) {
   const [detail, setDetail] = useState<EscrowBreakdown | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [filterToko, setFilterToko] = useState<string>("semua");
+  const [sortField, setSortField] = useState("tanggal_pesanan");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   useEffect(() => {
     (async () => {
       setLoadingList(true);
       const [orderRes, penjualanRes, tokoRes] = await Promise.all([
-        supabase.from("detail_penjualan_online").select("id, no_pesanan, tanggal_pesanan, total_pembayaran, nama_pembeli, penjualan_online_id, stok_barang(nama_produk)").eq("status_shopee", "COMPLETED").order("tanggal_pesanan", { ascending: false }).limit(100),
+        supabase.from("detail_penjualan_online").select("id, no_pesanan, tanggal_pesanan, total_pembayaran, nama_pembeli, penjualan_online_id, stok_barang(nama_produk)").eq("status_shopee", "COMPLETED").order("tanggal_pesanan", { ascending: false }).limit(200),
         supabase.from("penjualan_online").select("id, toko_id"),
         supabase.from("toko_online").select("id, nama"),
       ]);
@@ -215,6 +254,34 @@ function EscrowTab({ C }: { C: any }) {
     })();
   }, []);
 
+  const tokoOpts = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const o of orders) if (o.toko_id) m.set(o.toko_id, o.toko_nama);
+    return Array.from(m.entries()).map(([id, nama]) => ({ id, nama })).sort((a, b) => a.nama.localeCompare(b.nama, "id"));
+  }, [orders]);
+
+  const handleSort = (field: string) => {
+    const next = toggleSort(field, sortField, sortDir);
+    setSortField(next.field);
+    setSortDir(next.dir);
+  };
+
+  const ordersView = useMemo(() => {
+    let list = filterToko === "semua" ? orders : orders.filter((o) => String(o.toko_id) === filterToko);
+    list = [...list].sort((a, b) => {
+      switch (sortField) {
+        case "toko_nama": return cmpVal(a.toko_nama, b.toko_nama, sortDir);
+        case "no_pesanan": return cmpVal(a.no_pesanan, b.no_pesanan, sortDir);
+        case "nama_produk": return cmpVal(a.nama_produk, b.nama_produk, sortDir);
+        case "nama_pembeli": return cmpVal(a.nama_pembeli, b.nama_pembeli, sortDir);
+        case "total_pembayaran": return cmpVal(a.total_pembayaran, b.total_pembayaran, sortDir);
+        case "tanggal_pesanan":
+        default: return cmpVal(a.tanggal_pesanan, b.tanggal_pesanan, sortDir);
+      }
+    });
+    return list;
+  }, [orders, filterToko, sortField, sortDir]);
+
   const loadDetail = useCallback(async (o: EscrowOrder) => {
     setSelected(o); setDetail(null); setErr(null); setLoadingDetail(true);
     try {
@@ -227,20 +294,35 @@ function EscrowTab({ C }: { C: any }) {
   }, []);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 360px) 1fr", gap: 16, alignItems: "flex-start" }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow, maxHeight: 600, overflowY: "auto" }}>
-        <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontSize: 11, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const }}>
-          Pesanan COMPLETED ({orders.length})
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <select value={filterToko} onChange={(e) => setFilterToko(e.target.value)} style={{ padding: "8px 12px", background: "transparent", border: `1.5px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13, outline: "none", cursor: "pointer" }}>
+          <option value="semua">Semua Toko</option>
+          {tokoOpts.map((t) => <option key={t.id} value={t.id}>{t.nama}</option>)}
+        </select>
+        <span style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>{ordersView.length} pesanan COMPLETED</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(320px, 1fr) minmax(280px, 360px)", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow, maxHeight: 620, overflowY: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 100px 90px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, background: C.card, zIndex: 1 }}>
+          <SortTh label="Toko" field="toko_nama" sortField={sortField} sortDir={sortDir} onSort={handleSort} C={C} />
+          <SortTh label="Produk / No. Pesanan" field="nama_produk" sortField={sortField} sortDir={sortDir} onSort={handleSort} C={C} />
+          <SortTh label="Tanggal" field="tanggal_pesanan" sortField={sortField} sortDir={sortDir} onSort={handleSort} C={C} />
+          <SortTh label="Nominal" field="total_pembayaran" sortField={sortField} sortDir={sortDir} onSort={handleSort} C={C} align="right" />
         </div>
         {loadingList ? <div style={{ padding: 20, fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Memuat...</div>
-          : orders.length === 0 ? <div style={{ padding: 20, fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Tidak ada pesanan COMPLETED</div>
-          : orders.map(o => {
+          : ordersView.length === 0 ? <div style={{ padding: 20, fontSize: 13, color: C.muted, fontFamily: C.fontMono }}>Tidak ada pesanan COMPLETED</div>
+          : ordersView.map((o) => {
             const active = selected?.id === o.id;
             return (
-              <button key={o.id} onClick={() => loadDetail(o)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", border: "none", cursor: "pointer", background: active ? `${C.accent}15` : "transparent", borderBottom: `1px solid ${C.border}`, borderLeft: active ? `3px solid ${C.accent}` : `3px solid transparent` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontSans, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.nama_produk}</div>
-                <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{o.no_pesanan} · {o.toko_nama}</div>
-                <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 1 }}>{tanggalFmt(o.tanggal_pesanan)} · {rupiahN(o.total_pembayaran)}</div>
+              <button key={o.id} type="button" onClick={() => loadDetail(o)} style={{ display: "grid", gridTemplateColumns: "90px 1fr 100px 90px", gap: 8, width: "100%", textAlign: "left", padding: "10px 14px", border: "none", cursor: "pointer", background: active ? `${C.accent}15` : "transparent", borderBottom: `1px solid ${C.border}`, borderLeft: active ? `3px solid ${C.accent}` : `3px solid transparent`, alignItems: "center" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, fontFamily: C.fontMono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.toko_nama}</div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, fontFamily: C.fontSans, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.nama_produk}</div>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, marginTop: 2 }}>{o.no_pesanan}{o.nama_pembeli ? ` · ${o.nama_pembeli}` : ""}</div>
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(o.tanggal_pesanan)}</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: C.text, fontFamily: C.fontMono, textAlign: "right" }}>{rupiahN(o.total_pembayaran)}</div>
               </button>
             );
           })}
@@ -269,6 +351,7 @@ function EscrowTab({ C }: { C: any }) {
             </details>
           </>
         )}
+      </div>
       </div>
     </div>
   );
@@ -305,6 +388,10 @@ function PencairanTab({ C }: { C: any }) {
   const [filterToko, setFilterToko] = useState<string>("semua");
   const [tokoOpts, setTokoOpts] = useState<{ id: number; nama: string }[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [lapSortField, setLapSortField] = useState("created_at");
+  const [lapSortDir, setLapSortDir] = useState<SortDir>("desc");
+  const [txSortField, setTxSortField] = useState("create_time");
+  const [txSortDir, setTxSortDir] = useState<SortDir>("desc");
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToast({ msg, type });
@@ -393,13 +480,50 @@ function PencairanTab({ C }: { C: any }) {
     } finally { setLoading(false); }
   };
 
-  const filteredLaporan = filterToko === "semua"
-    ? laporan
-    : laporan.filter(r => String(r.toko_id) === filterToko);
-  const filteredWallet = filterToko === "semua"
-    ? rows
-    : rows.filter(r => String(r.toko_id) === filterToko);
+  const filteredLaporan = useMemo(() => {
+    let list = filterToko === "semua" ? laporan : laporan.filter((r) => String(r.toko_id) === filterToko);
+    list = [...list].sort((a, b) => {
+      switch (lapSortField) {
+        case "toko": return cmpVal(a.toko_online?.nama || "", b.toko_online?.nama || "", lapSortDir);
+        case "nominal_cair": return cmpVal(a.nominal_cair, b.nominal_cair, lapSortDir);
+        case "nominal_piutang": return cmpVal(a.nominal_piutang, b.nominal_piutang, lapSortDir);
+        case "selisih": return cmpVal(a.selisih, b.selisih, lapSortDir);
+        case "shopee_transaction_id": return cmpVal(a.shopee_transaction_id, b.shopee_transaction_id, lapSortDir);
+        case "created_at":
+        default: return cmpVal(a.created_at, b.created_at, lapSortDir);
+      }
+    });
+    return list;
+  }, [laporan, filterToko, lapSortField, lapSortDir]);
+
+  const filteredWallet = useMemo(() => {
+    let list = filterToko === "semua" ? rows : rows.filter((r) => String(r.toko_id) === filterToko);
+    list = [...list].sort((a, b) => {
+      switch (txSortField) {
+        case "toko": return cmpVal(a.toko, b.toko, txSortDir);
+        case "type": return cmpVal(a.type, b.type, txSortDir);
+        case "transaction_id": return cmpVal(a.transaction_id, b.transaction_id, txSortDir);
+        case "status": return cmpVal(a.status, b.status, txSortDir);
+        case "amount": return cmpVal(a.amount, b.amount, txSortDir);
+        case "create_time":
+        default: return cmpVal(a.create_time, b.create_time, txSortDir);
+      }
+    });
+    return list;
+  }, [rows, filterToko, txSortField, txSortDir]);
+
   const totalCair = filteredLaporan.reduce((a, r) => a + (r.nominal_cair || 0), 0);
+
+  const handleLapSort = (field: string) => {
+    const next = toggleSort(field, lapSortField, lapSortDir);
+    setLapSortField(next.field);
+    setLapSortDir(next.dir);
+  };
+  const handleTxSort = (field: string) => {
+    const next = toggleSort(field, txSortField, txSortDir);
+    setTxSortField(next.field);
+    setTxSortDir(next.dir);
+  };
 
   const handleSyncClick = async () => {
     try {
@@ -436,8 +560,13 @@ function PencairanTab({ C }: { C: any }) {
       {/* Laporan pencairan tercatat */}
       <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 10, fontFamily: C.fontSans }}>📋 Laporan Pencairan (masuk kas)</div>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow, marginBottom: 20 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 100px 100px 140px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const, gap: 10 }}>
-          <span>Toko</span><span style={{ textAlign: "right" }}>Cair</span><span style={{ textAlign: "right" }}>Piutang</span><span style={{ textAlign: "right" }}>Selisih</span><span>Tanggal</span><span>Txn ID</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 100px 100px 140px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, gap: 10 }}>
+          <SortTh label="Toko" field="toko" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} />
+          <SortTh label="Cair" field="nominal_cair" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} align="right" />
+          <SortTh label="Piutang" field="nominal_piutang" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} align="right" />
+          <SortTh label="Selisih" field="selisih" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} align="right" />
+          <SortTh label="Tanggal" field="created_at" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} />
+          <SortTh label="Txn ID" field="shopee_transaction_id" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} />
         </div>
         {loading && laporan.length === 0 ? (
           <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>
@@ -460,8 +589,13 @@ function PencairanTab({ C }: { C: any }) {
       {/* Transaksi wallet Shopee (referensi) */}
       <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 10, fontFamily: C.fontSans }}>🔍 Transaksi Wallet Shopee</div>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px 130px 130px 100px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const, gap: 12 }}>
-          <span>Toko / Tipe</span><span>Transaction ID</span><span>Status</span><span>Tanggal</span><span style={{ textAlign: "right" }}>Nominal</span><span style={{ textAlign: "center" }}>Azalea</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px 130px 130px 100px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, gap: 12 }}>
+          <SortTh label="Toko / Tipe" field="toko" sortField={txSortField} sortDir={txSortDir} onSort={handleTxSort} C={C} />
+          <SortTh label="Transaction ID" field="transaction_id" sortField={txSortField} sortDir={txSortDir} onSort={handleTxSort} C={C} />
+          <SortTh label="Status" field="status" sortField={txSortField} sortDir={txSortDir} onSort={handleTxSort} C={C} />
+          <SortTh label="Tanggal" field="create_time" sortField={txSortField} sortDir={txSortDir} onSort={handleTxSort} C={C} />
+          <SortTh label="Nominal" field="amount" sortField={txSortField} sortDir={txSortDir} onSort={handleTxSort} C={C} align="right" />
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }}>Azalea</span>
         </div>
         {loading && rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>
           : filteredWallet.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada transaksi wallet</div>

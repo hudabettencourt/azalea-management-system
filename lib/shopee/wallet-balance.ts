@@ -65,14 +65,28 @@ async function fetchLatestWalletSnapshot(shopId: number, accessToken: string) {
   return last;
 }
 
+const INCOME_STATUS_FILTERS: Array<Record<string, string | number> | undefined> = [
+  undefined,
+  { income_status: "PENDING" },
+  { income_status: "TO_RELEASE" },
+  { income_status: 1 },
+  { income_status: 2 },
+];
+
 export async function fetchWalletBalanceRaw(
   shopId: number,
   accessToken: string,
 ) {
-  const [incomeOverview, walletTransactions] = await Promise.all([
-    shopeeApi("/api/v2/payment/get_income_overview", shopId, accessToken, {}),
+  const [walletTransactions, ...incomeOverviews] = await Promise.all([
     fetchLatestWalletSnapshot(shopId, accessToken),
+    ...INCOME_STATUS_FILTERS.map((params) =>
+      shopeeApi("/api/v2/payment/get_income_overview", shopId, accessToken, params ?? {}),
+    ),
   ]);
 
-  return { income_overview: incomeOverview, wallet_transactions: walletTransactions };
+  return {
+    income_overview: incomeOverviews[0],
+    income_overviews: incomeOverviews,
+    wallet_transactions: walletTransactions,
+  };
 }

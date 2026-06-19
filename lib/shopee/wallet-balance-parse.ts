@@ -4,14 +4,16 @@
 
 export type WalletBalanceRaw = {
   income_overview?: any;
+  income_overviews?: any[];
   wallet_transactions?: any;
+  pending_db?: number | null;
 };
 
 export type ParsedWalletBalance = {
   tersedia: number | null;
   pending: number | null;
   tersedia_source: "wallet_current_balance" | "none";
-  pending_source: "income_overview" | "none";
+  pending_source: "income_overview" | "db_uang_dijalan" | "none";
 };
 
 function pickNumber(obj: any, keys: string[]): number | null {
@@ -43,21 +45,26 @@ function isReleasedStatus(status: string): boolean {
   return /released|completed|selesai/i.test(status);
 }
 
-function parsePendingFromOverview(overviewRes: any): number | null {
+function sumPendingSections(overviewRes: any): number | null {
   const resp = overviewRes?.response ?? overviewRes ?? {};
   if (!resp || overviewRes?.error) return null;
 
+  let total = 0;
+  let found = false;
+
+  const add = (n: number | null) => {
+    if (n !== null) { total += n; found = true; }
+  };
+
   // Field eksplisit pending — jangan sentuh released_amount.
-  const direct = pickNumber(resp, [
-    "pending_amount",
-    "total_pending_amount",
-    "to_release_amount",
-    "total_to_release_amount",
-    "unreleased_amount",
-    "on_hold_amount",
-    "frozen_amount",
-  ]);
-  if (direct !== null) return direct;
+  add(pickNumber(resp, ["pending_amount", "total_pending_amount", "pending"]));
+  add(pickNumber(resp, ["to_release_amount", "total_to_release_amount", "to_release", "unreleased_amount"]));
+  add(pickNumber(resp, ["on_hold_amount", "frozen_amount"]));
+
+  for (const nested of [resp?.local_shop_income, resp?.income_overview, resp?.shop_income, resp?.income_summary]) {
+    if (!nested) continue;
+    add(pickNumber(nested, ["pending", "pending_amount", "to_release", "to_release_amount", "unreleased_amount"]));
+  }
 
   const sections = [
     resp?.pending_info,
@@ -66,39 +73,54 @@ function parsePendingFromOverview(overviewRes: any): number | null {
     resp?.to_release,
     ...(Array.isArray(resp?.income_list) ? resp.income_list : []),
     ...(Array.isArray(resp?.overview_list) ? resp.overview_list : []),
+    ...(Array.isArray(resp?.income_detail_list) ? resp.income_detail_list : []),
   ].filter(Boolean);
 
-  let total = 0;
-  let found = false;
   for (const section of sections) {
-    const status = String(section?.income_status ?? section?.status ?? section?.type ?? "").toLowerCase();
-    // Tanpa status jelas → skip (hindari menjumlahkan released kumulatif).
-    if (!status) continue;
-    if (isReleasedStatus(status)) continue;
-    if (!isPendingStatus(status)) continue;
-    const amt = pickNumber(section, [
-      "amount", "total_amount", "income_amount", "pending_amount", "to_release_amount",
-    ]);
-    if (amt !== null) {
-      total += amt;
-      found = true;
-    }
+    const status = String(
+      section?.income_status ?? section?.status ?? section?.type ?? section?.income_type ?? "",
+    ).toLowerCase();
+    if (status && isReleasedStatus(status)) continue;
+    if (status && !isPendingStatus(status)) continue;
+    add(pickNumber(section, [
+      "amount", "total_amount", "income_amount", "pending_amount", "to_release_amount", "value",
+    ]));
   }
+
   return found ? total : null;
+}
+
+function parsePendingFromOverview(raw: WalletBalanceRaw | any): number | null {
+  const list: any[] = [];
+  if (raw?.income_overviews?.length) list.push(...raw.income_overviews);
+  if (raw?.income_overview) list.push(raw.income_overview);
+  if (!list.length && raw?.response) list.push(raw);
+
+  let best: number | null = null;
+  for (const ov of list) {
+    const n = sumPendingSections(ov);
+    if (n !== null) best = Math.max(best ?? 0, n);
+  }
+  return best;
 }
 
 export function parseWalletBalance(raw: WalletBalanceRaw | any): ParsedWalletBalance {
   const wallet = raw?.wallet_transactions ?? (raw?.income_overview ? undefined : raw);
-  const overview = raw?.income_overview ?? (raw?.wallet_transactions ? undefined : raw);
 
   const tersedia = latestWalletBalance(wallet);
-  const pending = parsePendingFromOverview(overview);
+  let pending = parsePendingFromOverview(raw);
+  let pending_source: ParsedWalletBalance["pending_source"] = pending !== null ? "income_overview" : "none";
+
+  if (pending === null && raw?.pending_db != null) {
+    pending = raw.pending_db;
+    pending_source = "db_uang_dijalan";
+  }
 
   return {
     tersedia,
     pending,
     tersedia_source: tersedia !== null ? "wallet_current_balance" : "none",
-    pending_source: pending !== null ? "income_overview" : "none",
+    pending_source,
   };
 }
 

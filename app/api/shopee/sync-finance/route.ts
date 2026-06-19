@@ -63,11 +63,9 @@ function isWithdrawal(t: WalletTxn): boolean {
   const type = (t.transaction_type || "").toUpperCase();
   if (!type.includes("WITHDRAW")) return false;
   if (type.includes("CANCEL") || type.includes("FAIL")) return false;
-  // Sebagian shop: "COMPLETED" sebagai status, atau "WITHDRAWAL_COMPLETED" sebagai type.
-  if (t.status && t.status.toUpperCase() !== "COMPLETED" && !type.includes("COMPLETED")) {
-    // Saring out pending withdrawals biar kas tidak salah catat.
-    return false;
-  }
+  const status = (t.status || "").toUpperCase();
+  const okStatus = ["COMPLETED", "SUCCESS", "SUCCEED", "DONE", ""];
+  if (status && !okStatus.includes(status) && !type.includes("COMPLETED")) return false;
   return true;
 }
 
@@ -152,6 +150,14 @@ async function syncTokoFinance(toko: any) {
 }
 
 export async function GET() {
+  return runSyncFinance();
+}
+
+export async function POST() {
+  return runSyncFinance();
+}
+
+async function runSyncFinance() {
   try {
     const { data: tokoList, error } = await supabase.from("toko_online")
       .select("*")

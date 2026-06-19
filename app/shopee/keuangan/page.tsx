@@ -264,88 +264,190 @@ function BreakdownRow({ label, value, C, negative, bold }: { label: string; valu
 }
 
 // ── Pencairan tab ────────────────────────────────────────────────────────
+type PencairanRow = {
+  id: number;
+  toko_id: number;
+  nominal_cair: number;
+  nominal_piutang: number;
+  selisih: number;
+  shopee_transaction_id: string | null;
+  created_at: string;
+  toko_online?: { nama: string } | null;
+};
+
 function PencairanTab({ C }: { C: any }) {
+  const [laporan, setLaporan] = useState<PencairanRow[]>([]);
   const [rows, setRows] = useState<TxRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [filterToko, setFilterToko] = useState<string>("semua");
   const [tokoOpts, setTokoOpts] = useState<{ id: number; nama: string }[]>([]);
-  const [recordedIds, setRecordedIds] = useState<Set<string>>(new Set());
-  const [savingId, setSavingId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 2500);
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/shopee/get-wallet-transactions");
-      const data = await res.json();
-      const all: TxRow[] = [];
-      const opts: { id: number; nama: string }[] = [];
-      for (const r of data.results || []) {
-        opts.push({ id: r.toko_id, nama: r.toko });
-        if (!r.ok) continue;
-        all.push(...parseTransactions({ id: r.toko_id, nama: r.toko }, r.raw));
-      }
-      all.sort((a, b) => b.create_time - a.create_time);
-      setRows(all);
-      setTokoOpts(opts);
-      if (all.length > 0) {
-        const { data: kasRows } = await supabase.from("kas").select("keterangan").ilike("keterangan", "%[SHOPEE_TXN:%");
-        const known = new Set<string>();
-        for (const k of (kasRows || []) as any[]) {
-          const m = String(k.keterangan || "").match(/\[SHOPEE_TXN:([^\]]+)\]/);
-          if (m) known.add(m[1]);
-        }
-        setRecordedIds(known);
-      }
-    } finally { setLoading(false); }
+  const syncedIds = useMemo(
+    () => new Set(laporan.map(l => l.shopee_transaction_id).filter(Boolean) as string[]),
+    [laporan],
+  );
+
+  const fetchLaporan = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("pencairan_online")
+      .select("id, toko_id, nominal_cair, nominal_piutang, selisih, shopee_transaction_id, created_at, toko_online(nama)")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    setLaporan((data || []).map((r: any) => ({
+      ...r,
+      toko_online: Array.isArray(r.toko_online) ? r.toko_online[0] : r.toko_online,
+    })) as PencairanRow[]);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const fetchWallet = useCallback(async () => {
+    const res = await fetch("/api/shopee/get-wallet-transactions");
+    const data = await res.json();
+    const all: TxRow[] = [];
+    const opts: { id: number; nama: string }[] = [];
+    for (const r of data.results || []) {
+      opts.push({ id: r.toko_id, nama: r.toko });
+      if (!r.ok) continue;
+      all.push(...parseTransactions({ id: r.toko_id, nama: r.toko }, r.raw));
+    }
+    all.sort((a, b) => b.create_time - a.create_time);
+    setRows(all);
+    setTokoOpts(opts);
+  }, []);
 
-  const filtered = filterToko === "semua" ? rows : rows.filter(r => String(r.toko_id) === filterToko);
-
-  const catatKeKas = async (tx: TxRow) => {
-    if (recordedIds.has(tx.transaction_id)) { showToast("Sudah pernah dicatat", "error"); return; }
-    setSavingId(tx.transaction_id);
+  const syncPencairan = useCallback(async (silent = false) => {
+    setSyncing(true);
     try {
-      const tanggal = tx.create_time ? new Date(tx.create_time * 1000).toLocaleDateString("sv", { timeZone: "Asia/Jakarta" }) : new Date().toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
-      const isMasuk = tx.amount >= 0;
-      const keterangan = `Pencairan Shopee · ${tx.toko} · ${tx.type} [SHOPEE_TXN:${tx.transaction_id}]`;
-      const { error } = await supabase.from("kas").insert([{ tipe: isMasuk ? "Masuk" : "Keluar", kategori: "Pendapatan Marketplace", keterangan, nominal: Math.abs(tx.amount), tanggal }]);
-      if (error) throw new Error(error.message);
-      setRecordedIds(prev => new Set(prev).add(tx.transaction_id));
-      showToast(`✓ Tercatat ${rupiahN(Math.abs(tx.amount))}`);
-    } catch (err: any) { showToast(err.message, "error"); }
-    finally { setSavingId(null); }
+      const res = await fetch("/api/shopee/sync-finance", { method: "POST" });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Sync gagal");
+      const totalNew = (data.results || []).reduce((a: number, r: any) => a + (r.new || 0), 0);
+      const errors = (data.results || []).filter((r: any) => r.status === "error");
+      await fetchLaporan();
+      if (!silent) {
+        if (errors.length) showToast(`Sync selesai, ${errors.length} toko error`, "error");
+        else if (totalNew > 0) showToast(`✓ ${totalNew} pencairan baru → kas + laporan`);
+        else showToast("✓ Sudah up to date — tidak ada pencairan baru");
+      }
+      return totalNew;
+    } catch (err: any) {
+      if (!silent) showToast(err.message || "Gagal sync pencairan", "error");
+      throw err;
+    } finally { setSyncing(false); }
+  }, [fetchLaporan]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        await fetchLaporan();
+        await fetchWallet();
+        if (!cancelled) await syncPencairan(true);
+      } catch (err: any) {
+        if (!cancelled) showToast(err.message || "Gagal memuat data", "error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const refreshAll = async () => {
+    setLoading(true);
+    try {
+      await fetchLaporan();
+      await fetchWallet();
+    } catch (err: any) {
+      showToast(err.message || "Gagal memuat data", "error");
+    } finally { setLoading(false); }
+  };
+
+  const filteredLaporan = filterToko === "semua"
+    ? laporan
+    : laporan.filter(r => String(r.toko_id) === filterToko);
+  const filteredWallet = filterToko === "semua"
+    ? rows
+    : rows.filter(r => String(r.toko_id) === filterToko);
+  const totalCair = filteredLaporan.reduce((a, r) => a + (r.nominal_cair || 0), 0);
+
+  const handleSyncClick = async () => {
+    try {
+      await syncPencairan(false);
+      await fetchWallet();
+    } catch { /* toast sudah ditampilkan */ }
   };
 
   return (
     <div>
       {toast && <div style={{ position: "fixed", top: 20, right: 20, zIndex: 9999, padding: "12px 18px", background: toast.type === "success" ? C.green : C.red, color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 700, boxShadow: C.shadowMd }}>{toast.msg}</div>}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+
+      <div style={{ padding: "12px 16px", background: C.accentGlow, border: `1px solid ${C.accent}40`, borderRadius: 12, marginBottom: 16, fontSize: 12, color: C.textMid, fontFamily: C.fontSans, lineHeight: 1.5 }}>
+        Setiap Anda <b>mencairkan saldo</b> di Shopee Seller Center, klik <b>Sync Pencairan</b> (atau buka tab ini — auto-sync).
+        Sistem otomatis catat ke <b>kas</b>, update <b>piutang online</b>, dan simpan <b>laporan</b> di bawah.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
         <select value={filterToko} onChange={e => setFilterToko(e.target.value)} style={{ padding: "8px 12px", background: "transparent", border: `1.5px solid ${C.border}`, borderRadius: 8, color: C.text, fontFamily: C.fontSans, fontSize: 13, outline: "none", cursor: "pointer" }}>
           <option value="semua">Semua Toko</option>
           {tokoOpts.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
         </select>
-        <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>{filtered.length} transaksi</div>
-        <button onClick={fetchData} disabled={loading} style={{ marginLeft: "auto", padding: "8px 16px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.5 : 1 }}>{loading ? "⏳" : "↻"} Refresh</button>
+        <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
+          {filteredLaporan.length} pencairan · total {rupiahN(totalCair)}
+        </div>
+        <button onClick={refreshAll} disabled={loading || syncing} style={{ marginLeft: "auto", padding: "8px 14px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.5 : 1 }}>
+          {loading ? "⏳" : "↻"} Refresh
+        </button>
+        <button onClick={handleSyncClick} disabled={syncing} style={{ padding: "8px 16px", background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: syncing ? "wait" : "pointer", fontSize: 13, fontWeight: 700, opacity: syncing ? 0.7 : 1 }}>
+          {syncing ? "⏳ Syncing..." : "💸 Sync Pencairan"}
+        </button>
       </div>
 
+      {/* Laporan pencairan tercatat */}
+      <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 10, fontFamily: C.fontSans }}>📋 Laporan Pencairan (masuk kas)</div>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 100px 100px 140px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const, gap: 10 }}>
+          <span>Toko</span><span style={{ textAlign: "right" }}>Cair</span><span style={{ textAlign: "right" }}>Piutang</span><span style={{ textAlign: "right" }}>Selisih</span><span>Tanggal</span><span>Txn ID</span>
+        </div>
+        {loading && laporan.length === 0 ? (
+          <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>
+        ) : filteredLaporan.length === 0 ? (
+          <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
+            Belum ada pencairan tercatat. Cairkan saldo di Seller Center lalu klik Sync Pencairan.
+          </div>
+        ) : filteredLaporan.map(r => (
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px 100px 100px 140px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, alignItems: "center", gap: 10, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: C.text }}>{r.toko_online?.nama || `Toko #${r.toko_id}`}</div>
+            <div style={{ textAlign: "right", fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahN(r.nominal_cair)}</div>
+            <div style={{ textAlign: "right", color: C.textMid, fontFamily: C.fontMono }}>{rupiahN(r.nominal_piutang)}</div>
+            <div style={{ textAlign: "right", color: r.selisih !== 0 ? C.yellow : C.muted, fontFamily: C.fontMono }}>{rupiahN(r.selisih)}</div>
+            <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tanggalFmt(r.created_at)}</div>
+            <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.shopee_transaction_id || ""}>{r.shopee_transaction_id || "—"}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Transaksi wallet Shopee (referensi) */}
+      <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 10, fontFamily: C.fontSans }}>🔍 Transaksi Wallet Shopee</div>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: C.shadow }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px 130px 130px 140px", padding: "10px 16px", background: "transparent", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const, gap: 12 }}>
-          <span>Toko / Tipe</span><span>Transaction ID</span><span>Status</span><span>Tanggal</span><span style={{ textAlign: "right" }}>Nominal</span><span style={{ textAlign: "right" }}>Aksi</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px 130px 130px 100px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase" as const, gap: 12 }}>
+          <span>Toko / Tipe</span><span>Transaction ID</span><span>Status</span><span>Tanggal</span><span style={{ textAlign: "right" }}>Nominal</span><span style={{ textAlign: "center" }}>Azalea</span>
         </div>
         {loading && rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>
-          : filtered.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada transaksi</div>
-          : filtered.map(tx => {
-            const recorded = recordedIds.has(tx.transaction_id);
+          : filteredWallet.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada transaksi wallet</div>
+          : filteredWallet.map(tx => {
+            const synced = syncedIds.has(tx.transaction_id);
+            const isWithdraw = (tx.type || "").toUpperCase().includes("WITHDRAW");
             return (
-              <div key={`${tx.toko_id}-${tx.transaction_id}`} style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px 130px 130px 140px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, alignItems: "center", gap: 12, fontSize: 12 }}>
+              <div key={`${tx.toko_id}-${tx.transaction_id}`} style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px 130px 130px 100px", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, alignItems: "center", gap: 12, fontSize: 12, opacity: isWithdraw ? 1 : 0.65 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: C.fontSans }}>{tx.toko}</div>
                   <div style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{tx.type}</div>
@@ -356,13 +458,13 @@ function PencairanTab({ C }: { C: any }) {
                 <div style={{ textAlign: "right", fontWeight: 800, color: tx.amount >= 0 ? C.green : C.red, fontFamily: C.fontMono }}>
                   {tx.amount >= 0 ? "+ " : "− "}{rupiahN(Math.abs(tx.amount))}
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  {recorded ? (
-                    <span style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, background: C.greenDim, color: C.green, fontWeight: 700, fontFamily: C.fontMono }}>✓ Tercatat</span>
+                <div style={{ textAlign: "center" }}>
+                  {synced ? (
+                    <span style={{ fontSize: 10, padding: "4px 8px", borderRadius: 20, background: C.greenDim, color: C.green, fontWeight: 700, fontFamily: C.fontMono }}>✓ Kas</span>
+                  ) : isWithdraw ? (
+                    <span style={{ fontSize: 10, padding: "4px 8px", borderRadius: 20, background: C.yellowDim, color: C.yellow, fontWeight: 700, fontFamily: C.fontMono }}>Belum</span>
                   ) : (
-                    <button onClick={() => catatKeKas(tx)} disabled={savingId === tx.transaction_id} style={{ padding: "5px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: `${C.accent}20`, color: C.accent, fontFamily: C.fontSans, border: `1px solid ${C.accent}`, cursor: savingId === tx.transaction_id ? "wait" : "pointer", opacity: savingId === tx.transaction_id ? 0.6 : 1 }}>
-                      {savingId === tx.transaction_id ? "Menyimpan..." : "Catat ke Kas"}
-                    </button>
+                    <span style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>—</span>
                   )}
                 </div>
               </div>

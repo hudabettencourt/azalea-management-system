@@ -31,11 +31,20 @@ export default function ShopeeStokTab({ C, isDark, showToast }: Props) {
   const [distribusi, setDistribusi] = useState<DistribusiRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Mode: "otomatis" = hitung distribusi, "manual" = input langsung per toko
+  const [mode, setMode] = useState<"otomatis" | "manual">("otomatis");
+
   const [selectedStokId, setSelectedStokId] = useState<string>("");
   const [anggaranInput, setAnggaranInput] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [pushingId, setPushingId] = useState<number | null>(null);
   const [pushingPoolId, setPushingPoolId] = useState<number | null>(null);
+
+  // Preview manual mode
+  const [previewRows, setPreviewRows] = useState<
+    { toko_id: number; toko_nama: string; jumlah: number; persentase: number }[] | null
+  >(null);
+  const [previewProduct, setPreviewProduct] = useState<{ id: number; nama_produk: string } | null>(null);
 
   const inputStyle: React.CSSProperties = {
     padding: "8px 12px",
@@ -88,20 +97,110 @@ export default function ShopeeStokTab({ C, isDark, showToast }: Props) {
 
   const handleDistribusi = async () => {
     if (!selectedStokId) return showToast("Pilih produk dulu!", "error");
-    const anggaran = toAngka(anggaranInput);
-    if (anggaran <= 0) return showToast("Anggaran harus > 0", "error");
+
+    if (mode === "otomatis") {
+      const anggaran = toAngka(anggaranInput);
+      if (anggaran <= 0) return showToast("Anggaran harus > 0", "error");
+    }
+
     setSubmitting(true);
     try {
-      const res = await fetch("/api/shopee/set-stok-pool", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stok_barang_id: parseInt(selectedStokId), total_anggaran: anggaran }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Gagal distribusi");
-      showToast(`✓ Distribusi ${data.produk}: ${data.distribusi.length} toko`);
+      if (mode === "otomatis") {
+        const anggaran = toAngka(anggaranInput);
+        const res = await fetch("/api/shopee/set-stok-pool", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stok_barang_id: parseInt(selectedStokId), total_anggaran: anggaran }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || "Gagal distribusi");
+        showToast(`✓ Distribusi ${data.produk}: ${data.distribusi.length} toko`);
+        setSelectedStokId("");
+        setAnggaranInput("");
+        await fetchAll();
+      } else {
+        // Manual mode — buka preview form kosong
+        const { data: tokoData } = await supabase
+          .from("toko_online")
+          .select("id, nama")
+          .eq("platform", "Shopee")
+          .eq("aktif", true)
+          .not("shopee_access_token", "is", null)
+          .order("nama");
+        const { data: produkData } = await supabase
+          .from("stok_barang")
+          .select("id, nama_produk")
+          .eq("id", parseInt(selectedStokId))
+          .single();
+        setPreviewProduct(produkData || null);
+        setPreviewRows(
+          (tokoData || []).map(t => ({
+            toko_id: t.id,
+            toko_nama: t.nama,
+            jumlah: 0,
+            persentase: 0,
+          })),
+        );
+        setSubmitting(false);
+      }
+    } catch (err: any) {
+      showToast("Gagal: " + err.message, "error");
+    } finally {
+      if (mode === "otomatis") setSubmitting(false);
+    }
+  };
+
+  const updatePreviewRow = (toko_id: number, jumlah: number) => {
+    setPreviewRows(prev => {
+      if (!prev) return null;
+      const updated = prev.map(r =>
+        r.toko_id === toko_id ? { ...r, jumlah: Math.max(0, jumlah) } : r
+      );
+      const total = updated.reduce((a, r) => a + r.jumlah, 0);
+      return updated.map(r => ({
+        ...r,
+        persentase: total > 0 ? Math.round((r.jumlah / total) * 10000) / 100 : 0,
+      }));
+    });
+  };
+
+  const confirmManual = async () => {
+    if (!previewRows || !previewProduct) return;
+    const totalPool = previewRows.reduce((a, r) => a + r.jumlah, 0);
+    if (totalPool <= 0) return showToast("Total stok harus > 0", "error");
+
+    setSubmitting(true);
+    try {
+      const { data: pool, error: errPool } = await supabase
+        .from("shopee_stok_pool")
+        .upsert(
+          {
+            stok_barang_id: previewProduct.id,
+            total_anggaran: totalPool,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "stok_barang_id" }
+        )
+        .select("id")
+        .single();
+      if (errPool || !pool) throw new Error(errPool?.message || "Gagal simpan pool");
+
+      await supabase.from("shopee_stok_distribusi").delete().eq("pool_id", pool.id);
+      const rows = previewRows.map(r => ({
+        pool_id: pool.id,
+        toko_id: r.toko_id,
+        stok_barang_id: previewProduct.id,
+        jumlah: r.jumlah,
+        persentase: r.persentase,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error: errIns } = await supabase.from("shopee_stok_distribusi").insert(rows);
+      if (errIns) throw new Error(errIns.message);
+
+      showToast(`✓ Manual distribusi ${previewProduct.nama_produk}: ${totalPool} ke ${previewRows.length} toko`);
+      setPreviewRows(null);
+      setPreviewProduct(null);
       setSelectedStokId("");
-      setAnggaranInput("");
       await fetchAll();
     } catch (err: any) {
       showToast("Gagal: " + err.message, "error");
@@ -171,38 +270,143 @@ export default function ShopeeStokTab({ C, isDark, showToast }: Props) {
 
       {/* ── Form set pool ── */}
       <div style={{ background: `${C.accent}06`, border: `1px solid ${C.accent}30`, borderRadius: 14, padding: 24, marginBottom: 24 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 16, letterSpacing: 1 }}>+ SET POOL & DISTRIBUSI</div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 12, alignItems: "end" }}>
-          <div>
-            <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>PRODUK *</div>
-            <select value={selectedStokId} onChange={e => setSelectedStokId(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-              <option value="">— Pilih produk —</option>
-              {stokOpts.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.nama_produk} {s.sku ? `(${s.sku})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>ANGGARAN STOK *</div>
-            <input
-              value={anggaranInput}
-              onChange={e => setAnggaranInput(formatIDR(e.target.value))}
-              placeholder="0"
-              style={inputStyle}
-            />
-          </div>
-          <button
-            onClick={handleDistribusi}
-            disabled={submitting}
-            style={{ padding: "9px 20px", background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: submitting ? 0.6 : 1, whiteSpace: "nowrap" }}>
-            {submitting ? "Memproses..." : "Distribusi Otomatis"}
-          </button>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 14, letterSpacing: 1 }}>
+          + SET POOL & DISTRIBUSI
         </div>
-        {!stokOpts.length && !loading && (
-          <div style={{ marginTop: 12, fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
-            Belum ada produk dengan SKU terisi — produk tanpa SKU tidak bisa di-sync ke Shopee.
+
+        {/* Mode toggle */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {(["otomatis", "manual"] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setPreviewRows(null); setPreviewProduct(null); }}
+              style={{
+                padding: "6px 14px",
+                background: mode === m ? `${C.accent}20` : "transparent",
+                border: `1.5px solid ${mode === m ? C.accent : C.border}`,
+                borderRadius: 20,
+                color: mode === m ? C.accent : C.muted,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: mode === m ? 700 : 500,
+                fontFamily: C.fontSans,
+              }}
+            >
+              {m === "otomatis" ? "🤖 Otomatis" : "✏️ Manual per Toko"}
+            </button>
+          ))}
+        </div>
+
+        {!previewRows ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: mode === "otomatis" ? "2fr 1fr auto" : "2fr auto", gap: 12, alignItems: "end" }}>
+              <div>
+                <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>PRODUK *</div>
+                <select value={selectedStokId} onChange={e => setSelectedStokId(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+                  <option value="">— Pilih produk —</option>
+                  {stokOpts.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.nama_produk} {s.sku ? `(${s.sku})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {mode === "otomatis" && (
+                <div>
+                  <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" }}>ANGGARAN STOK *</div>
+                  <input
+                    value={anggaranInput}
+                    onChange={e => setAnggaranInput(formatIDR(e.target.value))}
+                    placeholder="0"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+              <button
+                onClick={handleDistribusi}
+                disabled={submitting}
+                style={{ padding: "9px 20px", background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: C.fontMono, opacity: submitting ? 0.6 : 1, whiteSpace: "nowrap" }}>
+                {submitting ? "Memproses..." : mode === "otomatis" ? "Distribusi Otomatis" : "Input Manual →"}
+              </button>
+            </div>
+            {!stokOpts.length && !loading && (
+              <div style={{ marginTop: 12, fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>
+                Belum ada produk dengan SKU terisi — produk tanpa SKU tidak bisa di-sync ke Shopee.
+              </div>
+            )}
+          </>
+        ) : (
+          /* ── Manual edit form ── */
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 12 }}>
+              Input manual: {previewProduct?.nama_produk || "—"}
+            </div>
+
+            <div style={{
+              display: "grid", gridTemplateColumns: "1.5fr 1fr 0.8fr auto", gap: 10,
+              alignItems: "center", padding: "0 4px 12px", borderBottom: `1px solid ${C.border}`,
+              fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1,
+              textTransform: "uppercase",
+            }}>
+              <span>Toko</span>
+              <span>Stok</span>
+              <span>%</span>
+              <span />
+            </div>
+
+            {previewRows.map(r => (
+              <div key={r.toko_id} style={{
+                display: "grid", gridTemplateColumns: "1.5fr 1fr 0.8fr auto", gap: 10,
+                alignItems: "center", padding: "8px 4px", borderBottom: `1px solid ${C.border}33`,
+              }}>
+                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{r.toko_nama}</div>
+                <input
+                  type="number"
+                  min={0}
+                  value={r.jumlah || ""}
+                  onChange={e => updatePreviewRow(r.toko_id, parseInt(e.target.value) || 0)}
+                  placeholder="0"
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
+                  {r.persentase.toFixed(1)}%
+                </div>
+              </div>
+            ))}
+
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.accent, fontFamily: C.fontMono }}>
+                Total: {previewRows.reduce((a, r) => a + r.jumlah, 0).toLocaleString("id-ID")}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => { setPreviewRows(null); setPreviewProduct(null); setSelectedStokId(""); }}
+                  style={{ padding: "8px 14px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 12 }}
+                >Batal</button>
+                <button
+                  onClick={confirmManual}
+                  disabled={submitting || previewRows.reduce((a, r) => a + r.jumlah, 0) === 0}
+                  style={{
+                    padding: "8px 18px",
+                    background: previewRows.reduce((a, r) => a + r.jumlah, 0) > 0
+                      ? `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`
+                      : C.border,
+                    border: "none",
+                    color: "#fff",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    opacity: submitting || previewRows.reduce((a, r) => a + r.jumlah, 0) === 0 ? 0.5 : 1,
+                  }}
+                >
+                  ✓ Simpan Distribusi
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

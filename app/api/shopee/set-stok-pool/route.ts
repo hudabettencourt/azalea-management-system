@@ -39,17 +39,27 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Histori penjualan 30 hari per toko untuk produk ini
+    // Fetch terpisah: detail → penjualan → toko_id (cara yang sama seperti halaman stok)
     const sinceDate = new Date(Date.now() - HISTORY_WINDOW_DAYS * 24 * 3600 * 1000)
       .toLocaleDateString("sv", { timeZone: "Asia/Jakarta" });
     const { data: histori } = await supabase
       .from("detail_penjualan_online")
-      .select("qty, penjualan_online_id, penjualan_online!inner(toko_id)")
+      .select("qty, penjualan_online_id")
       .eq("stok_barang_id", stok_barang_id)
       .gte("tanggal_pesanan", sinceDate);
 
+    const { data: penjualanData } = await supabase
+      .from("penjualan_online")
+      .select("id, toko_id")
+      .in("id", (histori || []).map((r: any) => r.penjualan_online_id));
+
+    const penjualanMap = new Map<number, number>(
+      (penjualanData || []).map((p: any) => [p.id, p.toko_id]),
+    );
+
     const salesByToko = new Map<number, number>();
     (histori || []).forEach((row: any) => {
-      const tokoId = row.penjualan_online?.toko_id;
+      const tokoId = penjualanMap.get(row.penjualan_online_id);
       if (!tokoId) return;
       salesByToko.set(tokoId, (salesByToko.get(tokoId) || 0) + (row.qty || 0));
     });

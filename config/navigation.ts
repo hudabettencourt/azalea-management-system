@@ -70,6 +70,12 @@ export const NAVIGATION: NavModule[] = [
         ],
       },
       {
+        label: "Stok",
+        items: [
+          { label: "Stok Shopee",      href: "/shopee/stok" },
+        ],
+      },
+      {
         label: "Packing & WMS",
         items: [
           { label: "Rekap Packing",    href: "/shopee/packing" },

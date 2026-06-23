@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+
+function safeRedirectPath(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  return raw;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,13 +16,20 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [redirectTo, setRedirectTo] = useState("/dashboard");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setRedirectTo(safeRedirectPath(params.get("redirect")));
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) { setError("Email dan password harus diisi!"); return; }
     setLoading(true); setError("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError("Email atau password salah. Coba lagi."); setLoading(false); return; }
-    router.push("/dashboard");
+    router.push(redirectTo);
+    router.refresh();
   };
 
   return (

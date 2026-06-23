@@ -32,11 +32,12 @@ export default function ScanBungkusPage() {
       const res = await fetch("/api/packing/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ code: rawValue }),
       });
       const json = await res.json().catch(() => ({}));
       if (res.status === 401) {
-        setNotFound("Error: Sesi habis — login ulang");
+        window.location.href = `/login?redirect=${encodeURIComponent("/shopee/packing/scan-bungkus")}`;
         return;
       }
       if (!res.ok) {
@@ -98,6 +99,7 @@ export default function ScanBungkusPage() {
       const res = await fetch("/api/packing/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({
           no_pesanan: order.no_pesanan,
           no_resi: order.no_resi,
@@ -106,7 +108,10 @@ export default function ScanBungkusPage() {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (res.status === 401) throw new Error("Sesi habis — login ulang");
+      if (res.status === 401) {
+        window.location.href = `/login?redirect=${encodeURIComponent("/shopee/packing/scan-bungkus")}`;
+        return;
+      }
       if (!res.ok) throw new Error(json.error || "Gagal simpan");
 
       setPackedCount(c => c + 1);

@@ -17,8 +17,10 @@ export default function ScanBungkusPage() {
   const C = isDark ? DARK : LIGHT;
 
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [order, setOrder] = useState<PackingOrderLookup | null>(null);
   const [notFound, setNotFound] = useState<string | null>(null);
+  const [lastCode, setLastCode] = useState<string>("");
   const [checked, setChecked] = useState<CheckState>({});
   const [packedCount, setPackedCount] = useState(0);
   const [manualCode, setManualCode] = useState("");
@@ -28,6 +30,7 @@ export default function ScanBungkusPage() {
     setNotFound(null);
     setOrder(null);
     setChecked({});
+    setLastCode(rawValue);
     try {
       const res = await fetch("/api/packing/lookup", {
         method: "POST",
@@ -129,8 +132,39 @@ export default function ScanBungkusPage() {
   const scanAnother = () => {
     setOrder(null);
     setNotFound(null);
+    setLastCode("");
     setChecked({});
     startCamera();
+  };
+
+  /**
+   * Panggil sync-orders (semua toko) lalu coba lookup lagi.
+   * Tujuan: isi no_resi yang kosong di DB, supaya scan resi ketemu.
+   */
+  const syncAndRetry = async () => {
+    if (!lastCode) return;
+    setSyncing(true);
+    setNotFound(null);
+    try {
+      const syncRes = await fetch("/api/shopee/sync-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({}),
+      });
+      if (!syncRes.ok) {
+        const j = await syncRes.json().catch(() => ({}));
+        setNotFound(`Sync gagal: ${j.error || syncRes.status}`);
+        return;
+      }
+    } catch {
+      setNotFound("Sync gagal — periksa koneksi");
+      return;
+    } finally {
+      setSyncing(false);
+    }
+    // Coba lookup lagi setelah sync
+    await handleScannedCode(lastCode);
   };
 
   const submitManual = async () => {
@@ -246,18 +280,46 @@ export default function ScanBungkusPage() {
           </div>
         )}
 
-        {notFound && (
+        {(notFound || syncing) && (
           <div style={{
             background: C.card, border: `1px solid ${C.border}`,
             borderRadius: 14, padding: 18, boxShadow: C.shadow,
           }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: C.red }}>Tidak ditemukan</div>
-            <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>{notFound}</div>
-            <button onClick={scanAnother} style={{
-              marginTop: 14, width: "100%", padding: "12px",
-              background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
-              border: "none", color: "#fff", borderRadius: 10, fontWeight: 700,
-            }}>📷 Scan Lagi</button>
+            {syncing ? (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.accent }}>Sinkronisasi Shopee...</div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                  Mengambil data resi terbaru dari Shopee, harap tunggu (±10–20 detik).
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.red }}>Tidak ditemukan</div>
+                <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, marginTop: 4 }}>
+                  {notFound}
+                </div>
+                {lastCode && (
+                  <div style={{ marginTop: 12, padding: "10px 12px", background: C.yellowDim, borderRadius: 8, fontSize: 12, color: C.yellow }}>
+                    Nomor resi mungkin belum tersinkronisasi ke database.
+                    Klik <b>Sinkronisasi</b> untuk ambil data terbaru dari Shopee, lalu cari ulang otomatis.
+                  </div>
+                )}
+                <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {lastCode && (
+                    <button onClick={syncAndRetry} disabled={syncing} style={{
+                      width: "100%", padding: "12px",
+                      background: `linear-gradient(135deg, #d97706, #f59e0b)`,
+                      border: "none", color: "#fff", borderRadius: 10, fontWeight: 700, fontSize: 13,
+                    }}>🔄 Sinkronisasi &amp; Cari Ulang</button>
+                  )}
+                  <button onClick={scanAnother} style={{
+                    width: "100%", padding: "12px",
+                    background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
+                    border: "none", color: "#fff", borderRadius: 10, fontWeight: 700,
+                  }}>📷 Scan Lagi</button>
+                </div>
+              </>
+            )}
           </div>
         )}
 

@@ -5,9 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
-import { lookupOrderByBarcode } from "@/lib/packing/lookup-order";
 import { useBarcodeScanner } from "@/lib/packing/use-barcode-scanner";
 import type { PackingOrderLookup } from "@/lib/packing/types";
 import { tanggalJamFmt } from "@/lib/format";
@@ -23,14 +21,7 @@ export default function ScanBungkusPage() {
   const [notFound, setNotFound] = useState<string | null>(null);
   const [checked, setChecked] = useState<CheckState>({});
   const [packedCount, setPackedCount] = useState(0);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? null);
-    });
-  }, []);
 
   const handleScannedCode = useCallback(async (rawValue: string) => {
     setBusy(true);
@@ -38,11 +29,21 @@ export default function ScanBungkusPage() {
     setOrder(null);
     setChecked({});
     try {
-      const result = await lookupOrderByBarcode(supabase, rawValue);
-      if (!result) {
-        setNotFound(rawValue);
+      const res = await fetch("/api/packing/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: rawValue }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        setNotFound("Error: Sesi habis — login ulang");
         return;
       }
+      if (!res.ok) {
+        setNotFound(res.status === 404 ? rawValue : (json.error || "Gagal lookup"));
+        return;
+      }
+      const result = json.order as PackingOrderLookup;
       setOrder(result);
       const init: CheckState = {};
       for (const item of result.items) init[item.detail_id] = false;
@@ -94,20 +95,19 @@ export default function ScanBungkusPage() {
         qty: i.qty,
         checked: true,
       }));
-      const now = new Date().toISOString();
-      const { error } = await supabase.from("shopee_packing_log").upsert(
-        {
+      const res = await fetch("/api/packing/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           no_pesanan: order.no_pesanan,
           no_resi: order.no_resi,
-          packed_at: now,
-          packed_by: userEmail,
           source: "web",
           items,
-          updated_at: now,
-        },
-        { onConflict: "no_pesanan" },
-      );
-      if (error) throw new Error(error.message);
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 401) throw new Error("Sesi habis — login ulang");
+      if (!res.ok) throw new Error(json.error || "Gagal simpan");
 
       setPackedCount(c => c + 1);
       setOrder(null);

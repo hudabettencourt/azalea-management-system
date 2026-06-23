@@ -22,6 +22,7 @@ const ORDER_STATUSES = [
 ] as const;
 
 const NON_STOCK_STATUSES = new Set(["CANCELLED", "IN_CANCEL", "UNPAID"]);
+const RESI_FETCH_STATUSES = new Set(["READY_TO_SHIP", "PROCESSED", "SHIPPED", "LABEL_PRINTED"]);
 const SYNC_WINDOW_DAYS = 7;
 const DETAIL_BATCH_SIZE = 50;
 
@@ -43,7 +44,7 @@ type ShopeeOrder = {
   buyer_username?: string;
   shipping_carrier?: string;
   recipient_address?: { full_address?: string };
-  package_list?: { tracking_number?: string }[];
+  package_list?: { tracking_number?: string; package_number?: string }[];
   item_list?: ShopeeOrderItem[];
 };
 
@@ -110,6 +111,38 @@ async function fetchOrderDetails(shopId: number, accessToken: string, orderSns: 
   return orders;
 }
 
+async function resolveTrackingNumber(
+  shopId: number,
+  accessToken: string,
+  order: ShopeeOrder,
+): Promise<string | null> {
+  const fromPkg = order.package_list?.[0]?.tracking_number || null;
+  if (fromPkg) return fromPkg;
+  if (!RESI_FETCH_STATUSES.has(order.order_status)) return null;
+
+  const params: Record<string, string> = { order_sn: order.order_sn };
+  const pkgNum = order.package_list?.[0]?.package_number;
+  if (pkgNum) params.package_number = pkgNum;
+
+  const tnRes = await shopeeApi("/api/v2/logistics/get_tracking_number", shopId, accessToken, params);
+  if (tnRes.error || !tnRes.response?.tracking_number) return null;
+  return tnRes.response.tracking_number as string;
+}
+
+async function enrichOrdersTracking(
+  shopId: number,
+  accessToken: string,
+  orders: ShopeeOrder[],
+): Promise<void> {
+  for (const order of orders) {
+    if (order.package_list?.[0]?.tracking_number) continue;
+    const tracking = await resolveTrackingNumber(shopId, accessToken, order);
+    if (tracking) {
+      order.package_list = [{ ...(order.package_list?.[0] || {}), tracking_number: tracking }];
+    }
+  }
+}
+
 async function syncToko(toko: any) {
   const accessToken = await getValidToken(toko);
   const timeTo = Math.floor(Date.now() / 1000);
@@ -123,6 +156,7 @@ async function syncToko(toko: any) {
   if (seen.size === 0) return { toko: toko.nama, status: "ok", new: 0, updated: 0, skipped_sku: 0 };
 
   const orders = await fetchOrderDetails(toko.shopee_shop_id, accessToken, Array.from(seen));
+  await enrichOrdersTracking(toko.shopee_shop_id, accessToken, orders);
 
   const { data: stokList } = await supabase.from("stok_barang").select("id, sku, nama_produk, jumlah_stok");
   const skuMap = new Map<string, { id: number; jumlah_stok: number; nama_produk: string }>();
@@ -180,19 +214,23 @@ async function syncToko(toko: any) {
       const existing = existingMap.get(dedupKey);
 
       if (existing) {
-        // Update status + field yang mungkin kosong (no_resi, nama_pembeli, jasa_kirim)
+        const resiChanged = !!(noResi && existing.no_resi !== noResi);
         const needsUpdate =
           existing.status_shopee !== status ||
+          resiChanged ||
           (!existing.no_resi && noResi) ||
           (!existing.nama_pembeli && namaPembeli) ||
           (!existing.jasa_kirim && jasaKirim);
         if (needsUpdate) {
           await supabase.from("detail_penjualan_online").update({
             status_shopee: status,
-            ...(noResi && !existing.no_resi ? { no_resi: noResi } : {}),
+            ...(noResi && (resiChanged || !existing.no_resi) ? { no_resi: noResi } : {}),
             ...(namaPembeli && !existing.nama_pembeli ? { nama_pembeli: namaPembeli } : {}),
             ...(jasaKirim && !existing.jasa_kirim ? { jasa_kirim: jasaKirim } : {}),
           }).eq("id", existing.id);
+          if (noResi && (resiChanged || !existing.no_resi)) {
+            existing.no_resi = noResi;
+          }
           updatedCount++;
         }
         continue;

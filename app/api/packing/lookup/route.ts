@@ -1,8 +1,9 @@
 // POST /api/packing/lookup — { code: string }
-// Lookup pesanan by no_resi atau no_pesanan (untuk web + AzaleaPacking Android)
+// Auth wajib. Lookup pesanan by no_resi atau no_pesanan.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireUser } from "@/lib/auth/require-user";
 import { lookupOrderByBarcode } from "@/lib/packing/lookup-order";
 
 const supabase = createClient(
@@ -11,6 +12,9 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json().catch(() => ({}));
     const code = String(body.code || "").trim();

@@ -1,8 +1,14 @@
 // Lookup pesanan Shopee by barcode (no_resi atau no_pesanan).
-// Dipakai API route + bisa di-reimplement di AzaleaPacking Kotlin.
+// Dipakai web scan-bungkus + API /api/packing/lookup (+ nanti AzaleaPacking).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PackingOrderLookup } from "./types";
+import {
+  longDigitSuffix,
+  resiLookupVariants,
+  resiMatchesVariant,
+  sanitizeScanCode,
+} from "./normalize-code";
 
 type DetailRow = {
   id: number;
@@ -20,45 +26,75 @@ type DetailRow = {
 const DETAIL_SELECT =
   "id, no_pesanan, no_resi, sku, qty, status_shopee, nama_pembeli, jasa_kirim, penjualan_online_id, stok_barang(nama_produk)";
 
+const MAX_SUFFIX_ROWS = 5;
+
 function productName(row: DetailRow): string {
   const sb = row.stok_barang;
   if (Array.isArray(sb)) return sb[0]?.nama_produk || row.sku;
   return sb?.nama_produk || row.sku;
 }
 
-async function fetchDetailsByResi(
+async function fetchByOrderSn(
   supabase: SupabaseClient,
-  code: string,
+  orderSn: string,
 ): Promise<DetailRow[]> {
   const { data, error } = await supabase
     .from("detail_penjualan_online")
     .select(DETAIL_SELECT)
-    .eq("no_resi", code);
+    .eq("no_pesanan", orderSn);
   if (error) throw new Error(error.message);
   return (data || []) as DetailRow[];
 }
 
-async function fetchDetailsByOrderSn(
+async function fetchByResiInList(
   supabase: SupabaseClient,
-  code: string,
+  variants: string[],
+  variantSet: Set<string>,
 ): Promise<DetailRow[]> {
   const { data, error } = await supabase
     .from("detail_penjualan_online")
     .select(DETAIL_SELECT)
-    .eq("no_pesanan", code);
+    .in("no_resi", variants);
   if (error) throw new Error(error.message);
-  return (data || []) as DetailRow[];
+  if (data?.length) return data as DetailRow[];
+
+  // Case-insensitive exact match (DB bisa beda kapitalisasi)
+  for (const v of variants) {
+    const { data: ilikeRows, error: ilikeErr } = await supabase
+      .from("detail_penjualan_online")
+      .select(DETAIL_SELECT)
+      .ilike("no_resi", v)
+      .limit(10);
+    if (ilikeErr) throw new Error(ilikeErr.message);
+    const matched = (ilikeRows || []).filter(r =>
+      resiMatchesVariant(r.no_resi, variantSet),
+    ) as DetailRow[];
+    if (matched.length) return matched;
+  }
+
+  return [];
 }
 
-export async function lookupOrderByBarcode(
+/** Fallback: suffix digit panjang — filter ketat di app, limit rows */
+async function fetchByResiSuffix(
   supabase: SupabaseClient,
-  rawCode: string,
+  suffix: string,
+  variantSet: Set<string>,
+): Promise<DetailRow[]> {
+  const { data, error } = await supabase
+    .from("detail_penjualan_online")
+    .select(DETAIL_SELECT)
+    .ilike("no_resi", `%${suffix}`)
+    .limit(MAX_SUFFIX_ROWS);
+  if (error) throw new Error(error.message);
+  const rows = (data || []) as DetailRow[];
+  return rows.filter(r => resiMatchesVariant(r.no_resi, variantSet));
+}
+
+async function buildLookup(
+  supabase: SupabaseClient,
+  rows: DetailRow[],
 ): Promise<PackingOrderLookup | null> {
-  const code = rawCode.trim();
-  if (!code) return null;
-
-  let rows = await fetchDetailsByResi(supabase, code);
-  if (rows.length === 0) rows = await fetchDetailsByOrderSn(supabase, code);
   if (rows.length === 0) return null;
 
   const first = rows[0];
@@ -79,11 +115,17 @@ export async function lookupOrderByBarcode(
     namaToko = toko?.nama || "—";
   }
 
-  const { data: packLog } = await supabase
-    .from("shopee_packing_log")
-    .select("packed_at, packed_by")
-    .eq("no_pesanan", first.no_pesanan)
-    .maybeSingle();
+  let packLog: { packed_at: string; packed_by: string | null } | null = null;
+  try {
+    const { data } = await supabase
+      .from("shopee_packing_log")
+      .select("packed_at, packed_by")
+      .eq("no_pesanan", first.no_pesanan)
+      .maybeSingle();
+    packLog = data;
+  } catch {
+    /* tabel belum migrate — abaikan */
+  }
 
   return {
     no_pesanan: first.no_pesanan,
@@ -103,4 +145,31 @@ export async function lookupOrderByBarcode(
     packed_at: packLog?.packed_at ?? null,
     packed_by: packLog?.packed_by ?? null,
   };
+}
+
+export async function lookupOrderByBarcode(
+  supabase: SupabaseClient,
+  rawCode: string,
+): Promise<PackingOrderLookup | null> {
+  const normalized = sanitizeScanCode(rawCode);
+  if (!normalized) return null;
+
+  // 1) Exact no_pesanan (Shopee order SN)
+  let rows = await fetchByOrderSn(supabase, normalized);
+  if (rows.length > 0) return buildLookup(supabase, rows);
+
+  // 2) Resi — variant prefix (SPXID / tanpa prefix)
+  const variants = resiLookupVariants(normalized);
+  const variantSet = new Set(variants);
+  rows = await fetchByResiInList(supabase, variants, variantSet);
+  if (rows.length > 0) return buildLookup(supabase, rows);
+
+  // 3) Suffix digit panjang (DB beda format, mis. tanpa SPXID)
+  const suffix = longDigitSuffix(normalized);
+  if (suffix) {
+    rows = await fetchByResiSuffix(supabase, suffix, variantSet);
+    if (rows.length > 0) return buildLookup(supabase, rows);
+  }
+
+  return null;
 }

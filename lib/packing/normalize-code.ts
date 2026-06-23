@@ -12,14 +12,20 @@ export function sanitizeScanCode(raw: string): string | null {
   return trimmed.toUpperCase();
 }
 
+/** Kode terlihat seperti resi/tracking (bukan order SN biasa) */
+export function looksLikeResiCode(normalized: string): boolean {
+  if (normalized.startsWith("SPX")) return true;
+  if (/^\d{12,}$/.test(normalized)) return true;
+  return false;
+}
+
 /** Variasi lookup resi — SPXID037... vs 037... di DB */
 export function resiLookupVariants(normalized: string): string[] {
   const out = new Set<string>([normalized]);
 
   if (normalized.startsWith("SPXID") && normalized.length > 5) {
     out.add(normalized.slice(5));
-  }
-  if (normalized.startsWith("SPX") && normalized.length > 3) {
+  } else if (normalized.startsWith("SPX") && normalized.length > 3) {
     out.add(normalized.slice(3));
   }
   if (/^\d{10,}$/.test(normalized)) {

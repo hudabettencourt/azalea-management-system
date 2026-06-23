@@ -195,7 +195,7 @@ export default function ScanBungkusPage() {
                   ? "BarcodeDetector tidak didukung"
                   : scanning
                     ? "Scan resi → cek isi → bungkus"
-                    : busy ? "Memuat pesanan..." : "Menyiapkan kamera..."}
+                    : busy ? "Mencari pesanan (bisa ±10 detik)..." : "Menyiapkan kamera..."}
               </div>
             </div>
 

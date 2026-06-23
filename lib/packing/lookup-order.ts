@@ -5,10 +5,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PackingOrderLookup } from "./types";
 import {
   longDigitSuffix,
+  looksLikeResiCode,
   resiLookupVariants,
   resiMatchesVariant,
   sanitizeScanCode,
 } from "./normalize-code";
+import {
+  backfillNoResi,
+  resolveOrderSnByTracking,
+} from "./resolve-resi-shopee";
+
+export type LookupOptions = {
+  /** Coba Shopee API kalau no_resi belum ada di DB (server-side saja) */
+  allowShopeeResolve?: boolean;
+};
 
 type DetailRow = {
   id: number;
@@ -91,6 +101,48 @@ async function fetchByResiSuffix(
   return rows.filter(r => resiMatchesVariant(r.no_resi, variantSet));
 }
 
+async function fetchByPackingLogResi(
+  supabase: SupabaseClient,
+  variants: string[],
+  variantSet: Set<string>,
+): Promise<DetailRow[]> {
+  for (const v of variants) {
+    try {
+      const { data: logRow } = await supabase
+        .from("shopee_packing_log")
+        .select("no_pesanan")
+        .ilike("no_resi", v)
+        .limit(1)
+        .maybeSingle();
+      if (logRow?.no_pesanan) {
+        return fetchByOrderSn(supabase, logRow.no_pesanan.trim().toUpperCase());
+      }
+    } catch {
+      /* tabel belum migrate */
+    }
+  }
+
+  try {
+    const suffix = longDigitSuffix(variants[0] || "");
+    if (suffix) {
+      const { data: logs } = await supabase
+        .from("shopee_packing_log")
+        .select("no_pesanan, no_resi")
+        .ilike("no_resi", `%${suffix}`)
+        .limit(5);
+      for (const log of logs || []) {
+        if (resiMatchesVariant(log.no_resi, variantSet)) {
+          return fetchByOrderSn(supabase, log.no_pesanan.trim().toUpperCase());
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return [];
+}
+
 async function buildLookup(
   supabase: SupabaseClient,
   rows: DetailRow[],
@@ -150,6 +202,7 @@ async function buildLookup(
 export async function lookupOrderByBarcode(
   supabase: SupabaseClient,
   rawCode: string,
+  options: LookupOptions = {},
 ): Promise<PackingOrderLookup | null> {
   const normalized = sanitizeScanCode(rawCode);
   if (!normalized) return null;
@@ -158,17 +211,35 @@ export async function lookupOrderByBarcode(
   let rows = await fetchByOrderSn(supabase, normalized);
   if (rows.length > 0) return buildLookup(supabase, rows);
 
-  // 2) Resi — variant prefix (SPXID / tanpa prefix)
   const variants = resiLookupVariants(normalized);
   const variantSet = new Set(variants);
+
+  // 2) Resi di detail_penjualan_online
   rows = await fetchByResiInList(supabase, variants, variantSet);
   if (rows.length > 0) return buildLookup(supabase, rows);
 
-  // 3) Suffix digit panjang (DB beda format, mis. tanpa SPXID)
+  // 3) Suffix digit panjang
   const suffix = longDigitSuffix(normalized);
   if (suffix) {
     rows = await fetchByResiSuffix(supabase, suffix, variantSet);
     if (rows.length > 0) return buildLookup(supabase, rows);
+  }
+
+  // 4) Log packing (pernah scan sebelumnya)
+  rows = await fetchByPackingLogResi(supabase, variants, variantSet);
+  if (rows.length > 0) return buildLookup(supabase, rows);
+
+  // 5) Shopee API — no_resi belum/kosong di DB
+  if (options.allowShopeeResolve && looksLikeResiCode(normalized)) {
+    const resolved = await resolveOrderSnByTracking(supabase, variantSet);
+    if (resolved) {
+      await backfillNoResi(supabase, resolved.orderSn, resolved.tracking);
+      rows = await fetchByOrderSn(supabase, resolved.orderSn);
+      if (!rows.length) {
+        rows = await fetchByOrderSn(supabase, resolved.orderSn.trim().toUpperCase());
+      }
+      if (rows.length > 0) return buildLookup(supabase, rows);
+    }
   }
 
   return null;

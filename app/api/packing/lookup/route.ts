@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "code wajib" }, { status: 400 });
     }
 
-    const order = await lookupOrderByBarcode(supabase, code);
+    const order = await lookupOrderByBarcode(supabase, code, { allowShopeeResolve: true });
     if (!order) {
       return NextResponse.json({ error: "Pesanan tidak ditemukan" }, { status: 404 });
     }

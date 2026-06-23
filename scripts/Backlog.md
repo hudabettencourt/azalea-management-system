@@ -24,7 +24,7 @@
 | 4 | Draft | Produk |
 | 5 | Naikkan Produk | Produk |
 | 6 | Flash Sale | Promosi |
-| 7 | Scan & Bungkus | Packing |
+| 7 | Scan & Bungkus | Packing | ✅ Web mobile `/shopee/packing/scan-bungkus` — app Android nanti |
 | 8 | Scan & Kirim | Packing |
 
 ~~Stok Shopee~~ → **Selesai** di `/shopee/stok` + sidebar navigation
@@ -117,6 +117,7 @@
 | 7 | **Bulk print resi batch pagi/siang** | 2026-06-19 | `/shopee/pesanan/print-resi` — batch, per toko, chunk, EPOS 100×150mm |
 | 8 | **Counter belum dicetak + nav status filter** | 2026-06-19 | Header pesanan + `?status=to_print` dll. |
 | 9 | **Stok Shopee — manual input + fix histori** | 2026-06-20 | Toggle otomatis/manual, query histori fix, `/shopee/stok` + sidebar nav |
+| 10 | **Scan & Bungkus (web mobile)** | 2026-06-21 | `/shopee/packing/scan-bungkus` + `shopee_packing_log` + API untuk Android |
 
 ---
 

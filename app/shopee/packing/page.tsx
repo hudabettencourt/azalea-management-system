@@ -5,6 +5,7 @@
 // Menggantikan hitung manual di kertas setiap hari
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
@@ -190,12 +191,24 @@ export default function RekapPackingPage() {
       {/* ── SCREEN UI ── */}
       <div style={{ padding: "24px 28px", animation: "fadeUp 0.3s ease" }}>
 
-        {/* Header */}
-        <div className="no-print" style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Rekap Packing Harian</h1>
-          <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
-            Agregasi SKU dari pesanan yang sudah diproses (PROCESSED)
-          </p>
+        <div className="no-print" style={{ marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Rekap Packing Harian</h1>
+            <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
+              Agregasi SKU dari pesanan yang sudah diproses (PROCESSED)
+            </p>
+          </div>
+          <Link href="/shopee/packing/scan-bungkus" style={{
+            padding: "10px 16px",
+            background: `${C.green}15`,
+            border: `1.5px solid ${C.green}`,
+            color: C.green,
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 800,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}>📷 Scan &amp; Bungkus</Link>
         </div>
 
         {/* Filter */}

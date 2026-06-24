@@ -4,7 +4,6 @@
 // Uang di Jalan — pesanan SHIPPED + TO_CONFIRM_RECEIVE yang belum cair
 
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { rupiah, rupiahShort } from "@/lib/format";
@@ -53,6 +52,7 @@ export default function UangDiJalanPage() {
   const [selectedToko, setSelectedToko] = useState<"semua" | number>("semua");
   const [selectedStatus, setSelectedStatus] = useState<"semua" | "SHIPPED" | "TO_CONFIRM_RECEIVE">("semua");
   const [lastUpdate, setLastUpdate] = useState<string>("");
+  const [excludedMasuk, setExcludedMasuk] = useState(0);
 
   const inputStyle: React.CSSProperties = {
     padding: "8px 12px",
@@ -66,66 +66,15 @@ export default function UangDiJalanPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: tokoData } = await supabase
-        .from("toko_online")
-        .select("id, nama")
-        .eq("platform", "Shopee")
-        .eq("aktif", true)
-        .not("shopee_access_token", "is", null)
-        .order("id");
-      setTokoList(tokoData || []);
-      const tokoMap = new Map((tokoData || []).map((t: any) => [t.id, t.nama]));
+      const res = await fetch("/api/shopee/uang-di-jalan", { credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const data = await res.json();
 
-      const { data: penjualanData } = await supabase.from("penjualan_online").select("id, toko_id");
-      const penjualanMap = new Map((penjualanData || []).map((p: any) => [p.id, p.toko_id]));
-
-      const { data: sudahMasuk } = await supabase
-        .from("rekap_saldo_detail")
-        .select("no_pesanan")
-        .eq("status_saldo", "Masuk");
-      const sudahMasukSet = new Set(
-        (sudahMasuk || []).map((r: any) => r.no_pesanan),
-      );
-
-      const { data: detailData } = await supabase
-        .from("detail_penjualan_online")
-        .select("no_pesanan, sku, qty, total_pembayaran, status_shopee, tanggal_pesanan, jasa_kirim, nama_pembeli, penjualan_online_id, stok_barang(nama_produk)")
-        .in("status_shopee", ["SHIPPED", "TO_CONFIRM_RECEIVE"])
-        .order("tanggal_pesanan", { ascending: false });
-
-      const mapped: PesananDijalan[] = (detailData || [])
-        .filter((d: any) => !sudahMasukSet.has(d.no_pesanan))
-        .map((d: any) => {
-        const tokoId = penjualanMap.get(d.penjualan_online_id) || 0;
-        return {
-          no_pesanan: d.no_pesanan,
-          nama_produk: d.stok_barang?.nama_produk || d.sku,
-          sku: d.sku,
-          qty: d.qty,
-          total_pembayaran: d.total_pembayaran,
-          status_shopee: d.status_shopee,
-          tanggal_pesanan: d.tanggal_pesanan,
-          jasa_kirim: d.jasa_kirim,
-          nama_pembeli: d.nama_pembeli,
-          toko_id: tokoId,
-          nama_toko: tokoMap.get(tokoId) as string || "-",
-        };
-      });
-
-      setPesananList(mapped);
-
-      const ringkasanMap = new Map<number, RingkasanToko>();
-      for (const p of mapped) {
-        if (!ringkasanMap.has(p.toko_id)) {
-          ringkasanMap.set(p.toko_id, { toko_id: p.toko_id, nama_toko: p.nama_toko, jumlah_pesanan: 0, total_nilai: 0, shipped: 0, to_confirm: 0 });
-        }
-        const r = ringkasanMap.get(p.toko_id)!;
-        r.jumlah_pesanan++;
-        r.total_nilai += p.total_pembayaran;
-        if (p.status_shopee === "SHIPPED") r.shipped++;
-        if (p.status_shopee === "TO_CONFIRM_RECEIVE") r.to_confirm++;
-      }
-      setRingkasan(Array.from(ringkasanMap.values()).sort((a, b) => b.total_nilai - a.total_nilai));
+      const rows: PesananDijalan[] = data.rows || [];
+      setPesananList(rows);
+      setRingkasan(data.ringkasan || []);
+      setExcludedMasuk(data.stats?.excluded_masuk ?? 0);
+      setTokoList(data.tokoList || []);
       setLastUpdate(new Date().toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta" }));
     } finally {
       setLoading(false);
@@ -157,6 +106,9 @@ export default function UangDiJalanPage() {
             <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Uang di Jalan</h1>
             <p style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono, margin: "4px 0 0" }}>
               Pesanan dikirim yang belum cair ke saldo · Update: {lastUpdate || "—"}
+              {excludedMasuk > 0 && (
+                <> · <span style={{ color: C.green }}>{excludedMasuk} baris disembunyikan (sudah masuk rekap)</span></>
+              )}
             </p>
           </div>
           <button onClick={fetchData} disabled={loading} style={{ padding: "8px 18px", background: `${C.accent}15`, border: `1.5px solid ${C.accent}`, color: C.accent, borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.7 : 1 }}>

@@ -79,13 +79,23 @@ export default function UangDiJalanPage() {
       const { data: penjualanData } = await supabase.from("penjualan_online").select("id, toko_id");
       const penjualanMap = new Map((penjualanData || []).map((p: any) => [p.id, p.toko_id]));
 
+      const { data: sudahMasuk } = await supabase
+        .from("rekap_saldo_detail")
+        .select("no_pesanan")
+        .eq("status_saldo", "Masuk");
+      const sudahMasukSet = new Set(
+        (sudahMasuk || []).map((r: any) => r.no_pesanan),
+      );
+
       const { data: detailData } = await supabase
         .from("detail_penjualan_online")
         .select("no_pesanan, sku, qty, total_pembayaran, status_shopee, tanggal_pesanan, jasa_kirim, nama_pembeli, penjualan_online_id, stok_barang(nama_produk)")
         .in("status_shopee", ["SHIPPED", "TO_CONFIRM_RECEIVE"])
         .order("tanggal_pesanan", { ascending: false });
 
-      const mapped: PesananDijalan[] = (detailData || []).map((d: any) => {
+      const mapped: PesananDijalan[] = (detailData || [])
+        .filter((d: any) => !sudahMasukSet.has(d.no_pesanan))
+        .map((d: any) => {
         const tokoId = penjualanMap.get(d.penjualan_online_id) || 0;
         return {
           no_pesanan: d.no_pesanan,

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
+import { useTheme, LIGHT, DARK } from "@/context/ThemeContext";
 import { rupiah, tanggalJamFmt } from "@/lib/format";
 
 // ── TYPES ──
@@ -32,20 +33,13 @@ const formatIDR = (val: string) => val.replace(/\D/g, "").replace(/\B(?=(\d{3})+
 const toAngka = (str: string) => parseInt(str.replace(/\./g, "")) || 0;
 const PAGE_SIZE = 10;
 
-const C = {
-  bg: "#100c16", card: "#1a1425", border: "#2a1f3d",
-  text: "#e2d9f3", textMid: "#c0aed4", muted: "#7c6d8a", dim: "#3d3050",
-  accent: "#a78bfa", accentDim: "#a78bfa20",
-  success: "#34d399", danger: "#f87171", blue: "#60a5fa",
-  yellow: "#fbbf24", orange: "#fb923c",
-  fontDisplay: "'DM Serif Display', serif",
-  fontMono: "'DM Mono', monospace",
-  fontSans: "'DM Sans', sans-serif",
-};
-
 const emptyOutput = (): OutputItem => ({ stok_barang_id: "", qty: "", kemasan: [] });
 
 export default function ProduksiPage() {
+  const { isDark } = useTheme();
+  const C = isDark ? DARK : LIGHT;
+  const rowBg = isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)";
+
   const [bahan, setBahan] = useState<BahanBaku[]>([]);
   const [stokBarang, setStokBarang] = useState<StokBarang[]>([]);
   const [loading, setLoading] = useState(true);
@@ -264,16 +258,51 @@ export default function ProduksiPage() {
   const totalPages = Math.ceil(riwayatFiltered.length / PAGE_SIZE);
   const riwayatPage = riwayatFiltered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const inputS: React.CSSProperties = { width: "100%", padding: "9px 12px", background: "#0f0b1a", border: `1.5px solid ${C.border}`, borderRadius: "8px", color: C.text, fontFamily: C.fontSans, fontSize: "13px", boxSizing: "border-box", outline: "none" };
-  const tabBtn = (active: boolean, color: string): React.CSSProperties => ({ flex: 1, padding: "10px 8px", borderRadius: "8px", border: `1px solid ${active ? color + "60" : C.border}`, background: active ? color + "20" : "transparent", color: active ? color : C.muted, fontWeight: 600, cursor: "pointer", fontSize: "13px", fontFamily: C.fontSans, transition: "all 0.15s" });
-  const Lbl = ({ children }: { children: React.ReactNode }) => <div style={{ fontSize: "10px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: "5px", textTransform: "uppercase" as const }}>{children}</div>;
+  const inputS: React.CSSProperties = {
+    width: "100%", padding: "9px 12px",
+    background: isDark ? "rgba(255,255,255,0.05)" : "#f8fffe",
+    border: `1.5px solid ${C.border}`, borderRadius: 10,
+    color: C.text, fontFamily: C.fontSans, fontSize: 13,
+    outline: "none", boxSizing: "border-box",
+  };
+
+  const tabBtn = (active: boolean): React.CSSProperties => ({
+    padding: "10px 18px", borderRadius: 10, border: "none", cursor: "pointer",
+    fontWeight: 700, fontSize: 13, fontFamily: C.fontSans, transition: "all 0.15s",
+    background: active
+      ? `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`
+      : (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
+    color: active ? "#fff" : C.muted,
+  });
+
+  const btnAdd = (color: string): React.CSSProperties => ({
+    background: `${color}15`, border: `1px solid ${color}40`, color,
+    padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700,
+  });
+
+  const btnRemove = (disabled: boolean): React.CSSProperties => ({
+    background: disabled ? "transparent" : `${C.red}15`,
+    border: `1px solid ${disabled ? C.dim : `${C.red}40`}`,
+    color: disabled ? C.dim : C.red,
+    padding: 8, borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer", fontSize: 14,
+  });
+
+  const Lbl = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", marginBottom: 5, textTransform: "uppercase" as const }}>
+      {children}
+    </div>
+  );
+
+  const sectionTitle = (icon: string, title: string) => (
+    <div style={{ fontSize: 13, fontWeight: 800, color: C.text, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+      <span>{icon}</span> {title}
+    </div>
+  );
 
   if (loading) return (
     <AppShell>
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
-          <div style={{ fontSize: 28, marginBottom: 12 }}>◈</div>Memuat data produksi...
-        </div>
+      <div style={{ padding: 48, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
+        Memuat data produksi...
       </div>
     </AppShell>
   );
@@ -281,46 +310,59 @@ export default function ProduksiPage() {
   return (
     <AppShell>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-        input:focus, select:focus, textarea:focus { border-color: #a78bfa80 !important; outline: none; }
-        input::placeholder, textarea::placeholder { color: #3d3050 !important; }
-        select option { background: #1a1020; color: #e2d9f3; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #2a1f3d; border-radius: 2px; }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .prod-row:hover { background: ${isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)"} !important; }
       `}</style>
 
       {toast && (
-        <div style={{ position: "fixed", top: 24, right: 24, zIndex: 9999, background: "#1a1020", border: `1px solid ${toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue}44`, color: toast.type === "success" ? C.success : toast.type === "error" ? C.danger : C.blue, padding: "14px 18px", borderRadius: "10px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", display: "flex", alignItems: "center", gap: 10, fontFamily: C.fontMono, fontWeight: 600, fontSize: 13, maxWidth: 400 }}>
-          <span style={{ flex: 1, whiteSpace: "pre-line" }}>{toast.msg}</span>
-          <button onClick={() => setToast(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 16, opacity: 0.6 }}>×</button>
+        <div style={{
+          position: "fixed", top: 24, right: 24, zIndex: 9999,
+          background: toast.type === "success" ? C.accent : toast.type === "error" ? C.red : C.blue,
+          color: "#fff", padding: "12px 20px", borderRadius: 12,
+          boxShadow: C.shadowMd, fontFamily: C.fontSans, fontWeight: 700, fontSize: 14,
+          maxWidth: 400, whiteSpace: "pre-line" as const,
+        }}>
+          {toast.msg}
         </div>
       )}
 
-      <div style={{ padding: "28px 24px", fontFamily: C.fontSans, background: C.bg, minHeight: "100vh", maxWidth: "1200px", margin: "0 auto" }}>
+      <div style={{ padding: "24px 28px", maxWidth: 1100, fontFamily: C.fontSans, animation: "fadeUp 0.3s ease" }}>
 
-        <div style={{ marginBottom: "28px" }}>
-          <h1 style={{ margin: 0, fontFamily: C.fontDisplay, fontSize: "26px", color: "#f0eaff", fontWeight: 400 }}>🏭 Produksi Batch</h1>
-          <p style={{ margin: "4px 0 0", fontSize: "12px", color: C.muted, fontFamily: C.fontMono }}>1 batch → multi varian output · HPP/kg dibagi rata ke semua output · Kemasan dihitung per unit</p>
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: C.text }}>Produksi Batch</h1>
+          <p style={{ margin: "6px 0 0", fontSize: 12, color: C.muted }}>
+            1 batch → multi varian output · HPP/kg dibagi rata · Kemasan per unit
+          </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "14px", marginBottom: "24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, marginBottom: 24 }}>
           {[
-            { label: "Total Produk", value: `${stokBarang.length} varian`, color: C.blue },
-            { label: "Bahan Aktif", value: `${bahan.length} item`, color: C.accent },
-            { label: "Batch Bulan Ini", value: `${riwayat.filter(r => new Date(r.created_at).getMonth() === new Date().getMonth()).length}`, color: C.success },
-            { label: "Total Batch", value: `${riwayat.length}`, color: C.yellow },
+            { label: "Total Produk", value: `${stokBarang.length} varian`, accent: C.blue, bg: C.cardBlue },
+            { label: "Bahan Aktif", value: `${bahan.length} item`, accent: C.teal, bg: C.cardTeal },
+            { label: "Batch Bulan Ini", value: `${riwayat.filter(r => new Date(r.created_at).getMonth() === new Date().getMonth()).length}`, accent: C.green, bg: C.cardGreen },
+            { label: "Total Batch", value: `${riwayat.length}`, accent: C.yellow, bg: C.cardYellow },
           ].map((s, i) => (
-            <div key={i} style={{ background: C.card, padding: "16px 20px", borderRadius: "14px", borderLeft: `4px solid ${s.color}` }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "6px" }}>{s.label}</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: "#f0eaff", fontFamily: C.fontDisplay }}>{s.value}</div>
+            <div key={i} style={{
+              background: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
+              padding: "16px 18px", boxShadow: C.shadow, position: "relative", overflow: "hidden",
+            }}>
+              <div style={{
+                position: "absolute", top: 0, right: 0, width: 60, height: 60,
+                background: `radial-gradient(circle at top right, ${s.accent}18, transparent 70%)`,
+              }} />
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
+                {s.label}
+              </div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{s.value}</div>
             </div>
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
-          <button onClick={() => setActiveTab("input")} style={tabBtn(activeTab === "input", C.accent)}>⚙️ Input Produksi</button>
-          <button onClick={() => setActiveTab("riwayat")} style={tabBtn(activeTab === "riwayat", C.blue)}>📋 Riwayat Batch ({riwayat.length})</button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" as const }}>
+          <button onClick={() => setActiveTab("input")} style={tabBtn(activeTab === "input")}>Input Produksi</button>
+          <button onClick={() => setActiveTab("riwayat")} style={tabBtn(activeTab === "riwayat")}>
+            Riwayat Batch ({riwayat.length})
+          </button>
         </div>
 
         {/* ══ TAB INPUT ══ */}
@@ -328,105 +370,109 @@ export default function ProduksiPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
             {/* INFO BATCH */}
-            <div style={{ background: C.card, padding: "20px 24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: "12px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono, marginBottom: 14, letterSpacing: 1 }}>📋 INFO BATCH</div>
+            <div style={{ background: C.card, padding: "20px 24px", borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+              {sectionTitle("📋", "Info Batch")}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                <div><Lbl>OPERATOR</Lbl><input type="text" value={operator} onChange={e => setOperator(e.target.value)} placeholder="Nama operator / penanggung jawab" style={inputS} /></div>
-                <div><Lbl>BIAYA GAS (Rp)</Lbl><input type="text" value={biayaGas} onChange={e => setBiayaGas(formatIDR(e.target.value))} placeholder="20.000" style={inputS} /></div>
+                <div><Lbl>Operator</Lbl><input type="text" value={operator} onChange={e => setOperator(e.target.value)} placeholder="Nama operator / penanggung jawab" style={inputS} /></div>
+                <div><Lbl>Biaya Gas (Rp)</Lbl><input type="text" value={biayaGas} onChange={e => setBiayaGas(formatIDR(e.target.value))} placeholder="20.000" style={inputS} /></div>
               </div>
-              <div style={{ background: "#0f0b1a", borderRadius: "10px", border: `1px solid ${C.border}`, padding: "14px 16px" }}>
-                <div style={{ fontSize: "10px", fontWeight: 700, color: C.yellow, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 12 }}>
-                  💰 GAJI PRODUKSI
-                  {(gajiOp + gajiPack + gajiBor) > 0 && <span style={{ color: C.success, marginLeft: 10, fontWeight: 400 }}>Total: {rupiah(gajiOp + gajiPack + gajiBor)}</span>}
+              <div style={{ background: rowBg, borderRadius: 12, border: `1px solid ${C.border}`, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.yellow, marginBottom: 12 }}>
+                  Gaji Produksi
+                  {(gajiOp + gajiPack + gajiBor) > 0 && <span style={{ color: C.green, marginLeft: 10, fontWeight: 600, fontFamily: C.fontMono }}>Total: {rupiah(gajiOp + gajiPack + gajiBor)}</span>}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                  <div><Lbl>GAJI OPERATOR (3 orang)</Lbl><input type="text" value={gajiOperator} onChange={e => setGajiOperator(formatIDR(e.target.value))} placeholder="0" style={inputS} />{gajiOp > 0 && <div style={{ fontSize: "10px", color: C.success, marginTop: 3, fontFamily: C.fontMono }}>{rupiah(gajiOp)}</div>}</div>
-                  <div><Lbl>GAJI PACKING</Lbl><input type="text" value={gajiPacking} onChange={e => setGajiPacking(formatIDR(e.target.value))} placeholder="0" style={inputS} />{gajiPack > 0 && <div style={{ fontSize: "10px", color: C.success, marginTop: 3, fontFamily: C.fontMono }}>{rupiah(gajiPack)}</div>}</div>
-                  <div><Lbl>GAJI BORONGAN PENCETAK</Lbl><input type="text" value={gajiBorongan} onChange={e => setGajiBorongan(formatIDR(e.target.value))} placeholder="0 (nanti dari timbangan)" style={{ ...inputS, opacity: 0.85 }} />{gajiBor > 0 && <div style={{ fontSize: "10px", color: C.success, marginTop: 3, fontFamily: C.fontMono }}>{rupiah(gajiBor)}</div>}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                  <div><Lbl>Gaji Operator (3 orang)</Lbl><input type="text" value={gajiOperator} onChange={e => setGajiOperator(formatIDR(e.target.value))} placeholder="0" style={inputS} />{gajiOp > 0 && <div style={{ fontSize: 10, color: C.green, marginTop: 3, fontFamily: C.fontMono }}>{rupiah(gajiOp)}</div>}</div>
+                  <div><Lbl>Gaji Packing</Lbl><input type="text" value={gajiPacking} onChange={e => setGajiPacking(formatIDR(e.target.value))} placeholder="0" style={inputS} />{gajiPack > 0 && <div style={{ fontSize: 10, color: C.green, marginTop: 3, fontFamily: C.fontMono }}>{rupiah(gajiPack)}</div>}</div>
+                  <div><Lbl>Gaji Borongan Pencetak</Lbl><input type="text" value={gajiBorongan} onChange={e => setGajiBorongan(formatIDR(e.target.value))} placeholder="0 (nanti dari timbangan)" style={inputS} />{gajiBor > 0 && <div style={{ fontSize: 10, color: C.green, marginTop: 3, fontFamily: C.fontMono }}>{rupiah(gajiBor)}</div>}</div>
                 </div>
               </div>
-              <div style={{ marginTop: 12 }}><Lbl>CATATAN</Lbl><input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Opsional" style={inputS} /></div>
+              <div style={{ marginTop: 12 }}><Lbl>Catatan</Lbl><input type="text" value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Opsional" style={inputS} /></div>
             </div>
 
             {/* BAHAN BAKU */}
-            <div style={{ background: C.card, padding: "20px 24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
+            <div style={{ background: C.card, padding: "20px 24px", borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div style={{ fontSize: "12px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono, letterSpacing: 1 }}>🥩 BAHAN BAKU DIPAKAI</div>
-                <button onClick={addBahan} style={{ background: C.success + "15", border: `1px solid ${C.success}40`, color: C.success, padding: "6px 14px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>+ Tambah Bahan</button>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>🥩</span> Bahan Baku Dipakai
+                </div>
+                <button onClick={addBahan} style={btnAdd(C.green)}>+ Tambah Bahan</button>
               </div>
               {bahanPakai.map((item, idx) => (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 44px", gap: 10, marginBottom: 10, padding: "12px", background: "#0f0b1a", borderRadius: "8px", border: `1px solid ${C.border}` }}>
-                  <select value={item.bahan_id} onChange={e => updateBahan(idx, "bahan_id", e.target.value)} style={{ ...inputS, background: C.card }}>
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 44px", gap: 10, marginBottom: 10, padding: 12, background: rowBg, borderRadius: 10, border: `1px solid ${C.border}` }}>
+                  <select value={item.bahan_id} onChange={e => updateBahan(idx, "bahan_id", e.target.value)} style={inputS}>
                     <option value="">— Pilih Bahan —</option>
                     {bahan.map(b => <option key={b.id} value={b.id}>{b.nama} · stok: {b.stok} {b.satuan}</option>)}
                   </select>
                   <input type="number" value={item.qty} onChange={e => updateBahan(idx, "qty", e.target.value)} placeholder={`Qty (${item.satuan || "satuan"})`} style={inputS} min="0" step="0.01" />
-                  <div style={{ display: "flex", alignItems: "center", fontSize: "12px", color: item.bahan_id && item.qty && parseFloat(item.qty) > item.stok_tersedia ? C.danger : C.muted, fontFamily: C.fontMono }}>
+                  <div style={{ display: "flex", alignItems: "center", fontSize: 12, color: item.bahan_id && item.qty && parseFloat(item.qty) > item.stok_tersedia ? C.red : C.muted, fontFamily: C.fontMono }}>
                     {item.bahan_id ? `stok: ${item.stok_tersedia} ${item.satuan}` : "—"}
                     {item.bahan_id && item.qty && parseFloat(item.qty) > item.stok_tersedia && <span style={{ marginLeft: 6 }}>⚠</span>}
                   </div>
-                  <button onClick={() => removeBahan(idx)} disabled={bahanPakai.length === 1} style={{ background: bahanPakai.length === 1 ? "transparent" : C.danger + "15", border: `1px solid ${bahanPakai.length === 1 ? C.dim : C.danger + "40"}`, color: bahanPakai.length === 1 ? C.dim : C.danger, padding: "8px", borderRadius: "6px", cursor: bahanPakai.length === 1 ? "not-allowed" : "pointer", fontSize: "14px" }}>×</button>
+                  <button onClick={() => removeBahan(idx)} disabled={bahanPakai.length === 1} style={btnRemove(bahanPakai.length === 1)}>×</button>
                 </div>
               ))}
-              {stokWarnings.length > 0 && <div style={{ background: C.danger + "10", border: `1px solid ${C.danger}40`, borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: C.danger }}>❌ Stok tidak cukup: {stokWarnings.join(", ")}</div>}
+              {stokWarnings.length > 0 && <div style={{ background: C.redDim, border: `1px solid ${C.red}40`, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: C.red }}>Stok tidak cukup: {stokWarnings.join(", ")}</div>}
             </div>
 
             {/* OUTPUT PRODUK */}
-            <div style={{ background: C.card, padding: "20px 24px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ background: C.card, padding: "20px 24px", borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: "12px", fontWeight: 700, color: C.accent, fontFamily: C.fontMono, letterSpacing: 1 }}>📦 OUTPUT VARIAN PRODUK</div>
-                  <div style={{ fontSize: "11px", color: C.muted, marginTop: 3 }}>Tambah semua varian yang dihasilkan dari batch ini</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>📦</span> Output Varian Produk
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Tambah semua varian yang dihasilkan dari batch ini</div>
                 </div>
-                <button onClick={addOutput} style={{ background: C.accent + "15", border: `1px solid ${C.accent}40`, color: C.accent, padding: "6px 14px", borderRadius: "6px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>+ Tambah Varian</button>
+                <button onClick={addOutput} style={btnAdd(C.accent)}>+ Tambah Varian</button>
               </div>
 
               {outputItems.map((o, oIdx) => {
                 const produk = stokBarang.find(s => s.id === parseInt(o.stok_barang_id));
                 const { hppAdonan, hppKemasan, hppPerUnit } = o.stok_barang_id && o.qty ? calcHppOutput(o) : { hppAdonan: 0, hppKemasan: 0, hppPerUnit: 0 };
                 return (
-                  <div key={oIdx} style={{ marginBottom: 16, background: "#0f0b1a", borderRadius: "10px", border: `1px solid ${C.border}`, overflow: "hidden" }}>
+                  <div key={oIdx} style={{ marginBottom: 16, background: rowBg, borderRadius: 12, border: `1px solid ${C.border}`, overflow: "hidden" }}>
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 44px", gap: 10, padding: "14px 16px", alignItems: "end" }}>
                       <div>
-                        <Lbl>PRODUK OUTPUT {oIdx + 1}</Lbl>
-                        <select value={o.stok_barang_id} onChange={e => updateOutputProduk(oIdx, e.target.value)} style={{ ...inputS, background: C.card }}>
+                        <Lbl>Produk Output {oIdx + 1}</Lbl>
+                        <select value={o.stok_barang_id} onChange={e => updateOutputProduk(oIdx, e.target.value)} style={inputS}>
                           <option value="">— Pilih Produk —</option>
                           {stokBarang.map(s => <option key={s.id} value={s.id}>{s.nama_produk} {s.sku ? `(${s.sku})` : ""} · {s.berat_kg ? `${s.berat_kg}kg` : "⚠ berat belum diset"} · stok: {s.jumlah_stok}</option>)}
                         </select>
-                        {produk && !produk.berat_kg && <div style={{ fontSize: "11px", color: C.danger, marginTop: 4, fontFamily: C.fontMono }}>⚠ Produk ini belum punya berat — set di Admin → Master Produk</div>}
+                        {produk && !produk.berat_kg && <div style={{ fontSize: 11, color: C.red, marginTop: 4, fontFamily: C.fontMono }}>⚠ Set berat di Admin → Master Produk</div>}
                       </div>
-                      <div><Lbl>QTY ({produk?.satuan || "unit"})</Lbl><input type="number" value={o.qty} onChange={e => updateOutputQty(oIdx, e.target.value)} placeholder="Jumlah" style={inputS} min="1" /></div>
-                      <button onClick={() => removeOutput(oIdx)} disabled={outputItems.length === 1} style={{ background: outputItems.length === 1 ? "transparent" : C.danger + "15", border: `1px solid ${outputItems.length === 1 ? C.dim : C.danger + "40"}`, color: outputItems.length === 1 ? C.dim : C.danger, padding: "8px", borderRadius: "6px", cursor: outputItems.length === 1 ? "not-allowed" : "pointer", fontSize: "14px", marginTop: 20 }}>×</button>
+                      <div><Lbl>Qty ({produk?.satuan || "unit"})</Lbl><input type="number" value={o.qty} onChange={e => updateOutputQty(oIdx, e.target.value)} placeholder="Jumlah" style={inputS} min="1" /></div>
+                      <button onClick={() => removeOutput(oIdx)} disabled={outputItems.length === 1} style={{ ...btnRemove(outputItems.length === 1), marginTop: 20 }}>×</button>
                     </div>
 
                     {o.stok_barang_id && o.qty && hppPerKg > 0 && (
-                      <div style={{ padding: "10px 16px", background: C.accent + "08", borderTop: `1px solid ${C.border}`, display: "flex", gap: 20, fontSize: "11px", fontFamily: C.fontMono }}>
+                      <div style={{ padding: "10px 16px", background: C.accentGlow, borderTop: `1px solid ${C.border}`, display: "flex", flexWrap: "wrap" as const, gap: 16, fontSize: 11, fontFamily: C.fontMono }}>
                         <span style={{ color: C.muted }}>HPP adonan: <strong style={{ color: C.textMid }}>{rupiah(Math.round(hppAdonan))}</strong></span>
                         <span style={{ color: C.muted }}>+kemasan: <strong style={{ color: C.orange }}>{rupiah(Math.round(hppKemasan))}</strong></span>
-                        <span style={{ color: C.muted }}>= HPP/{produk?.satuan || "unit"}: <strong style={{ color: C.accent, fontSize: "13px" }}>{rupiah(Math.round(hppPerUnit))}</strong></span>
-                        {o.qty && <span style={{ color: C.muted }}>× {o.qty} = <strong style={{ color: C.success }}>{rupiah(Math.round(hppPerUnit * parseFloat(o.qty)))}</strong></span>}
+                        <span style={{ color: C.muted }}>= HPP/{produk?.satuan || "unit"}: <strong style={{ color: C.accent, fontSize: 13 }}>{rupiah(Math.round(hppPerUnit))}</strong></span>
+                        {o.qty && <span style={{ color: C.muted }}>× {o.qty} = <strong style={{ color: C.green }}>{rupiah(Math.round(hppPerUnit * parseFloat(o.qty)))}</strong></span>}
                       </div>
                     )}
 
                     <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <div style={{ fontSize: "10px", fontWeight: 700, color: C.orange, fontFamily: C.fontMono, letterSpacing: 1 }}>
-                          🎁 KEMASAN {o.kemasan.length > 0 ? `(${o.kemasan.length} jenis)` : "— belum ada"}
-                          {o.stok_barang_id && o.kemasan.length === 0 && <span style={{ color: C.muted, fontWeight: 400, marginLeft: 6 }}>preset kosong, tambah manual jika perlu</span>}
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.orange }}>
+                          Kemasan {o.kemasan.length > 0 ? `(${o.kemasan.length} jenis)` : "— belum ada"}
+                          {o.stok_barang_id && o.kemasan.length === 0 && <span style={{ color: C.muted, fontWeight: 400, marginLeft: 6 }}>preset kosong</span>}
                         </div>
-                        <button onClick={() => addKemasan(oIdx)} style={{ background: C.orange + "15", border: `1px solid ${C.orange}40`, color: C.orange, padding: "4px 10px", borderRadius: "5px", cursor: "pointer", fontSize: "11px", fontWeight: 600 }}>+ Kemasan</button>
+                        <button onClick={() => addKemasan(oIdx)} style={btnAdd(C.orange)}>+ Kemasan</button>
                       </div>
                       {o.kemasan.map((k, kIdx) => (
                         <div key={kIdx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 44px", gap: 8, marginBottom: 8 }}>
-                          <select value={k.bahan_baku_id} onChange={e => updateKemasan(oIdx, kIdx, "bahan_baku_id", e.target.value)} style={{ ...inputS, fontSize: "12px", background: C.card }}>
+                          <select value={k.bahan_baku_id} onChange={e => updateKemasan(oIdx, kIdx, "bahan_baku_id", e.target.value)} style={{ ...inputS, fontSize: 12 }}>
                             <option value="">— Pilih Bahan Kemasan —</option>
                             {bahan.map(b => <option key={b.id} value={b.id}>{b.nama} ({b.satuan})</option>)}
                           </select>
                           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                            <input type="number" value={k.berat_gram} onChange={e => updateKemasan(oIdx, kIdx, "berat_gram", e.target.value)} placeholder="gram" min="0" step="0.1" style={{ ...inputS, fontSize: "12px" }} />
-                            <span style={{ fontSize: "11px", color: C.muted, whiteSpace: "nowrap", fontFamily: C.fontMono }}>gr</span>
+                            <input type="number" value={k.berat_gram} onChange={e => updateKemasan(oIdx, kIdx, "berat_gram", e.target.value)} placeholder="gram" min="0" step="0.1" style={{ ...inputS, fontSize: 12 }} />
+                            <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap", fontFamily: C.fontMono }}>gr</span>
                           </div>
-                          <button onClick={() => removeKemasan(oIdx, kIdx)} style={{ background: C.danger + "15", border: `1px solid ${C.danger}40`, color: C.danger, padding: "8px", borderRadius: "6px", cursor: "pointer", fontSize: "14px" }}>×</button>
+                          <button onClick={() => removeKemasan(oIdx, kIdx)} style={btnRemove(false)}>×</button>
                         </div>
                       ))}
                     </div>
@@ -437,8 +483,8 @@ export default function ProduksiPage() {
 
             {/* PREVIEW TOTAL */}
             {validBahan.length > 0 && validOutput.length > 0 && totalKgOutput > 0 && (
-              <div style={{ background: C.accentDim, border: `1px solid ${C.accent}40`, borderRadius: "12px", padding: "18px 20px" }}>
-                <div style={{ fontSize: "12px", color: C.textMid, marginBottom: 12, fontWeight: 600 }}>📊 Ringkasan Batch</div>
+              <div style={{ background: C.accentGlow, border: `1px solid ${C.accent}30`, borderRadius: 14, padding: "18px 20px" }}>
+                <div style={{ fontSize: 13, color: C.textMid, marginBottom: 12, fontWeight: 700 }}>Ringkasan Batch</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
                   {[
                     { label: "HPP Bahan", val: rupiah(Math.round(hppBahan)), color: C.textMid },
@@ -475,33 +521,60 @@ export default function ProduksiPage() {
             )}
 
             {totalKgOutput === 0 && validOutput.length > 0 && validOutput.some(o => o.stok_barang_id) && (
-              <div style={{ background: C.danger + "10", border: `1px solid ${C.danger}40`, borderRadius: "10px", padding: "12px 16px", fontSize: "13px", color: C.danger }}>
-                ⚠ Total kg output = 0. Pastikan semua produk output sudah diisi <strong>berat (kg)</strong> di Admin → Master Produk.
+              <div style={{ background: C.redDim, border: `1px solid ${C.red}40`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.red }}>
+                Total kg output = 0. Pastikan semua produk output sudah diisi <strong>berat (kg)</strong> di Admin → Master Produk.
               </div>
             )}
 
-            <button onClick={simpanBatch} disabled={submitting || stokWarnings.length > 0 || validOutput.length === 0 || validBahan.length === 0 || totalKgOutput === 0} style={{ width: "100%", padding: "14px", borderRadius: "10px", background: (submitting || stokWarnings.length > 0 || totalKgOutput === 0) ? "transparent" : C.accent + "25", border: `1px solid ${(submitting || stokWarnings.length > 0 || totalKgOutput === 0) ? C.dim : C.accent + "60"}`, color: (submitting || stokWarnings.length > 0 || totalKgOutput === 0) ? C.dim : C.accent, fontWeight: 700, cursor: "pointer", fontFamily: C.fontSans, fontSize: "15px" }}>
-              {submitting ? "Menyimpan batch..." : `✓ Simpan Batch Produksi${validOutput.length > 0 ? ` — ${validOutput.length} varian output` : ""}`}
+            <button
+              onClick={simpanBatch}
+              disabled={submitting || stokWarnings.length > 0 || validOutput.length === 0 || validBahan.length === 0 || totalKgOutput === 0}
+              style={{
+                width: "100%", padding: 14, borderRadius: 12, border: "none", fontWeight: 800, fontSize: 15,
+                cursor: (submitting || stokWarnings.length > 0 || totalKgOutput === 0) ? "not-allowed" : "pointer",
+                background: (submitting || stokWarnings.length > 0 || totalKgOutput === 0)
+                  ? C.dim
+                  : `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`,
+                color: (submitting || stokWarnings.length > 0 || totalKgOutput === 0) ? C.muted : "#fff",
+                opacity: submitting ? 0.7 : 1,
+              }}
+            >
+              {submitting ? "Menyimpan batch..." : `Simpan Batch Produksi${validOutput.length > 0 ? ` — ${validOutput.length} varian` : ""}`}
             </button>
           </div>
         )}
 
         {/* ══ TAB RIWAYAT ══ */}
         {activeTab === "riwayat" && (
-          <div style={{ background: C.card, padding: "20px", borderRadius: "14px", border: `1px solid ${C.border}` }}>
-            <h3 style={{ margin: "0 0 16px", fontFamily: C.fontDisplay, color: C.text, fontWeight: 400 }}>Riwayat Batch Produksi</h3>
-            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-              <input type="text" value={filterOp} placeholder="🔍 Cari operator..." onChange={e => { setFilterOp(e.target.value); setCurrentPage(1); }} style={{ ...inputS, flex: 1, padding: "8px 12px" }} />
-              <button onClick={() => setSortDir(d => d === "desc" ? "asc" : "desc")} style={{ background: C.blue + "15", border: `1px solid ${C.blue}40`, color: C.blue, padding: "8px 16px", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}>
+          <div style={{ background: C.card, padding: "20px 24px", borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+            <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800, color: C.text }}>Riwayat Batch Produksi</h3>
+            <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" as const }}>
+              <input type="text" value={filterOp} placeholder="Cari operator..." onChange={e => { setFilterOp(e.target.value); setCurrentPage(1); }} style={{ ...inputS, flex: 1, minWidth: 180 }} />
+              <button onClick={() => setSortDir(d => d === "desc" ? "asc" : "desc")} style={btnAdd(C.blue)}>
                 {sortDir === "desc" ? "↓ Terbaru" : "↑ Terlama"}
               </button>
             </div>
 
-            {riwayatPage.length === 0 && <div style={{ textAlign: "center", color: C.muted, padding: 40, fontFamily: C.fontMono, fontSize: 13 }}>{filterOp ? "Tidak ada hasil" : "Belum ada riwayat produksi"}</div>}
+            {riwayatPage.length === 0 && (
+              <div style={{ textAlign: "center", color: C.muted, padding: 40, fontFamily: C.fontMono, fontSize: 13 }}>
+                {filterOp ? "Tidak ada hasil" : "Belum ada riwayat produksi"}
+              </div>
+            )}
 
             {riwayatPage.map(r => (
               <div key={r.id} style={{ marginBottom: 10 }}>
-                <div onClick={() => toggleBatch(r.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: expandedBatch === r.id ? C.accentDim : "#0f0b1a", border: `1px solid ${expandedBatch === r.id ? C.accent + "40" : C.border}`, borderRadius: expandedBatch === r.id ? "10px 10px 0 0" : "10px", cursor: "pointer", transition: "all 0.15s" }}>
+                <div
+                  onClick={() => toggleBatch(r.id)}
+                  className="prod-row"
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "14px 18px",
+                    background: expandedBatch === r.id ? C.accentGlow : rowBg,
+                    border: `1px solid ${expandedBatch === r.id ? `${C.accent}40` : C.border}`,
+                    borderRadius: expandedBatch === r.id ? "12px 12px 0 0" : 12,
+                    cursor: "pointer", transition: "all 0.15s",
+                  }}
+                >
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: "14px", color: C.text, marginBottom: 4 }}>
                       Batch #{r.id}
@@ -510,8 +583,8 @@ export default function ProduksiPage() {
                     <div style={{ fontSize: "11px", color: C.muted, fontFamily: C.fontMono, display: "flex", flexWrap: "wrap", gap: "0 12px" }}>
                       <span>{tanggalJamFmt(r.created_at)}</span>
                       {r.total_kg_output > 0 && <span>· {r.total_kg_output} kg output</span>}
-                      {r.gaji_operator > 0 && <span style={{ color: C.success }}>· op: {rupiah(r.gaji_operator)}</span>}
-                      {r.gaji_packing > 0 && <span style={{ color: C.success }}>· packing: {rupiah(r.gaji_packing)}</span>}
+                      {r.gaji_operator > 0 && <span style={{ color: C.green }}>· op: {rupiah(r.gaji_operator)}</span>}
+                      {r.gaji_packing > 0 && <span style={{ color: C.green }}>· packing: {rupiah(r.gaji_packing)}</span>}
                       {r.gaji_borongan > 0 && <span style={{ color: C.yellow }}>· borongan: {rupiah(r.gaji_borongan)}</span>}
                       {r.biaya_gas > 0 && <span style={{ color: C.orange }}>· gas: {rupiah(r.biaya_gas)}</span>}
                     </div>
@@ -523,7 +596,7 @@ export default function ProduksiPage() {
                 </div>
 
                 {expandedBatch === r.id && (
-                  <div style={{ background: "#0f0b1a", border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: "14px 18px" }}>
+                  <div style={{ background: rowBg, border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 12px 12px", padding: "14px 18px" }}>
                     {!outputCache[r.id] ? <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 12 }}>Memuat detail...</div>
                       : outputCache[r.id].length === 0 ? <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 12, fontStyle: "italic" }}>Tidak ada data output</div>
                       : (
@@ -564,10 +637,10 @@ export default function ProduksiPage() {
             ))}
 
             {totalPages > 1 && (
-              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 20 }}>
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: "8px 16px", borderRadius: "8px", background: currentPage === 1 ? "transparent" : C.accent + "15", border: `1px solid ${currentPage === 1 ? C.dim : C.accent + "40"}`, color: currentPage === 1 ? C.dim : C.accent, cursor: currentPage === 1 ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "12px" }}>← Prev</button>
-                <div style={{ padding: "8px 16px", color: C.textMid, fontSize: "12px", fontFamily: C.fontMono }}>{currentPage} / {totalPages}</div>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: "8px 16px", borderRadius: "8px", background: currentPage === totalPages ? "transparent" : C.accent + "15", border: `1px solid ${currentPage === totalPages ? C.dim : C.accent + "40"}`, color: currentPage === totalPages ? C.dim : C.accent, cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "12px" }}>Next →</button>
+              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 20, alignItems: "center" }}>
+                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ ...btnAdd(C.accent), opacity: currentPage === 1 ? 0.4 : 1, cursor: currentPage === 1 ? "not-allowed" : "pointer" }}>← Prev</button>
+                <div style={{ padding: "8px 16px", color: C.textMid, fontSize: 12, fontFamily: C.fontMono }}>{currentPage} / {totalPages}</div>
+                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ ...btnAdd(C.accent), opacity: currentPage === totalPages ? 0.4 : 1, cursor: currentPage === totalPages ? "not-allowed" : "pointer" }}>Next →</button>
               </div>
             )}
           </div>
@@ -578,16 +651,18 @@ export default function ProduksiPage() {
 }
 
 function BahanDetail({ batchId }: { batchId: number }) {
+  const { isDark } = useTheme();
+  const C = isDark ? DARK : LIGHT;
   const [data, setData] = useState<any[] | null>(null);
   useEffect(() => {
     supabase.from("detail_produksi_bahan").select("qty_pakai, hpp_bahan, bahan_baku(nama, satuan)").eq("produksi_batch_id", batchId).then(({ data }) => setData(data || []));
   }, [batchId]);
   if (!data || data.length === 0) return null;
   return (
-    <div style={{ marginTop: 8, borderTop: "1px dashed #2a1f3d", paddingTop: 8 }}>
-      <div style={{ fontSize: "10px", color: "#7c6d8a", fontFamily: "'DM Mono', monospace", letterSpacing: 1, marginBottom: 6, fontWeight: 700 }}>BAHAN BAKU:</div>
+    <div style={{ marginTop: 8, borderTop: `1px dashed ${C.border}`, paddingTop: 8 }}>
+      <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, marginBottom: 6, fontWeight: 700 }}>BAHAN BAKU:</div>
       {data.map((d: any, i: number) => (
-        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#c0aed4", padding: "2px 0", fontFamily: "'DM Mono', monospace" }}>
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.textMid, padding: "2px 0", fontFamily: C.fontMono }}>
           <span>{d.bahan_baku?.nama || "—"}</span>
           <span>{d.qty_pakai} {d.bahan_baku?.satuan || ""} · {rupiah(d.hpp_bahan || 0)}</span>
         </div>

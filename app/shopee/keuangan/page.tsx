@@ -139,12 +139,36 @@ function parseTransactions(toko: { id: number; nama: string }, raw: any): TxRow[
 // ── Saldo tab ────────────────────────────────────────────────────────────
 function SaldoTab({ C }: { C: any }) {
   const [rows, setRows] = useState<SaldoRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingWallet, setLoadingWallet] = useState(false);
 
-  const fetchSaldo = useCallback(async () => {
-    setLoading(true);
+  const prefetchDbPending = useCallback(async () => {
+    const [{ data: tokoList }, { data: details }, { data: penjualan }] = await Promise.all([
+      supabase.from("toko_online").select("id, nama").eq("platform", "Shopee").eq("aktif", true).not("shopee_access_token", "is", null),
+      supabase.from("detail_penjualan_online").select("total_pembayaran, penjualan_online_id").in("status_shopee", ["SHIPPED", "TO_CONFIRM_RECEIVE"]),
+      supabase.from("penjualan_online").select("id, toko_id"),
+    ]);
+    const penjualanMap = new Map((penjualan || []).map((p: any) => [p.id, p.toko_id]));
+    const pendingByToko = new Map<number, number>();
+    for (const d of details || []) {
+      const tokoId = penjualanMap.get(d.penjualan_online_id);
+      if (!tokoId) continue;
+      pendingByToko.set(tokoId, (pendingByToko.get(tokoId) || 0) + Number(d.total_pembayaran || 0));
+    }
+    setRows((tokoList || []).map((t: any) => ({
+      toko_id: t.id,
+      toko: t.nama,
+      ok: true,
+      tersedia: null,
+      pending: pendingByToko.get(t.id) ?? null,
+      pending_source: pendingByToko.has(t.id) ? "db_uang_dijalan" as const : "none",
+    })));
+  }, []);
+
+  const fetchSaldo = useCallback(async (refresh = false) => {
+    setLoadingWallet(true);
     try {
-      const res = await fetch("/api/shopee/get-wallet-balance");
+      const url = refresh ? "/api/shopee/get-wallet-balance?refresh=1" : "/api/shopee/get-wallet-balance";
+      const res = await fetch(url);
       const data = await res.json();
       const mapped: SaldoRow[] = (data.results || []).map((r: any) => {
         const parsed = r.tersedia !== undefined
@@ -159,10 +183,13 @@ function SaldoTab({ C }: { C: any }) {
         };
       });
       setRows(mapped);
-    } finally { setLoading(false); }
+    } finally { setLoadingWallet(false); }
   }, []);
 
-  useEffect(() => { fetchSaldo(); }, [fetchSaldo]);
+  useEffect(() => {
+    prefetchDbPending();
+    fetchSaldo();
+  }, [prefetchDbPending, fetchSaldo]);
 
   const totalTersedia = sumNullable(rows, "tersedia");
   const totalPending = sumNullable(rows, "pending");
@@ -177,23 +204,25 @@ function SaldoTab({ C }: { C: any }) {
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <SumCard label="Total Saldo Wallet" value={rupiahN(totalTersedia)} color={C.green} C={C} />
         <SumCard label="Total Pending" value={rupiahN(totalPending)} color={C.yellow} C={C} />
-        <button onClick={fetchSaldo} disabled={loading} style={{ marginLeft: "auto", padding: "8px 16px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.5 : 1 }}>{loading ? "⏳" : "↻"} Refresh</button>
+        <button onClick={() => fetchSaldo(true)} disabled={loadingWallet} style={{ marginLeft: "auto", padding: "8px 16px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loadingWallet ? 0.5 : 1 }}>{loadingWallet ? "⏳" : "↻"} Refresh</button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-        {loading && rows.length === 0 && <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>}
-        {!loading && rows.length === 0 && <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Belum ada toko aktif terhubung.</div>}
+        {rows.length === 0 && <div style={{ color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Belum ada toko aktif terhubung.</div>}
         {rows.map(r => (
           <div key={r.toko_id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", boxShadow: C.shadow }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: C.text, fontFamily: C.fontSans }}>{r.toko}</div>
-              {!r.ok && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: C.redDim, color: C.red, fontFamily: C.fontMono, fontWeight: 700 }}>error</span>}
+              {!r.ok && !loadingWallet && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: C.redDim, color: C.red, fontFamily: C.fontMono, fontWeight: 700 }}>error</span>}
+              {loadingWallet && r.tersedia === null && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: C.accentGlow, color: C.accent, fontFamily: C.fontMono, fontWeight: 700 }}>wallet…</span>}
             </div>
             {r.ok ? (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
                 <div>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>Saldo Wallet</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: C.green, fontFamily: C.fontMono }}>{rupiahN(r.tersedia)}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: loadingWallet && r.tersedia === null ? C.muted : C.green, fontFamily: C.fontMono }}>
+                    {loadingWallet && r.tersedia === null ? "…" : rupiahN(r.tersedia)}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, color: C.muted, fontFamily: C.fontMono }}>Pending</div>
@@ -383,7 +412,8 @@ type PencairanRow = {
 function PencairanTab({ C }: { C: any }) {
   const [laporan, setLaporan] = useState<PencairanRow[]>([]);
   const [rows, setRows] = useState<TxRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingLaporan, setLoadingLaporan] = useState(true);
+  const [loadingWallet, setLoadingWallet] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [filterToko, setFilterToko] = useState<string>("semua");
   const [tokoOpts, setTokoOpts] = useState<{ id: number; nama: string }[]>([]);
@@ -416,25 +446,38 @@ function PencairanTab({ C }: { C: any }) {
     })) as PencairanRow[]);
   }, []);
 
-  const fetchWallet = useCallback(async () => {
-    const res = await fetch("/api/shopee/get-wallet-transactions");
-    const data = await res.json();
-    const all: TxRow[] = [];
-    const opts: { id: number; nama: string }[] = [];
-    for (const r of data.results || []) {
-      opts.push({ id: r.toko_id, nama: r.toko });
-      if (!r.ok) continue;
-      all.push(...parseTransactions({ id: r.toko_id, nama: r.toko }, r.raw));
-    }
-    all.sort((a, b) => b.create_time - a.create_time);
-    setRows(all);
-    setTokoOpts(opts);
+  const fetchWallet = useCallback(async (refresh = false) => {
+    setLoadingWallet(true);
+    try {
+      const url = refresh ? "/api/shopee/get-wallet-transactions?refresh=1" : "/api/shopee/get-wallet-transactions";
+      const res = await fetch(url);
+      const data = await res.json();
+      const all: TxRow[] = [];
+      for (const r of data.results || []) {
+        if (!r.ok) continue;
+        all.push(...parseTransactions({ id: r.toko_id, nama: r.toko }, r.raw));
+      }
+      all.sort((a, b) => b.create_time - a.create_time);
+      setRows(all);
+    } finally { setLoadingWallet(false); }
   }, []);
 
-  const syncPencairan = useCallback(async (silent = false) => {
-    setSyncing(true);
+  const fetchTokoOpts = useCallback(async () => {
+    const { data } = await supabase
+      .from("toko_online")
+      .select("id, nama")
+      .eq("platform", "Shopee")
+      .eq("aktif", true)
+      .not("shopee_access_token", "is", null)
+      .order("nama");
+    setTokoOpts((data || []).map((t: { id: number; nama: string }) => ({ id: t.id, nama: t.nama })));
+  }, []);
+
+  const syncPencairan = useCallback(async (silent = false, full = false) => {
+    if (!silent) setSyncing(true);
     try {
-      const res = await fetch("/api/shopee/sync-finance", { method: "POST" });
+      const url = full ? "/api/shopee/sync-finance?full=1" : "/api/shopee/sync-finance";
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Sync gagal");
       const totalNew = (data.results || []).reduce((a: number, r: any) => a + (r.new || 0), 0);
@@ -449,35 +492,44 @@ function PencairanTab({ C }: { C: any }) {
     } catch (err: any) {
       if (!silent) showToast(err.message || "Gagal sync pencairan", "error");
       throw err;
-    } finally { setSyncing(false); }
+    } finally {
+      if (!silent) setSyncing(false);
+    }
   }, [fetchLaporan]);
 
   useEffect(() => {
     let cancelled = false;
+    fetchTokoOpts();
     (async () => {
-      setLoading(true);
+      setLoadingLaporan(true);
       try {
         await fetchLaporan();
-        await fetchWallet();
-        if (!cancelled) await syncPencairan(true);
       } catch (err: any) {
-        if (!cancelled) showToast(err.message || "Gagal memuat data", "error");
+        if (!cancelled) showToast(err.message || "Gagal memuat laporan", "error");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingLaporan(false);
       }
     })();
+    fetchWallet().catch((err: any) => {
+      if (!cancelled) showToast(err.message || "Gagal memuat transaksi wallet", "error");
+    });
+    syncPencairan(true, false)
+      .then(() => { if (!cancelled) fetchLaporan(); })
+      .catch(() => {});
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshAll = async () => {
-    setLoading(true);
+    setLoadingLaporan(true);
+    setLoadingWallet(true);
     try {
-      await fetchLaporan();
-      await fetchWallet();
+      await Promise.all([fetchLaporan(), fetchWallet(true)]);
     } catch (err: any) {
       showToast(err.message || "Gagal memuat data", "error");
-    } finally { setLoading(false); }
+    } finally {
+      setLoadingLaporan(false);
+    }
   };
 
   const filteredLaporan = useMemo(() => {
@@ -527,8 +579,8 @@ function PencairanTab({ C }: { C: any }) {
 
   const handleSyncClick = async () => {
     try {
-      await syncPencairan(false);
-      await fetchWallet();
+      await syncPencairan(false, true);
+      await Promise.all([fetchLaporan(), fetchWallet(true)]);
     } catch { /* toast sudah ditampilkan */ }
   };
 
@@ -549,8 +601,8 @@ function PencairanTab({ C }: { C: any }) {
         <div style={{ fontSize: 12, color: C.muted, fontFamily: C.fontMono }}>
           {filteredLaporan.length} pencairan · total {rupiahN(totalCair)}
         </div>
-        <button onClick={refreshAll} disabled={loading || syncing} style={{ marginLeft: "auto", padding: "8px 14px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.5 : 1 }}>
-          {loading ? "⏳" : "↻"} Refresh
+        <button onClick={refreshAll} disabled={loadingLaporan || loadingWallet || syncing} style={{ marginLeft: "auto", padding: "8px 14px", background: "transparent", border: `1.5px solid ${C.border}`, color: C.muted, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loadingLaporan || loadingWallet ? 0.5 : 1 }}>
+          {loadingLaporan || loadingWallet ? "⏳" : "↻"} Refresh
         </button>
         <button onClick={handleSyncClick} disabled={syncing} style={{ padding: "8px 16px", background: `linear-gradient(135deg, ${C.accentDark}, ${C.accent})`, border: "none", color: "#fff", borderRadius: 8, cursor: syncing ? "wait" : "pointer", fontSize: 13, fontWeight: 700, opacity: syncing ? 0.7 : 1 }}>
           {syncing ? "⏳ Syncing..." : "💸 Sync Pencairan"}
@@ -568,7 +620,7 @@ function PencairanTab({ C }: { C: any }) {
           <SortTh label="Tanggal" field="created_at" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} />
           <SortTh label="Txn ID" field="shopee_transaction_id" sortField={lapSortField} sortDir={lapSortDir} onSort={handleLapSort} C={C} />
         </div>
-        {loading && laporan.length === 0 ? (
+        {loadingLaporan && laporan.length === 0 ? (
           <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>
         ) : filteredLaporan.length === 0 ? (
           <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>
@@ -597,7 +649,7 @@ function PencairanTab({ C }: { C: any }) {
           <SortTh label="Nominal" field="amount" sortField={txSortField} sortDir={txSortDir} onSort={handleTxSort} C={C} align="right" />
           <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, fontFamily: C.fontMono, letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }}>Azalea</span>
         </div>
-        {loading && rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat...</div>
+        {loadingWallet && rows.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Memuat transaksi wallet dari Shopee…</div>
           : filteredWallet.length === 0 ? <div style={{ padding: 30, textAlign: "center", color: C.muted, fontFamily: C.fontMono, fontSize: 13 }}>Tidak ada transaksi wallet</div>
           : filteredWallet.map(tx => {
             const synced = syncedIds.has(tx.transaction_id);
@@ -647,6 +699,12 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "pencairan", label: "Pencairan", icon: "💸" },
 ];
 
+function tabFromSearchParams(sp: { get: (k: string) => string | null }): Tab {
+  const t = sp.get("tab");
+  if (t === "saldo" || t === "escrow" || t === "pencairan") return t;
+  return "saldo";
+}
+
 export default function ShopeeKeuanganPage() {
   return (
     <Suspense fallback={null}>
@@ -660,12 +718,11 @@ function ShopeeKeuanganPageInner() {
   const C = isDark ? DARK : LIGHT;
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("saldo");
+  const [tab, setTab] = useState<Tab>(() => tabFromSearchParams(searchParams));
   const [tokoConnectedCount, setTokoConnectedCount] = useState<number | null>(null);
 
   useEffect(() => {
-    const t = searchParams.get("tab");
-    if (t === "saldo" || t === "escrow" || t === "pencairan") setTab(t);
+    setTab(tabFromSearchParams(searchParams));
   }, [searchParams]);
 
   const goTab = (next: Tab) => {

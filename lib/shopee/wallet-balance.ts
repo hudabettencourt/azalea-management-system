@@ -1,5 +1,6 @@
 // lib/shopee/wallet-balance.ts — fetch Shopee wallet + income overview (server only).
 import { shopeeApi } from "./helper";
+import { latestWalletBalance } from "./wallet-balance-parse";
 export type { WalletBalanceRaw, ParsedWalletBalance } from "./wallet-balance-parse";
 export {
   parseWalletBalance,
@@ -9,7 +10,7 @@ export {
 } from "./wallet-balance-parse";
 
 const WINDOW_DAYS = 14;
-const MAX_WINDOWS = 12; // ~168 hari ke belakang
+const MAX_WINDOWS = 6;
 
 async function fetchWalletTransactions(
   shopId: number,
@@ -26,63 +27,89 @@ async function fetchWalletTransactions(
   return shopeeApi("/api/v2/payment/get_wallet_transaction_list", shopId, accessToken, params);
 }
 
-/** Cari snapshot transaksi wallet terbaru; gabungkan beberapa window. */
-async function fetchLatestWalletSnapshot(shopId: number, accessToken: string) {
-  const now = Math.floor(Date.now() / 1000);
-  const attempts: Array<{ timeFrom?: number; timeTo?: number }> = [{}];
-
-  for (let w = 0; w < MAX_WINDOWS; w++) {
-    const timeTo = now - w * WINDOW_DAYS * 24 * 3600;
-    attempts.push({
-      timeFrom: timeTo - WINDOW_DAYS * 24 * 3600,
-      timeTo,
-    });
-  }
-
+function pickBestWalletSnapshot(candidates: any[]): any | null {
   let bestRes: any = null;
   let bestTime = 0;
+  let bestHasBalance = false;
 
-  for (const window of attempts) {
-    const res = await fetchWalletTransactions(
-      shopId,
-      accessToken,
-      window.timeFrom,
-      window.timeTo,
-    );
-    if (res.error) continue;
+  for (const res of candidates) {
+    if (res?.error) continue;
     const list: any[] = res.response?.transaction_list ?? [];
     if (!list.length) continue;
+    const hasBalance = latestWalletBalance(res) !== null;
     const latest = Math.max(...list.map((t) => Number(t?.create_time ?? 0)));
-    if (latest > bestTime) {
+    if (hasBalance && !bestHasBalance) {
+      bestRes = res;
+      bestTime = latest;
+      bestHasBalance = true;
+      continue;
+    }
+    if (hasBalance === bestHasBalance && latest > bestTime) {
       bestTime = latest;
       bestRes = res;
+      bestHasBalance = hasBalance;
     }
   }
 
-  if (bestRes) return bestRes;
-  // Kembalikan error terakhir atau respons kosong agar parser bisa bedakan.
-  const last = await fetchWalletTransactions(shopId, accessToken);
-  return last;
+  return bestRes;
+}
+
+/** Cari snapshot transaksi wallet terbaru; scan window paralel jika perlu. */
+async function fetchLatestWalletSnapshot(shopId: number, accessToken: string) {
+  const quick = await fetchWalletTransactions(shopId, accessToken);
+  if (!quick.error && latestWalletBalance(quick) !== null) {
+    return quick;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const windows = Array.from({ length: MAX_WINDOWS }, (_, w) => {
+    const timeTo = now - w * WINDOW_DAYS * 24 * 3600;
+    return {
+      timeFrom: timeTo - WINDOW_DAYS * 24 * 3600,
+      timeTo,
+    };
+  });
+
+  const windowResults = await Promise.all(
+    windows.map((w) => fetchWalletTransactions(shopId, accessToken, w.timeFrom, w.timeTo)),
+  );
+
+  const best = pickBestWalletSnapshot([quick, ...windowResults]);
+  if (best) return best;
+  return quick.error ? quick : await fetchWalletTransactions(shopId, accessToken);
 }
 
 const INCOME_STATUS_FILTERS: Array<Record<string, string | number> | undefined> = [
   undefined,
   { income_status: "PENDING" },
   { income_status: "TO_RELEASE" },
-  { income_status: 1 },
-  { income_status: 2 },
 ];
+
+export type FetchWalletBalanceOptions = {
+  /** Skip income_overview — pending diisi dari DB di route caller. */
+  walletOnly?: boolean;
+};
 
 export async function fetchWalletBalanceRaw(
   shopId: number,
   accessToken: string,
+  options?: FetchWalletBalanceOptions,
 ) {
-  const [walletTransactions, ...incomeOverviews] = await Promise.all([
-    fetchLatestWalletSnapshot(shopId, accessToken),
-    ...INCOME_STATUS_FILTERS.map((params) =>
+  const walletTransactions = await fetchLatestWalletSnapshot(shopId, accessToken);
+
+  if (options?.walletOnly) {
+    return {
+      income_overview: undefined,
+      income_overviews: [],
+      wallet_transactions: walletTransactions,
+    };
+  }
+
+  const incomeOverviews = await Promise.all(
+    INCOME_STATUS_FILTERS.map((params) =>
       shopeeApi("/api/v2/payment/get_income_overview", shopId, accessToken, params ?? {}),
     ),
-  ]);
+  );
 
   return {
     income_overview: incomeOverviews[0],

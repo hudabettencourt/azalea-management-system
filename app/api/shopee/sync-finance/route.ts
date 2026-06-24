@@ -2,8 +2,9 @@
 // Sync pencairan (withdrawal) dari Shopee Wallet ke pencairan_online + kas.
 // Dedup via shopee_transaction_id. Mirror flow manual: kurangi piutang
 // penjualan_online (FIFO) sebesar nominal yang cair.
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { shopeeApi, refreshAccessToken } from "@/lib/shopee/helper";
+import { mapPool } from "@/lib/shopee/api-cache";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -39,11 +40,11 @@ async function getValidToken(toko: any) {
   return toko.shopee_access_token;
 }
 
-async function fetchWalletTxns(shopId: number, accessToken: string): Promise<WalletTxn[]> {
+async function fetchWalletTxns(shopId: number, accessToken: string, maxPages: number): Promise<WalletTxn[]> {
   const out: WalletTxn[] = [];
   const timeTo = Math.floor(Date.now() / 1000);
   const timeFrom = timeTo - WINDOW_DAYS * 24 * 3600;
-  for (let page = 0; page < 50; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const res = await shopeeApi("/api/v2/payment/get_wallet_transaction_list", shopId, accessToken, {
       page_no: page,
       page_size: 100,
@@ -69,9 +70,9 @@ function isWithdrawal(t: WalletTxn): boolean {
   return true;
 }
 
-async function syncTokoFinance(toko: any) {
+async function syncTokoFinance(toko: any, maxPages: number) {
   const accessToken = await getValidToken(toko);
-  const txns = await fetchWalletTxns(toko.shopee_shop_id, accessToken);
+  const txns = await fetchWalletTxns(toko.shopee_shop_id, accessToken, maxPages);
   const withdrawals = txns.filter(isWithdrawal);
   if (withdrawals.length === 0) {
     return { toko: toko.nama, status: "ok", new: 0, total_scanned: txns.length };
@@ -149,16 +150,18 @@ async function syncTokoFinance(toko: any) {
   return { toko: toko.nama, status: "ok", new: inserted, total_scanned: txns.length };
 }
 
-export async function GET() {
-  return runSyncFinance();
+export async function GET(req: NextRequest) {
+  return runSyncFinance(req);
 }
 
-export async function POST() {
-  return runSyncFinance();
+export async function POST(req: NextRequest) {
+  return runSyncFinance(req);
 }
 
-async function runSyncFinance() {
+async function runSyncFinance(req: NextRequest) {
   try {
+    const full = new URL(req.url).searchParams.get("full") === "1";
+    const maxPages = full ? 50 : 3;
     const { data: tokoList, error } = await supabase.from("toko_online")
       .select("*")
       .eq("platform", "Shopee")
@@ -168,16 +171,13 @@ async function runSyncFinance() {
       return NextResponse.json({ error: "Tidak ada toko Shopee aktif" }, { status: 404 });
     }
 
-    const results: any[] = [];
-    for (let i = 0; i < tokoList.length; i++) {
-      const toko = tokoList[i];
+    const results = await mapPool(tokoList, 2, async (toko) => {
       try {
-        results.push(await syncTokoFinance(toko));
+        return await syncTokoFinance(toko, maxPages);
       } catch (err: any) {
-        results.push({ toko: toko.nama, status: "error", message: err.message });
+        return { toko: toko.nama, status: "error", message: err.message };
       }
-      if (i < tokoList.length - 1) await new Promise(r => setTimeout(r, 500));
-    }
+    });
     return NextResponse.json({ success: true, results });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

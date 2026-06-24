@@ -53,6 +53,8 @@ export default function UangDiJalanPage() {
   const [selectedStatus, setSelectedStatus] = useState<"semua" | "SHIPPED" | "TO_CONFIRM_RECEIVE">("semua");
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [excludedMasuk, setExcludedMasuk] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncInfo, setSyncInfo] = useState<string>("");
 
   const inputStyle: React.CSSProperties = {
     padding: "8px 12px",
@@ -80,6 +82,34 @@ export default function UangDiJalanPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setSyncing(true);
+    setSyncInfo("Cek status terbaru ke Shopee…");
+    try {
+      const syncRes = await fetch("/api/shopee/sync-stale-orders", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        const updated = syncData.totalUpdated ?? 0;
+        const checked = syncData.totalChecked ?? 0;
+        setSyncInfo(
+          checked === 0
+            ? "Tidak ada pesanan lama yang perlu dicek"
+            : updated > 0
+              ? `${updated} dari ${checked} pesanan diperbarui`
+              : `${checked} pesanan dicek, semua status sudah terkini`,
+        );
+      }
+    } catch {
+      setSyncInfo("");
+    } finally {
+      setSyncing(false);
+    }
+    await fetchData();
+  }, [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -111,9 +141,14 @@ export default function UangDiJalanPage() {
               )}
             </p>
           </div>
-          <button onClick={fetchData} disabled={loading} style={{ padding: "8px 18px", background: `${C.accent}15`, border: `1.5px solid ${C.accent}`, color: C.accent, borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: loading ? 0.7 : 1 }}>
-            {loading ? "⏳" : "↻ Refresh"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            <button onClick={handleRefresh} disabled={loading || syncing} style={{ padding: "8px 18px", background: `${C.accent}15`, border: `1.5px solid ${C.accent}`, color: C.accent, borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, opacity: (loading || syncing) ? 0.7 : 1 }}>
+              {syncing ? "⏳ Sync…" : loading ? "⏳" : "↻ Refresh"}
+            </button>
+            {syncInfo && (
+              <span style={{ fontSize: 11, color: C.muted, fontFamily: C.fontMono }}>{syncInfo}</span>
+            )}
+          </div>
         </div>
 
         {/* Summary total */}
